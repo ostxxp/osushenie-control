@@ -1,9 +1,13 @@
+# Git
+.git/
+.gitignore
+
 # Python cache
 __pycache__/
 *.py[cod]
 *.pyo
 
-# Virtual environments
+# Virtual environment
 .venv/
 venv/
 env/
@@ -11,8 +15,6 @@ env/
 # Environment files
 .env
 .env.local
-backend/.env
-frontend/.env
 
 # Test / lint cache
 .pytest_cache/
@@ -28,5 +30,5 @@ htmlcov/
 # OS
 .DS_Store
 
-# Logs
-*.log
+# Docker
+docker-compose.yml
