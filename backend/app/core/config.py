@@ -7,7 +7,16 @@ class Settings(BaseSettings):
 
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
-
+    
+    POSTGRES_DB: str = "osushenie_control"
+    POSTGRES_USER: str = "osushenie_app"
+    POSTGRES_PASSWORD: str = "change_me"
+    POSTGRES_HOST: str = "db"
+    POSTGRES_PORT: int = 5432
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://osushenie_app:change_me"
+        "@db:5432/osushenie_control"
+    )
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
