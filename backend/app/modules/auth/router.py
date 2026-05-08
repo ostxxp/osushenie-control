@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, verify_password
 from app.db.session import get_db_session as get_db
-from app.modules.auth.schemas import LoginRequest, TokenResponse
+from app.modules.auth.schemas import TokenResponse
 from app.modules.users.service import get_user_by_email
+from fastapi.security import OAuth2PasswordRequestForm
 
 
 router = APIRouter()
@@ -12,10 +13,10 @@ router = APIRouter()
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
-    login_data: LoginRequest,
+    login_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    user = await get_user_by_email(db, login_data.email)
+    user = await get_user_by_email(db, login_data.username)
 
     if user is None:
         raise HTTPException(
