@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.modules.users.schemas import UserCreate, UserRead
-from app.modules.users.service import create_user, get_user_by_email
+from app.modules.users.service import create_user, get_user_by_email, get_current_user
 
 from app.modules.users.models import User
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from sqlalchemy import select
 
 router = APIRouter()
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 @router.post(
         "", response_model=UserRead,
@@ -39,7 +41,13 @@ async def create_user_endpoint(
 )
 async def list_users_endpoint(
     db: AsyncSession = Depends(get_db_session),
+    token: str = Depends(oauth2_scheme),
 ) -> list[UserRead]:
+    if (await get_current_user(db=db, token=token)).role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can access this endpoint.",
+        )
     result = await db.execute(
         select(User)
     )
@@ -47,6 +55,17 @@ async def list_users_endpoint(
     users = result.scalars().all()
 
     return users
+
+@router.get(
+    "/me", response_model=UserRead,
+    summary="Get the currently authenticated user"
+)
+async def get_current_user_endpoint(
+    db: AsyncSession = Depends(get_db_session),
+    token: str = Depends(oauth2_scheme),
+) -> UserRead:
+    current_user = await get_current_user(db=db, token=token)
+    return current_user
 
 @router.get(
     "/{user_id}", response_model=UserRead,
