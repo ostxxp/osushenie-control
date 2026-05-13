@@ -73,3 +73,27 @@ async def get_current_user(
         )
 
     return user
+
+async def is_chief_engineer(
+    db: AsyncSession,
+    token: str = Depends(oauth2_scheme),
+) -> bool:
+    user = await get_current_user(db=db, token=token)
+    return user.role == "chief_engineer"
+
+async def is_admin(
+    db: AsyncSession,
+    token: str = Depends(oauth2_scheme),
+) -> bool:
+    user = await get_current_user(db=db, token=token)
+    return user.role == "admin"
+
+async def user_exists(
+    db: AsyncSession,
+    user_id: int,
+) -> bool:
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+
+    return result.scalar_one_or_none() is not None

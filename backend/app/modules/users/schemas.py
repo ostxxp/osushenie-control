@@ -18,6 +18,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=255)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None
