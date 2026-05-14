@@ -3,17 +3,16 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.users.service import create_user, get_user_by_email, get_current_user
-from app.modules.users.service import is_chief_engineer, user_exists
 
-from app.modules.objects.models import ObjectToForeman, ConstructionObject
-from app.modules.users.models import User
+from app.modules.objects.models import ConstructionObject
 
 from sqlalchemy import select
 
-from app.core.security import hash_password
+from app.modules.objects.dependencies import get_object_or_404
 
 from app.modules.objects.schemas import ObjectBase, ObjectRead, ObjectUpdate
+
+from app.modules.users.dependencies import require_chief_engineer
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -24,19 +23,13 @@ router = APIRouter()
 @router.post(
         "", response_model=ObjectRead,
         status_code=status.HTTP_201_CREATED,
-        summary="Create a new object"    
+        summary="Create a new object",
+        dependencies=[Depends(require_chief_engineer)]
 )
 async def create_object(
     object_in: ObjectBase,
-    db: AsyncSession = Depends(get_db_session),
-    token: str = Depends(oauth2_scheme)
+    db: AsyncSession = Depends(get_db_session)
 ):
-    if not is_chief_engineer(db=db, token=token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only chief engineers can create objects"
-        )
-    
     new_object = ConstructionObject(
         name=object_in.name,
         description=object_in.description,
@@ -55,75 +48,40 @@ async def create_object(
     summary="Get object details by ID"
 )
 async def get_object(
-    object_id: int,
+    object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session)
 ):
-    result = await db.execute(select(ConstructionObject).where(ConstructionObject.id == object_id))
-    obj = result.scalar_one_or_none()
-    if not obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Object not found"
-        )
-    return obj
+    return object
 
 @router.patch(
     "/{object_id}", response_model=ObjectRead,
-    summary="Update object details by ID"
+    summary="Update object details by ID",
+    dependencies=[Depends(require_chief_engineer)]
 )
 async def update_object(
-    object_id: int,
-    object_in: ObjectUpdate,
-    db: AsyncSession = Depends(get_db_session),
-    token: str = Depends(oauth2_scheme)
+    object_data: ObjectUpdate,
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session)
 ):
-    if not is_chief_engineer(db=db, token=token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only chief engineers can update objects"
-        )
+    for field, value in object_data.items():
+        setattr(object, field, value)
     
-    result = await db.execute(select(ConstructionObject).where(ConstructionObject.id == object_id))
-    obj = result.scalar_one_or_none()
-    if not obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Object not found"
-        )
-    
-    for field, value in object_in.dict(exclude_unset=True).items():
-        setattr(obj, field, value)
-    
-    db.add(obj)
+    db.add(object)
     await db.commit()
-    await db.refresh(obj)
-    return obj
+    await db.refresh(object)
+    return object
 
 @router.patch(
     "/{object_id}/deactivate", response_model=ObjectRead,
-    summary="Deactivate an object by ID"
+    summary="Deactivate an object by ID",
+    dependencies=[Depends(require_chief_engineer)]
 )
 async def deactivate_object(
-    object_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    token: str = Depends(oauth2_scheme)
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session)
 ):
-    if not is_chief_engineer(db=db, token=token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only chief engineers can deactivate objects"
-        )
-    
-    result = await db.execute(select(ConstructionObject).where(ConstructionObject.id == object_id))
-    obj = result.scalar_one_or_none()
-    if not obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Object not found"
-        )
-    
-    obj.is_active = False
-    db.add(obj)
+    object.is_active = False
+    db.add(object)
     await db.commit()
-    await db.refresh(obj)
-    return obj
+    await db.refresh(object)
+    return object
