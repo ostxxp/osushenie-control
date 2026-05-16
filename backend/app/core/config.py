@@ -5,6 +5,10 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Osushenie Control"
     ENVIRONMENT: str = "local"
 
+    SECRET_KEY: str = "change-this-secret-key"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
     
