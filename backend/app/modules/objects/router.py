@@ -24,7 +24,7 @@ router = APIRouter()
         "", response_model=ObjectRead,
         status_code=status.HTTP_201_CREATED,
         summary="Create a new object",
-        dependencies=[Depends(require_chief_engineer)]
+        #dependencies=[Depends(require_chief_engineer)]
 )
 async def create_object(
     object_in: ObjectBase,
@@ -56,7 +56,7 @@ async def get_object(
 @router.patch(
     "/{object_id}", response_model=ObjectRead,
     summary="Update object details by ID",
-    dependencies=[Depends(require_chief_engineer)]
+    # dependencies=[Depends(require_chief_engineer)]
 )
 async def update_object(
     object_data: ObjectUpdate,
@@ -74,7 +74,7 @@ async def update_object(
 @router.patch(
     "/{object_id}/deactivate", response_model=ObjectRead,
     summary="Deactivate an object by ID",
-    dependencies=[Depends(require_chief_engineer)]
+    # dependencies=[Depends(require_chief_engineer)]
 )
 async def deactivate_object(
     object: ConstructionObject = Depends(get_object_or_404),
