@@ -12,9 +12,6 @@ from app.core.config import settings
 
 from jose import JWTError, jwt
 
-
-from app.db.session import get_db_session
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 

@@ -8,14 +8,14 @@ from app.modules.objects.models import ConstructionObject, ObjectToUser
 
 from sqlalchemy import select
 
-from app.modules.objects.dependencies import get_object_or_404
+from app.modules.objects.dependencies import get_object_or_404, get_object_to_user_or_404
 
 from app.modules.objects.schemas import ObjectBase, ObjectRead, ObjectUpdate
 
-from app.modules.users.dependencies import get_current_auth_user, require_admin, require_logged_in_user
+from app.modules.users.dependencies import get_current_auth_user, require_admin, get_user_or_404
+from app.modules.users.dependencies import require_chief_engineer_or_admin, require_logged_in_user
 from app.modules.users.models import User
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+from app.modules.objects.service import set_responsible_status
 
 
 router = APIRouter()
@@ -66,6 +66,27 @@ async def list_objects(
     result = await db.execute(query)
     objects = result.scalars().all()
     return objects
+
+@router.get(
+    "/responsible", response_model=list[ObjectRead],
+    summary="Get a list of all objects the user is responsible for",
+    dependencies=[Depends(require_logged_in_user)]
+)
+async def list_responsible_objects(
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_auth_user)
+):
+    result = await db.execute(
+        select(ConstructionObject)
+        .join(ObjectToUser)
+        .where(
+            ObjectToUser.user_id == user.id,
+            ObjectToUser.is_responsible == True
+        )
+    )
+
+    objects = result.scalars().all()
+    return objects
         
 
 @router.get(
@@ -110,3 +131,68 @@ async def deactivate_object(
     await db.commit()
     await db.refresh(object)
     return object
+
+
+## OBJECT ASSIGNMENT ENDPOINTS ##
+
+@router.post(
+    "/{object_id}/assign/{user_id}",
+    response_model=ObjectRead,
+    summary="Assign a user to an object",
+    dependencies=[Depends(require_chief_engineer_or_admin)]
+)
+async def assign_user_to_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    user: User = Depends(get_user_or_404),
+    db: AsyncSession = Depends(get_db_session)
+):
+    association = ObjectToUser(
+        object_id=object.id,
+        user_id=user.id,
+        is_responsible=False
+    )
+    db.add(association)
+    await db.commit()
+    await db.refresh(object)
+    return object
+
+@router.delete(
+    "/{object_id}/unassign/{user_id}",
+    response_model=ObjectRead,
+    summary="Unassign a user from an object",
+    dependencies=[Depends(require_chief_engineer_or_admin)]
+)
+async def unassign_user_from_object(
+    object_to_user: ObjectToUser = Depends(get_object_to_user_or_404),
+    db: AsyncSession = Depends(get_db_session)
+):
+    await db.delete(object_to_user)
+    await db.commit()
+    object = await get_object_or_404(object_id=object_to_user.object_id, db=db)
+    return object
+
+@router.patch(
+    "/{object_id}/assign/{user_id}/responsible",
+    response_model=ObjectRead,
+    summary="Assign a user as responsible for an object",
+    dependencies=[Depends(require_chief_engineer_or_admin)]
+)
+async def assign_responsible_to_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    user: User = Depends(get_user_or_404),
+    db: AsyncSession = Depends(get_db_session)
+):
+    return await set_responsible_status(object, user, db, True)
+
+@router.patch(
+    "/{object_id}/unassign/{user_id}/responsible",
+    response_model=ObjectRead,
+    summary="Unassign a user as responsible for an object",
+    dependencies=[Depends(require_chief_engineer_or_admin)]
+)
+async def unassign_responsible_from_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    user: User = Depends(get_user_or_404),
+    db: AsyncSession = Depends(get_db_session)
+):
+    return await set_responsible_status(object, user, db, False)
