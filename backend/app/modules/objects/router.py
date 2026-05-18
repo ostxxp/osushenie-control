@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 
-from app.modules.objects.models import ConstructionObject, ObjectToForeman, ResponsibleEngineerToObject
+from app.modules.objects.models import ConstructionObject, ObjectToUser
 
 from sqlalchemy import select
 
@@ -12,7 +12,7 @@ from app.modules.objects.dependencies import get_object_or_404
 
 from app.modules.objects.schemas import ObjectBase, ObjectRead, ObjectUpdate
 
-from app.modules.users.dependencies import get_current_auth_user, require_admin
+from app.modules.users.dependencies import get_current_auth_user, require_admin, require_logged_in_user
 from app.modules.users.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -54,19 +54,13 @@ async def list_objects(
 ):
     query = select(ConstructionObject)
 
-    if user.role == "chief_engineer":
+    if user.role == "foreman":
         query = (
             query
-            .join(ResponsibleEngineerToObject)
-            .where(ResponsibleEngineerToObject.user_id == user.id)
+            .join(ObjectToUser)
+            .where(ObjectToUser.user_id == user.id)
         )
-    elif user.role == "foreman":
-        query = (
-            query
-            .join(ObjectToForeman)
-            .where(ObjectToForeman.user_id == user.id)
-        )
-    elif user.role != "admin":
+    elif user.role != "admin" and user.role != "chief_engineer":
         raise HTTPException(status_code=403, detail="Forbidden")
 
     result = await db.execute(query)
@@ -76,11 +70,11 @@ async def list_objects(
 
 @router.get(
     "/{object_id}", response_model=ObjectRead,
-    summary="Get object details by ID"
+    summary="Get object details by ID",
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def get_object(
-    object: ConstructionObject = Depends(get_object_or_404),
-    db: AsyncSession = Depends(get_db_session)
+    object: ConstructionObject = Depends(get_object_or_404)
 ):
     return object
 
