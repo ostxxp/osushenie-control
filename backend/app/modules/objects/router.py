@@ -91,12 +91,28 @@ async def list_responsible_objects(
 
 @router.get(
     "/{object_id}", response_model=ObjectRead,
-    summary="Get object details by ID",
-    dependencies=[Depends(require_logged_in_user)]
+    summary="Get object details by ID"
 )
 async def get_object(
-    object: ConstructionObject = Depends(get_object_or_404)
+    object: ConstructionObject = Depends(get_object_or_404),
+    user: User = Depends(get_current_auth_user),
+    db: AsyncSession = Depends(get_db_session)
 ):
+    if user.role == "foreman":
+        result = await db.execute(
+            select(ObjectToUser).where(
+                ObjectToUser.object_id == object.id,
+                ObjectToUser.user_id == user.id,
+            )
+        )
+
+        association = result.scalar_one_or_none()
+
+        if association is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this object.",
+            )
     return object
 
 @router.patch(
@@ -109,7 +125,7 @@ async def update_object(
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session)
 ):
-    for field, value in object_data.items():
+    for field, value in object_data.model_dump(exclude_unset=True).items():
         setattr(object, field, value)
     
     db.add(object)
@@ -146,6 +162,17 @@ async def assign_user_to_object(
     user: User = Depends(get_user_or_404),
     db: AsyncSession = Depends(get_db_session)
 ):
+    existing_association = await db.execute(
+        select(ObjectToUser).where(
+            ObjectToUser.object_id == object.id,
+            ObjectToUser.user_id == user.id,
+        )
+    )
+    if existing_association.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already assigned to the object.",
+        )
     association = ObjectToUser(
         object_id=object.id,
         user_id=user.id,
@@ -166,6 +193,11 @@ async def unassign_user_from_object(
     object_to_user: ObjectToUser = Depends(get_object_to_user_or_404),
     db: AsyncSession = Depends(get_db_session)
 ):
+    if object_to_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User is not assigned to the object.",
+        )
     await db.delete(object_to_user)
     await db.commit()
     object = await get_object_or_404(object_id=object_to_user.object_id, db=db)

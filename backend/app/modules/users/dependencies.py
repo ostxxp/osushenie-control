@@ -38,7 +38,7 @@ async def require_chief_engineer_or_admin(
 async def require_logged_in_user(
     current_user: User = Depends(get_current_auth_user),
 ) -> None:
-    if current_user is None:
+    if current_user is None or not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",

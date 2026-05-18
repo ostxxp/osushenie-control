@@ -105,7 +105,7 @@ async def update_user_endpoint(
         )
     update_data = user_data.model_dump(exclude_unset=True)
 
-    if "role" in update_data and current_user.role != "admin":
+    if ("role" in update_data or "is_active" in update_data) and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can change user roles."
