@@ -47,3 +47,21 @@ class ObjectToForeman(Base):
     __table_args__ = (
         UniqueConstraint("object_id", "foreman_id", name="uq_object_foreman"),
     )
+
+class ResponsibleEngineerToObject(Base):
+    __tablename__ = "responsible_engineer_to_object"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    object_id: Mapped[int] = mapped_column(
+        ForeignKey("objects.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    engineer_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("object_id", "engineer_id", name="uq_object_engineer"),
+    )
