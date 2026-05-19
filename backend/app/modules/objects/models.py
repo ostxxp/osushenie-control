@@ -30,8 +30,8 @@ class ConstructionObject(Base):
         nullable=False,
     )
 
-class ObjectToForeman(Base):
-    __tablename__ = "object_to_foreman"
+class ObjectToUser(Base):
+    __tablename__ = "object_to_user"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
@@ -39,11 +39,13 @@ class ObjectToForeman(Base):
         ForeignKey("objects.id", ondelete="CASCADE"),
         nullable=False
     )
-    foreman_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
 
+    is_responsible: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     __table_args__ = (
-        UniqueConstraint("object_id", "foreman_id", name="uq_object_foreman"),
+        UniqueConstraint("object_id", "user_id", name="uq_object_user"),
     )

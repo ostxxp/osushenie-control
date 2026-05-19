@@ -1,4 +1,4 @@
-from app.modules.objects.models import ConstructionObject, ObjectToForeman
+from app.modules.objects.models import ConstructionObject, ObjectToUser
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 
