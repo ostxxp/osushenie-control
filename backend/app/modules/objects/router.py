@@ -1,3 +1,4 @@
+from app.modules.users.schemas import UserRead
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,6 +88,28 @@ async def list_responsible_objects(
 
     objects = result.scalars().all()
     return objects
+
+@router.get(
+    "/responsible/{object_id}", response_model=list[UserRead],
+    summary="Get a list of all users responsible for an object",
+    dependencies=[Depends(require_logged_in_user)]
+)
+async def list_responsible_users(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_auth_user)
+):  
+    result = await db.execute(
+        select(User)
+        .join(ObjectToUser)
+        .where(
+            ObjectToUser.object_id == object.id,
+            ObjectToUser.user_id == user.id,
+            ObjectToUser.is_responsible == True
+        )
+    )
+    users = result.scalars().all()
+    return users
         
 
 @router.get(
