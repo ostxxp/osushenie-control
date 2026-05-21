@@ -17,6 +17,7 @@ from app.modules.users.dependencies import get_current_auth_user, require_admin,
 from app.modules.users.dependencies import require_chief_engineer_or_admin, require_logged_in_user
 from app.modules.users.models import User
 from app.modules.objects.service import set_responsible_status
+from app.modules.tasks.service import copy_task_templates_to_object
 
 
 router = APIRouter()
@@ -41,6 +42,8 @@ async def create_object(
         end_date=object_in.end_date
     )
     db.add(new_object)
+    await db.flush()
+    await copy_task_templates_to_object(db, object_id=new_object.id)
     await db.commit()
     await db.refresh(new_object)
     return new_object
