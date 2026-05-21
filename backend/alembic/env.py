@@ -8,6 +8,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.db.base import Base
+from app.modules.auth.models import AuthSession, RevokedAccessToken  # noqa: F401
 from app.modules.users.models import User  # noqa: F401
 from app.modules.objects.models import ConstructionObject, ObjectToUser  # noqa: F401
 
