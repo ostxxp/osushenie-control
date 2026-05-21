@@ -81,6 +81,18 @@ async def create_task_for_object(
 ) -> ObjectTask:
     return await create_object_task(db, object_id=object.id, task_data=task_data)
 
+@router.get(
+    "/{object_id}/tasks/{task_id}/available",
+    response_model=ObjectTaskTreeRead,
+    summary="Get available subtasks for main object task",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_available_subtasks_for_main_task(
+    main_task: ObjectTask = Depends(get_object_task_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    
+    return await build_available_task_tree(db, main_task=main_task)
 
 @router.patch(
     "/{object_id}/tasks/{task_id}",

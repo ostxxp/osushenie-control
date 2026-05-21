@@ -196,16 +196,12 @@ async def deactivate_object_task(
     db.add(object_task)
     await db.commit()
 
-async def build_available_task_tree(tasks: list[ObjectTask]) -> list[dict]:
-    children_by_parent_id: dict[int | None, list[ObjectTask]] = {}
-    
-    for task in tasks:
-        children_by_parent_id.setdefault(task.parent_id, []).append(task)
-
-    for children in children_by_parent_id.values():
-        children.sort(key=lambda task: (task.sort_order, task.id))
-
-    def serialize_until_blocker(task: ObjectTask) -> dict:
+async def build_available_task_tree(
+    db: AsyncSession,
+    *,
+    main_task: ObjectTask,
+) -> dict:
+    async def serialize_until_blocker(task: ObjectTask) -> dict:
         node = {
             "id": task.id,
             "object_id": task.object_id,
@@ -223,17 +219,25 @@ async def build_available_task_tree(tasks: list[ObjectTask]) -> list[dict]:
             "children": [],
         }
 
-        if task.status in BLOCKING_STATUSES:
+        if task.status in BLOCKING_STATUSES and task.parent_id is not None:
             return node
 
+        result = await db.execute(
+            select(ObjectTask)
+            .where(
+                ObjectTask.object_id == task.object_id,
+                ObjectTask.parent_id == task.id,
+                ObjectTask.is_active.is_(True),
+            )
+            .order_by(ObjectTask.sort_order, ObjectTask.id)
+        )
+        children = result.scalars().all()
+
         node["children"] = [
-            serialize_until_blocker(child)
-            for child in children_by_parent_id.get(task.id, [])
+            await serialize_until_blocker(child)
+            for child in children
         ]
 
         return node
 
-    return [
-        serialize_until_blocker(root)
-        for root in children_by_parent_id.get(None, [])
-    ]
+    return await serialize_until_blocker(main_task)
