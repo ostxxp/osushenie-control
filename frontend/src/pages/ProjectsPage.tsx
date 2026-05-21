@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { projectApi, taskApi } from '@services/api'
+import { formatDateRu } from '@/utils'
 import type { Project, Task } from '@/types'
 
 const projectButtonClasses = (isActive: boolean) =>
@@ -150,7 +151,7 @@ function ProjectsPage() {
                             </div>
                             {task.due_date && (
                               <div className="mt-3 text-sm text-base-content/60">
-                                Срок: {new Date(task.due_date).toLocaleDateString('ru-RU')}
+                                Срок: {formatDateRu(task.due_date)}
                               </div>
                             )}
                           </div>

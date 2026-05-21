@@ -32,6 +32,10 @@ export const userApi = {
     const response = await authApi.get('/users')
     return response.data
   },
+  create: async (user: Omit<User, 'id' | 'created_at' | 'updated_at'> & { password: string }): Promise<User> => {
+    const response = await authApi.post('/users', user)
+    return response.data
+  },
 }
 
 export const objectApi = {
@@ -41,6 +45,14 @@ export const objectApi = {
   },
   getById: async (id: number): Promise<ConstructionObject> => {
     const response = await authApi.get(`/objects/${id}`)
+    return response.data
+  },
+  create: async (obj: Omit<ConstructionObject, 'id' | 'created_at' | 'updated_at'>): Promise<ConstructionObject> => {
+    const response = await authApi.post('/objects', obj)
+    return response.data
+  },
+  assignUserToObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
+    const response = await authApi.post(`/objects/${objectId}/assign/${userId}`)
     return response.data
   },
 }

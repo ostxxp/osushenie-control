@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { objectApi } from '@services/api'
+import { formatDateRu } from '@/utils'
 import type { ConstructionObject } from '@/types'
 
 function ObjectDetailsPage() {
@@ -70,10 +71,10 @@ function ObjectDetailsPage() {
               <span className="font-semibold">Статус:</span> {objectItem.is_active ? 'Активен' : 'Неактивен'}
             </div>
             <div>
-              <span className="font-semibold">Начало работ:</span> {new Date(objectItem.start_date).toLocaleDateString('ru-RU')}
+              <span className="font-semibold">Начало работ:</span> {formatDateRu(objectItem.start_date)}
             </div>
             <div>
-              <span className="font-semibold">Окончание:</span> {objectItem.end_date ? new Date(objectItem.end_date).toLocaleDateString('ru-RU') : '-'}
+              <span className="font-semibold">Окончание:</span> {objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}
             </div>
           </div>
         </div>
