@@ -241,3 +241,25 @@ async def build_available_task_tree(
         return node
 
     return await serialize_until_blocker(main_task)
+
+async def get_progress(
+    db: AsyncSession,
+    *,
+    object_id: int,
+):
+    result = await db.execute(
+        select(ObjectTask.status, func.count(ObjectTask.id))
+        .where(
+            ObjectTask.object_id == object_id,
+            ObjectTask.is_active.is_(True),
+        )
+        .group_by(ObjectTask.status)
+    )
+    status_counts = dict(result.all())
+
+    total = sum(status_counts.values())
+    if total == 0:
+        return 0
+
+    done_count = status_counts.get(ObjectTaskStatus.DONE, 0)
+    return done_count * 100 // total

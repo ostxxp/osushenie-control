@@ -19,7 +19,8 @@ from app.modules.tasks.service import (
     list_object_tasks,
     update_object_task,
     build_available_task_tree,
-    list_main_object_tasks
+    list_main_object_tasks,
+    get_progress
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -80,6 +81,18 @@ async def create_task_for_object(
     db: AsyncSession = Depends(get_db_session),
 ) -> ObjectTask:
     return await create_object_task(db, object_id=object.id, task_data=task_data)
+
+@router.get(
+    "/{object_id}/progress",
+    response_model=float,
+    summary="Get object progress percentage",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_object_progress(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> float:
+    return await get_progress(db, object_id=object.id)
 
 @router.get(
     "/{object_id}/tasks/{task_id}/available",
