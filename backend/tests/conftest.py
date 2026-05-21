@@ -12,6 +12,7 @@ from app.db.session import get_db_session
 from app.main import app
 from app.modules.auth.models import AuthSession, RevokedAccessToken  # noqa: F401
 from app.modules.objects.models import ConstructionObject, ObjectToUser  # noqa: F401
+from app.modules.tasks.models import ObjectTask, TaskTemplate  # noqa: F401
 from app.modules.users.models import User, UserRole
 
 
@@ -117,6 +118,38 @@ def create_test_object(
             return obj
 
     return _create_test_object
+
+
+@pytest.fixture
+def create_task_template(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Callable[..., object]:
+    async def _create_task_template(
+        *,
+        title: str = "Task template",
+        parent_id: int | None = None,
+        source_id: str | None = None,
+        parent_source_id: str | None = None,
+        depth: int = 0,
+        sort_order: int = 0,
+        is_active: bool = True,
+    ) -> TaskTemplate:
+        async with session_factory() as session:
+            template = TaskTemplate(
+                parent_id=parent_id,
+                source_id=source_id,
+                parent_source_id=parent_source_id,
+                title=title,
+                depth=depth,
+                sort_order=sort_order,
+                is_active=is_active,
+            )
+            session.add(template)
+            await session.commit()
+            await session.refresh(template)
+            return template
+
+    return _create_task_template
 
 
 async def login(
