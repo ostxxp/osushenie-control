@@ -10,7 +10,6 @@ from tests.conftest import auth_headers, login
 def object_payload(name: str = "Object") -> dict:
     return {
         "name": name,
-        "description": None,
         "address": "Test address",
         "is_active": True,
         "start_date": date(2026, 1, 1).isoformat(),

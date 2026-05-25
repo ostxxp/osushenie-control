@@ -35,7 +35,6 @@ async def create_object(
 ):
     new_object = ConstructionObject(
         name=object_in.name,
-        description=object_in.description,
         address=object_in.address,
         is_active=object_in.is_active,
         start_date=object_in.start_date,
