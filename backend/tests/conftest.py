@@ -106,7 +106,6 @@ def create_test_object(
         async with session_factory() as session:
             obj = ConstructionObject(
                 name=name,
-                description=None,
                 address=address,
                 is_active=True,
                 start_date=start_date,
