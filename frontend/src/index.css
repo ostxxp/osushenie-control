@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @plugin "daisyui";
 
+/* Override DaisyUI color variables for a light/white theme */
+:root {
+  --color-base-100: #ffffff;
+  --color-base-200: #ffffff;
+  --color-base-300: #f3f4f6; /* light gray for surfaces */
+  --color-base-content: #111827; /* gray-900 text */
+  --color-primary: #2563eb; /* keep primary blue */
+  --color-primary-content: #ffffff;
+}
+
 html {
   min-height: 100%;
 }

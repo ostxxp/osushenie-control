@@ -58,6 +58,29 @@ export interface Task {
 export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'completed'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
+// Object Tasks
+export type ObjectTaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE'
+
+export interface ObjectTask {
+  id: number
+  object_id: number
+  parent_id: number | null
+  title: string
+  status: ObjectTaskStatus
+  depth: number
+  sort_order: number
+  is_active: boolean
+  completed_at: string | null
+  completed_by_id: number | null
+  completed_by?: User
+  created_at: string
+  updated_at: string
+}
+
+export interface ObjectTaskTree extends ObjectTask {
+  children: ObjectTaskTree[]
+}
+
 // Auth
 export interface LoginRequest {
   username: string

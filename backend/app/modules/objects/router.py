@@ -106,8 +106,28 @@ async def list_responsible_users(
         .join(ObjectToUser)
         .where(
             ObjectToUser.object_id == object.id,
-            ObjectToUser.user_id == user.id,
             ObjectToUser.is_responsible == True
+        )
+    )
+    users = result.scalars().all()
+    return users
+
+
+@router.get(
+    "/{object_id}/users", response_model=list[UserRead],
+    summary="Get a list of all users assigned to an object",
+    dependencies=[Depends(require_logged_in_user)]
+)
+async def list_assigned_users(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_auth_user)
+):
+    result = await db.execute(
+        select(User)
+        .join(ObjectToUser)
+        .where(
+            ObjectToUser.object_id == object.id
         )
     )
     users = result.scalars().all()

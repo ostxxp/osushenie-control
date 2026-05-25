@@ -1,7 +1,11 @@
 import { Outlet, Link } from 'react-router-dom'
-import { authService } from '@services/auth'
+import { useContext } from 'react'
+import { authService, AuthContext } from '@services/auth'
 
 function Layout() {
+  const authContext = useContext(AuthContext)
+  const userRole = authContext?.userRole
+
   const handleLogout = () => {
     authService.logout()
     window.location.href = '/login'
@@ -23,14 +27,13 @@ function Layout() {
             <Link to="/objects" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
               Объекты
             </Link>
-            <Link to="/users" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
-              Пользователи
-            </Link>
+            {(userRole === 'admin' || userRole === 'engineer') && (
+              <Link to="/users" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
+                Пользователи
+              </Link>
+            )}
             <Link to="/notifications" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
               Уведомления
-            </Link>
-            <Link to="/settings" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
-              Настройки
             </Link>
           </div>
         </aside>

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { objectApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
 import type { ConstructionObject, User } from '@/types'
+import { AuthContext } from '@services/auth'
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -15,6 +16,8 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
 
 
 function ObjectsPage() {
+  const authContext = useContext(AuthContext)
+  const userRole = authContext?.userRole
   const [objects, setObjects] = useState<ConstructionObject[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -213,17 +216,19 @@ function ObjectsPage() {
           </div>
           <div className="flex items-center gap-2">
             {search && <span className="badge badge-outline">Найдено {filteredObjects.length}</span>}
-            <button
-              type="button"
-              className="btn btn-primary btn-sm whitespace-nowrap"
-              onClick={() => {
-                setFormError('')
-                setSelectedWorkerIds([])
-                setShowCreateObject(true)
-              }}
-            >
-              Добавить объект
-            </button>
+            {userRole === 'admin' && (
+              <button
+                type="button"
+                className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                onClick={() => {
+                  setFormError('')
+                  setSelectedWorkerIds([])
+                  setShowCreateObject(true)
+                }}
+              >
+                Добавить объект
+              </button>
+            )}
           </div>
         </div>
 
@@ -233,7 +238,6 @@ function ObjectsPage() {
               <tr>
                 <th className="px-4 py-3">Название объекта</th>
                 <th className="px-4 py-3">Адрес</th>
-                <th className="px-4 py-3">Статус</th>
                 <th className="px-4 py-3">Начало работ</th>
                 <th className="px-4 py-3">Сдача по плану</th>
               </tr>
@@ -241,7 +245,7 @@ function ObjectsPage() {
             <tbody>
               {filteredObjects.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={4} className="px-4 py-6 text-center text-base-content/70">
                     Объектов не найдено.
                   </td>
                 </tr>
@@ -254,7 +258,6 @@ function ObjectsPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">{objectItem.address}</td>
-                    <td className="px-4 py-3">{objectItem.is_active ? 'Активен' : 'Неактивен'}</td>
                     <td className="px-4 py-3">{formatDateRu(objectItem.start_date)}</td>
                     <td className="px-4 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
                   </tr>

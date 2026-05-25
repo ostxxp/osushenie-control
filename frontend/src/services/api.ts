@@ -1,5 +1,5 @@
 import authApi from './auth'
-import type { Project, Task, User, ConstructionObject } from '@/types'
+import type { Project, Task, User, ConstructionObject, ObjectTask, ObjectTaskTree } from '@/types'
 
 export const projectApi = {
   getAll: async (): Promise<Project[]> => {
@@ -53,6 +53,42 @@ export const objectApi = {
   },
   assignUserToObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
     const response = await authApi.post(`/objects/${objectId}/assign/${userId}`)
+    return response.data
+  },
+  unassignUserFromObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
+    const response = await authApi.delete(`/objects/${objectId}/unassign/${userId}`)
+    return response.data
+  },
+  getTasksTree: async (objectId: number): Promise<any[]> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/tree`)
+    return response.data
+  },
+  getTasksHeaders: async (objectId: number): Promise<ObjectTask[]> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/headers`)
+    return response.data
+  },
+  getProgress: async (objectId: number): Promise<number> => {
+    const response = await authApi.get(`/objects/${objectId}/progress`)
+    return response.data
+  },
+  getResponsibleUsers: async (objectId: number): Promise<User[]> => {
+    const response = await authApi.get(`/objects/responsible/${objectId}`)
+    return response.data
+  },
+  getAssignedUsers: async (objectId: number): Promise<User[]> => {
+    const response = await authApi.get(`/objects/${objectId}/users`)
+    return response.data
+  },
+  assignResponsibleToObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
+    const response = await authApi.patch(`/objects/${objectId}/assign/${userId}/responsible`)
+    return response.data
+  },
+  unassignResponsibleFromObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
+    const response = await authApi.patch(`/objects/${objectId}/unassign/${userId}/responsible`)
+    return response.data
+  },
+  updateTaskStatus: async (objectId: number, taskId: number, status: string): Promise<any> => {
+    const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}/status`, { status })
     return response.data
   },
 }

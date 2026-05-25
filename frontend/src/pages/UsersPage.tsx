@@ -155,7 +155,7 @@ function UsersPage() {
             {search && <span className="badge badge-outline">Найдено {filteredUsers.length}</span>}
             <button
               type="button"
-              className="btn btn-primary btn-sm whitespace-nowrap"
+              className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
               onClick={() => {
                 setFormError('')
                 setShowCreateUser(true)
@@ -171,23 +171,23 @@ function UsersPage() {
             <thead className="bg-base-200">
               <tr>
                 <th className="px-4 py-3">Имя</th>
-                <th className="px-4 py-3">Роль</th>
+                <th className="px-4 py-3">Должность</th>
                 <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Статус</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
-                  <td className="px-4 py-3">{user.full_name}</td>
-                  <td className="px-4 py-3 capitalize">{user.role}</td>
-                  <td className="px-4 py-3">{user.email}</td>
-                  <td className="px-4 py-3">{user.is_active ? 'Активен' : 'Заблокирован'}</td>
-                </tr>
+                user.role === 'admin' ? null : (
+                  <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
+                    <td className="px-4 py-3">{user.full_name}</td>
+                    <td className="px-4 py-3 capitalize">{user.role === 'engineer' ? 'Инженер' : user.role === 'foreman' ? 'Прораб' : user.role}</td>
+                    <td className="px-4 py-3">{user.email}</td>
+                  </tr>
+                )
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={3} className="px-4 py-6 text-center text-base-content/70">
                     Пользователей не найдено.
                   </td>
                 </tr>
@@ -227,9 +227,8 @@ function UsersPage() {
                 onChange={(e) => handleChange('password', e.target.value)}
               />
               <select className="select w-full" value={newUser.role} onChange={(e) => handleChange('role', e.target.value)}>
-                <option value="admin">admin</option>
-                <option value="engineer">engineer</option>
-                <option value="foreman">foreman</option>
+                <option value="engineer">Инженер</option>
+                <option value="foreman">Прораб</option>
               </select>
               <label className="flex items-center gap-2">
                 <input type="checkbox" className="checkbox" checked={!!newUser.is_active} onChange={(e) => handleChange('is_active', e.target.checked)} />

@@ -4,6 +4,8 @@ import LoginPage from '@pages/LoginPage'
 import DashboardPage from '@pages/DashboardPage'
 import ObjectsPage from '@pages/ObjectsPage'
 import ObjectDetailsPage from '@pages/ObjectDetailsPage'
+import ObjectTasksPage from '@pages/ObjectTasksPage'
+import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
 import PlaceholderPage from '@pages/PlaceholderPage'
 import Layout from '@components/Layout'
@@ -41,9 +43,13 @@ function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/objects" element={<ObjectsPage />} />
             <Route path="/objects/:id" element={<ObjectDetailsPage />} />
-            <Route path="/users" element={<UsersPage />} />
+            <Route path="/objects/:id/tasks" element={<ObjectTasksPage />} />
+            <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
+            <Route
+              path="/users"
+              element={userRole === 'admin' || userRole === 'engineer' ? <UsersPage /> : <Navigate to="/" replace />}
+            />
             <Route path="/notifications" element={<PlaceholderPage title="Уведомления" description="Здесь будут уведомления." />} />
-            <Route path="/settings" element={<PlaceholderPage title="Настройки" description="Здесь будут настройки." />} />
           </Route>
         </Routes>
       </Router>
