@@ -9,6 +9,7 @@ from app.modules.tasks.schemas import (
     ObjectTaskCreate,
     ObjectTaskRead,
     ObjectTaskStatusUpdate,
+    ObjectTaskStatusUpdateRead,
     ObjectTaskTreeRead,
     ObjectTaskUpdate,
 )
@@ -20,7 +21,8 @@ from app.modules.tasks.service import (
     update_object_task,
     build_available_task_tree,
     list_main_object_tasks,
-    get_progress
+    get_main_task_id,
+    get_progress,
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -103,7 +105,7 @@ async def get_object_progress(
 async def get_available_subtasks_for_main_task(
     main_task: ObjectTask = Depends(get_object_task_or_404),
     db: AsyncSession = Depends(get_db_session),
-) -> list[dict]:
+) -> dict:
     
     return await build_available_task_tree(db, main_task=main_task)
 
@@ -128,7 +130,7 @@ async def update_task_for_object(
 
 @router.patch(
     "/{object_id}/tasks/{task_id}/status",
-    response_model=ObjectTaskRead,
+    response_model=ObjectTaskStatusUpdateRead,
     summary="Update object task status",
     dependencies=[Depends(user_can_access_object)]
 )
@@ -137,13 +139,19 @@ async def update_task_status_for_object(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
-) -> ObjectTask:
-    return await update_object_task(
+) -> dict:
+    updated_task = await update_object_task(
         db,
         object_task=object_task,
         task_data=ObjectTaskUpdate(status=task_data.status),
         current_user=current_user,
     )
+    response = ObjectTaskRead.model_validate(updated_task).model_dump()
+    response["main_task_id"] = await get_main_task_id(
+        db,
+        object_task=updated_task,
+    )
+    return response
 
 @router.delete(
     "/{object_id}/tasks/{task_id}",

@@ -5,13 +5,15 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy import update
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.db.session import AsyncSessionLocal
-from app.modules.tasks.models import TaskTemplate
+from app.modules.tasks.models import ObjectTask, TaskChildrenMode, TaskTemplate
+from task_branch_classifier import classify_children_mode
 
 
 async def import_task_templates(input_path: Path) -> None:
@@ -27,6 +29,12 @@ async def import_task_templates(input_path: Path) -> None:
         for node in data["nodes"]
         if node["source_id"] not in root_source_ids
     ]
+    children_by_parent_source_id: dict[str | None, list[dict]] = {}
+    for node in data["nodes"]:
+        children_by_parent_source_id.setdefault(
+            node["parent_source_id"],
+            [],
+        ).append(node)
 
     source_ids = {node["source_id"] for node in nodes}
 
@@ -53,6 +61,13 @@ async def import_task_templates(input_path: Path) -> None:
             template.title = node["title"]
             template.depth = max(node["depth"] - 1, 0)
             template.sort_order = node["sort_order"]
+            template.children_mode = TaskChildrenMode(
+                node.get("children_mode")
+                or classify_children_mode(
+                    node,
+                    children_by_parent_source_id.get(source_id, []),
+                )
+            )
             template.is_active = True
 
             by_source_id[source_id] = template
@@ -68,6 +83,12 @@ async def import_task_templates(input_path: Path) -> None:
             else:
                 parent = by_source_id.get(parent_source_id)
                 template.parent_id = parent.id if parent else None
+
+            await db.execute(
+                update(ObjectTask)
+                .where(ObjectTask.template_id == template.id)
+                .values(children_mode=template.children_mode)
+            )
 
         await db.commit()
 

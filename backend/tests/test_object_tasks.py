@@ -2,7 +2,7 @@ from datetime import date
 
 from httpx import AsyncClient
 
-from app.modules.tasks.models import ObjectTaskStatus
+from app.modules.tasks.models import ObjectTaskStatus, TaskChildrenMode
 from app.modules.users.models import UserRole
 from tests.conftest import auth_headers, login
 
@@ -64,6 +64,7 @@ async def test_object_creation_copies_active_task_templates(
     assert tasks[0]["parent_id"] is None
     assert tasks[1]["parent_id"] == tasks[0]["id"]
     assert tasks[0]["status"] == ObjectTaskStatus.TODO
+    assert tasks[0]["children_mode"] == TaskChildrenMode.ALL
 
 
 async def test_foreman_can_complete_assigned_object_task(
@@ -105,6 +106,7 @@ async def test_foreman_can_complete_assigned_object_task(
     assert update_response.status_code == 200
     body = update_response.json()
     assert body["status"] == "done"
+    assert body["main_task_id"] == task_id
     assert body["completed_by_id"] == foreman.id
     assert body["completed_at"] is not None
 
@@ -149,6 +151,140 @@ async def test_foreman_can_mark_task_not_applicable(
     assert update_response.json()["status"] == "not_applicable"
     assert update_response.json()["completed_at"] is None
     assert update_response.json()["completed_by_id"] is None
+
+
+async def test_single_choice_task_marks_only_sibling_choice_not_applicable(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    foreman = await create_test_user(
+        email="foreman@example.com",
+        role=UserRole.FOREMAN,
+    )
+    root_template = await create_task_template(
+        title="Documentation",
+        source_id="root-1",
+        children_mode=TaskChildrenMode.SINGLE_CHOICE,
+    )
+    yes_template = await create_task_template(
+        title="Есть РД",
+        parent_id=root_template.id,
+        source_id="yes-1",
+        parent_source_id="root-1",
+        depth=1,
+        sort_order=0,
+    )
+    no_template = await create_task_template(
+        title="Нет РД",
+        parent_id=root_template.id,
+        source_id="no-1",
+        parent_source_id="root-1",
+        depth=1,
+        sort_order=1,
+    )
+    await create_task_template(
+        title="Continue with RD",
+        parent_id=yes_template.id,
+        source_id="yes-child-1",
+        parent_source_id="yes-1",
+        depth=2,
+    )
+    await create_task_template(
+        title="Work by PPR",
+        parent_id=no_template.id,
+        source_id="no-child-1",
+        parent_source_id="no-1",
+        depth=2,
+    )
+    admin_token = await login(client, email="admin@example.com")
+
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(admin_token),
+        json=object_payload(),
+    )
+    object_id = create_response.json()["id"]
+    await client.post(
+        f"/api/v1/objects/{object_id}/assign/{foreman.id}",
+        headers=auth_headers(admin_token),
+    )
+    tasks_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(admin_token),
+    )
+    tasks = tasks_response.json()
+    root_task = next(task for task in tasks if task["title"] == "Documentation")
+    yes_task = next(task for task in tasks if task["title"] == "Есть РД")
+    foreman_token = await login(client, email="foreman@example.com")
+
+    update_response = await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{yes_task['id']}/status",
+        headers=auth_headers(foreman_token),
+        json={"status": "done"},
+    )
+    list_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(admin_token),
+    )
+    progress_response = await client.get(
+        f"/api/v1/objects/{object_id}/progress",
+        headers=auth_headers(admin_token),
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["main_task_id"] == root_task["id"]
+    updated_tasks = list_response.json()
+    assert next(task for task in updated_tasks if task["title"] == "Есть РД")[
+        "status"
+    ] == "done"
+    assert next(task for task in updated_tasks if task["title"] == "Continue with RD")[
+        "status"
+    ] == "todo"
+    assert next(task for task in updated_tasks if task["title"] == "Нет РД")[
+        "status"
+    ] == "not_applicable"
+    assert next(task for task in updated_tasks if task["title"] == "Work by PPR")[
+        "status"
+    ] == "todo"
+    assert progress_response.json() == 33
+    continue_task = next(
+        task
+        for task in updated_tasks
+        if task["title"] == "Continue with RD"
+    )
+
+    child_update_response = await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{continue_task['id']}/status",
+        headers=auth_headers(foreman_token),
+        json={"status": "done"},
+    )
+
+    assert child_update_response.status_code == 200
+    assert child_update_response.json()["main_task_id"] == root_task["id"]
+
+    reset_response = await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{yes_task['id']}/status",
+        headers=auth_headers(foreman_token),
+        json={"status": "todo"},
+    )
+    reset_list_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(admin_token),
+    )
+
+    assert reset_response.status_code == 200
+    reset_tasks = reset_list_response.json()
+    assert next(task for task in reset_tasks if task["title"] == "Есть РД")[
+        "status"
+    ] == "todo"
+    assert next(task for task in reset_tasks if task["title"] == "Нет РД")[
+        "status"
+    ] == "todo"
+    assert next(task for task in reset_tasks if task["title"] == "Work by PPR")[
+        "status"
+    ] == "todo"
 
 
 async def test_foreman_cannot_edit_object_task_title(
