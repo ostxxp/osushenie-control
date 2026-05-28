@@ -12,7 +12,7 @@ from app.db.session import get_db_session
 from app.main import app
 from app.modules.auth.models import AuthSession, RevokedAccessToken  # noqa: F401
 from app.modules.objects.models import ConstructionObject, ObjectToUser  # noqa: F401
-from app.modules.tasks.models import ObjectTask, TaskTemplate  # noqa: F401
+from app.modules.tasks.models import ObjectTask, TaskChildrenMode, TaskTemplate  # noqa: F401
 from app.modules.users.models import User, UserRole
 
 
@@ -131,6 +131,7 @@ def create_task_template(
         parent_source_id: str | None = None,
         depth: int = 0,
         sort_order: int = 0,
+        children_mode: TaskChildrenMode = TaskChildrenMode.ALL,
         is_active: bool = True,
     ) -> TaskTemplate:
         async with session_factory() as session:
@@ -141,6 +142,7 @@ def create_task_template(
                 title=title,
                 depth=depth,
                 sort_order=sort_order,
+                children_mode=children_mode,
                 is_active=is_active,
             )
             session.add(template)

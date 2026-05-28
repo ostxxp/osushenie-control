@@ -6,6 +6,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from task_branch_classifier import classify_children_mode
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = PROJECT_ROOT / "devdata" / "Контроль за объектом. Карта.xmind"
@@ -38,6 +40,16 @@ def parse_topic(
 ) -> dict[str, Any]:
     title = normalize_title(topic.get("title"))
     current_path = [*(path or []), title]
+    children = [
+        parse_topic(
+            child,
+            parent_source_id=topic.get("id"),
+            depth=depth + 1,
+            sort_order=index,
+            path=current_path,
+        )
+        for index, child in enumerate(get_children(topic))
+    ]
 
     return {
         "source_id": topic.get("id"),
@@ -46,16 +58,8 @@ def parse_topic(
         "depth": depth,
         "sort_order": sort_order,
         "path": current_path,
-        "children": [
-            parse_topic(
-                child,
-                parent_source_id=topic.get("id"),
-                depth=depth + 1,
-                sort_order=index,
-                path=current_path,
-            )
-            for index, child in enumerate(get_children(topic))
-        ],
+        "children_mode": classify_children_mode({"title": title}, children),
+        "children": children,
     }
 
 
@@ -76,6 +80,7 @@ def flatten_topic(
         "sort_order": topic["sort_order"],
         "path": topic["path"],
         "has_children": bool(children),
+        "children_mode": topic["children_mode"],
     }
 
     result = [current]

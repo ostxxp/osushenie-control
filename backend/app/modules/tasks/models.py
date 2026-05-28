@@ -15,6 +15,11 @@ class ObjectTaskStatus(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class TaskChildrenMode(StrEnum):
+    ALL = "all"
+    SINGLE_CHOICE = "single_choice"
+
+
 class TaskTemplate(Base):
     __tablename__ = "task_templates"
 
@@ -42,6 +47,11 @@ class TaskTemplate(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     depth: Mapped[int] = mapped_column(Integer, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    children_mode: Mapped[TaskChildrenMode] = mapped_column(
+        String(32),
+        default=TaskChildrenMode.ALL,
+        nullable=False,
+    )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -91,6 +101,11 @@ class ObjectTask(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     depth: Mapped[int] = mapped_column(Integer, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    children_mode: Mapped[TaskChildrenMode] = mapped_column(
+        String(32),
+        default=TaskChildrenMode.ALL,
+        nullable=False,
+    )
 
     status: Mapped[ObjectTaskStatus] = mapped_column(
         Enum(ObjectTaskStatus, name="object_task_status"),
