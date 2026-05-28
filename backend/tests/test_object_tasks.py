@@ -362,6 +362,94 @@ async def test_object_tasks_tree_keeps_parent_child_structure(
     assert tree[0]["children"][0]["title"] == "Child task"
 
 
+async def test_available_tasks_returns_all_main_task_trees_until_todo(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    first_root = await create_task_template(
+        title="First header",
+        source_id="first-root",
+        sort_order=0,
+    )
+    first_child = await create_task_template(
+        title="Done child",
+        parent_id=first_root.id,
+        source_id="first-child",
+        parent_source_id="first-root",
+        depth=1,
+        sort_order=0,
+    )
+    await create_task_template(
+        title="Next todo",
+        parent_id=first_child.id,
+        source_id="first-grandchild",
+        parent_source_id="first-child",
+        depth=2,
+        sort_order=0,
+    )
+    second_root = await create_task_template(
+        title="Second header",
+        source_id="second-root",
+        sort_order=1,
+    )
+    await create_task_template(
+        title="Second todo",
+        parent_id=second_root.id,
+        source_id="second-child",
+        parent_source_id="second-root",
+        depth=1,
+        sort_order=0,
+    )
+    await create_task_template(
+        title="Hidden header",
+        source_id="hidden-root",
+        sort_order=2,
+    )
+    access_token = await login(client, email="admin@example.com")
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(access_token),
+        json=object_payload(),
+    )
+    object_id = create_response.json()["id"]
+    tasks_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(access_token),
+    )
+    tasks = tasks_response.json()
+    done_child = next(task for task in tasks if task["title"] == "Done child")
+    hidden_header = next(task for task in tasks if task["title"] == "Hidden header")
+    await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{done_child['id']}/status",
+        headers=auth_headers(access_token),
+        json={"status": "done"},
+    )
+    await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{hidden_header['id']}/status",
+        headers=auth_headers(access_token),
+        json={"status": "not_applicable"},
+    )
+
+    response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks/available",
+        headers=auth_headers(access_token),
+    )
+
+    assert response.status_code == 200
+    available_trees = response.json()
+    assert [tree["title"] for tree in available_trees] == [
+        "First header",
+        "Second header",
+    ]
+    assert available_trees[0]["children"][0]["title"] == "Done child"
+    assert available_trees[0]["children"][0]["children"][0]["title"] == "Next todo"
+    assert available_trees[0]["children"][0]["children"][0]["children"] == []
+    assert available_trees[1]["children"][0]["title"] == "Second todo"
+    assert available_trees[1]["children"][0]["children"] == []
+
+
 async def test_foreman_cannot_read_unassigned_object_tasks(
     client: AsyncClient,
     create_test_user,
