@@ -358,6 +358,30 @@ async def build_available_task_tree(
 
     return await serialize_until_blocker(main_task)
 
+
+async def build_available_task_trees(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> list[dict]:
+    result = await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.object_id == object_id,
+            ObjectTask.parent_id.is_(None),
+            ObjectTask.is_active.is_(True),
+            ObjectTask.status.notin_(BLOCKING_STATUSES),
+        )
+        .order_by(ObjectTask.sort_order, ObjectTask.id)
+    )
+    main_tasks = result.scalars().all()
+
+    return [
+        await build_available_task_tree(db, main_task=main_task)
+        for main_task in main_tasks
+    ]
+
+
 async def get_progress(
     db: AsyncSession,
     *,

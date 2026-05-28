@@ -20,6 +20,7 @@ from app.modules.tasks.service import (
     list_object_tasks,
     update_object_task,
     build_available_task_tree,
+    build_available_task_trees,
     list_main_object_tasks,
     get_main_task_id,
     get_progress,
@@ -95,6 +96,19 @@ async def get_object_progress(
     db: AsyncSession = Depends(get_db_session),
 ) -> float:
     return await get_progress(db, object_id=object.id)
+
+@router.get(
+    "/{object_id}/tasks/available",
+    response_model=list[ObjectTaskTreeRead],
+    summary="Get available task trees for all main object tasks",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_available_task_trees(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    return await build_available_task_trees(db, object_id=object.id)
+
 
 @router.get(
     "/{object_id}/tasks/{task_id}/available",
