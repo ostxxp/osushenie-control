@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.modules.objects.dependencies import get_object_or_404, user_can_access_object
 from app.modules.objects.models import ConstructionObject
-from app.modules.tasks.models import ObjectTask
+from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
     ObjectTaskCreate,
     ObjectTaskRead,
@@ -143,21 +143,21 @@ async def update_task_for_object(
     )
 
 @router.patch(
-    "/{object_id}/tasks/{task_id}/status",
+    "/{object_id}/tasks/{task_id}/toggle_status",
     response_model=ObjectTaskStatusUpdateRead,
-    summary="Update object task status",
+    summary="Toggle object task status between TODO and DONE",
     dependencies=[Depends(user_can_access_object)]
 )
 async def update_task_status_for_object(
-    task_data: ObjectTaskStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
 ) -> dict:
+    status = "done" if object_task.status == ObjectTaskStatus.TODO else "todo"
     updated_task = await update_object_task(
         db,
         object_task=object_task,
-        task_data=ObjectTaskUpdate(status=task_data.status),
+        task_data=ObjectTaskUpdate(status=status),
         current_user=current_user,
     )
     response = ObjectTaskRead.model_validate(updated_task).model_dump()
