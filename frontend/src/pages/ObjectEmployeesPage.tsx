@@ -7,13 +7,8 @@ import type { ConstructionObject, User, UserRole } from '@/types'
 const roleLabel: Record<UserRole, string> = {
   admin: 'Администратор',
   engineer: 'Инженер',
+  chief_engineer: 'Инженер',
   foreman: 'Прораб',
-}
-
-const roleColor: Record<UserRole, string> = {
-  admin: 'bg-slate-500',
-  engineer: 'bg-blue-500',
-  foreman: 'bg-yellow-500',
 }
 
 function ObjectEmployeesPage() {
@@ -81,7 +76,7 @@ function ObjectEmployeesPage() {
   const stats = useMemo(() => {
     return {
       total: employees.length,
-      engineers: employees.filter((user) => user.role === 'engineer').length,
+      engineers: employees.filter((user) => user.role === 'engineer' || user.role === 'chief_engineer').length,
       foremen: employees.filter((user) => user.role === 'foreman').length,
       admins: employees.filter((user) => user.role === 'admin').length,
     }
@@ -176,7 +171,7 @@ function ObjectEmployeesPage() {
                       </td>
                       <td className="px-4 py-3 text-base-content/70">{employee.email}</td>
                       <td className="px-4 py-3 text-right">
-                        {(userRole === 'admin' || userRole === 'engineer') && (
+                        {(userRole === 'admin' || userRole === 'chief_engineer') && (
                           <div className="flex items-center justify-end gap-2">
                             <button className="btn btn-ghost btn-xs" onClick={() => handleUnsetResponsible(employee.id)}>
                               Снять ответственность

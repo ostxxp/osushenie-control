@@ -8,7 +8,7 @@ export interface User {
   is_active: boolean
 }
 
-export type UserRole = 'admin' | 'engineer' | 'foreman'
+export type UserRole = 'admin' | 'chief_engineer' | 'engineer' | 'foreman'
 
 // Projects
 export interface Project {

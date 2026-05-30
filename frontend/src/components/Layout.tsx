@@ -1,14 +1,20 @@
-import { Outlet, Link } from 'react-router-dom'
+import { Outlet, Link, useNavigate } from 'react-router-dom'
 import { useContext } from 'react'
+import { flushSync } from 'react-dom'
 import { authService, AuthContext } from '@services/auth'
 
 function Layout() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
+  const navigate = useNavigate()
 
   const handleLogout = () => {
     authService.logout()
-    window.location.href = '/login'
+    flushSync(() => {
+      authContext?.setIsAuthenticated?.(false)
+      authContext?.setUserRole?.(null)
+    })
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -27,7 +33,7 @@ function Layout() {
             <Link to="/objects" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
               Объекты
             </Link>
-            {(userRole === 'admin' || userRole === 'engineer') && (
+            {(userRole === 'admin' || userRole === 'chief_engineer') && (
               <Link to="/users" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
                 Пользователи
               </Link>

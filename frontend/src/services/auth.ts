@@ -5,6 +5,8 @@ import type { User, LoginRequest, LoginResponse } from '@/types'
 export const AuthContext = createContext<{
   isAuthenticated: boolean
   userRole: string | null
+  setIsAuthenticated?: (value: boolean) => void
+  setUserRole?: (value: 'admin' | 'engineer' | 'foreman' | null) => void
 } | null>(null)
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'

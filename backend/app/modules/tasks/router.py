@@ -28,6 +28,7 @@ from app.modules.tasks.service import (
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
 from app.modules.users.models import User
+from app.modules.users.schemas import UserRead
 
 
 router = APIRouter()
@@ -56,7 +57,7 @@ async def get_object_tasks_tree(
     db: AsyncSession = Depends(get_db_session),
 ) -> list[dict]:
     tasks = await list_object_tasks(db, object_id=object.id)
-    return build_object_task_tree(tasks)
+    return await build_object_task_tree(db, tasks)
 
 @router.get(
     "/{object_id}/tasks/headers",
@@ -153,7 +154,7 @@ async def update_task_status_for_object(
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
 ) -> dict:
-    status = "done" if object_task.status == ObjectTaskStatus.TODO else "todo"
+    status = ObjectTaskStatus.DONE if object_task.status == ObjectTaskStatus.TODO else ObjectTaskStatus.TODO
     updated_task = await update_object_task(
         db,
         object_task=object_task,
@@ -161,6 +162,11 @@ async def update_task_status_for_object(
         current_user=current_user,
     )
     response = ObjectTaskRead.model_validate(updated_task).model_dump()
+    response["completed_by"] = (
+        UserRead.model_validate(current_user).model_dump()
+        if updated_task.status == ObjectTaskStatus.DONE
+        else None
+    )
     response["main_task_id"] = await get_main_task_id(
         db,
         object_task=updated_task,

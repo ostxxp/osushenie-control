@@ -14,7 +14,7 @@ import { AuthContext } from '@services/auth'
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<'admin' | 'engineer' | 'foreman' | null>(null)
+  const [userRole, setUserRole] = useState<'admin' | 'chief_engineer' | 'engineer' | 'foreman' | null>(null)
 
   useEffect(() => {
     // Check if user is already logged in
@@ -32,14 +32,14 @@ function App() {
   }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userRole }}>
+    <AuthContext.Provider value={{ isAuthenticated, userRole, setIsAuthenticated, setUserRole }}>
       <Router>
         <Routes>
           <Route
             path="/login"
-            element={isAuthenticated ? <Navigate to="/" /> : <LoginPage setIsAuthenticated={setIsAuthenticated} setUserRole={setUserRole} />}
+            element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage setIsAuthenticated={setIsAuthenticated} setUserRole={setUserRole} />}
           />
-          <Route element={<Layout />}>
+          <Route element={isAuthenticated ? <Layout /> : <Navigate to="/login" replace />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/objects" element={<ObjectsPage />} />
             <Route path="/objects/:id" element={<ObjectDetailsPage />} />
@@ -47,7 +47,7 @@ function App() {
             <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
             <Route
               path="/users"
-              element={userRole === 'admin' || userRole === 'engineer' ? <UsersPage /> : <Navigate to="/" replace />}
+              element={userRole === 'admin' || userRole === 'chief_engineer' ? <UsersPage /> : <Navigate to="/" replace />}
             />
             <Route path="/notifications" element={<PlaceholderPage title="Уведомления" description="Здесь будут уведомления." />} />
           </Route>

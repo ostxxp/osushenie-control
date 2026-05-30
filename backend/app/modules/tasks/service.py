@@ -13,6 +13,7 @@ from app.modules.tasks.models import (
 )
 from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
 from app.modules.users.models import User
+from app.modules.users.schemas import UserRead
 
 BLOCKING_STATUSES = {
     ObjectTaskStatus.SKIPPED,
@@ -98,7 +99,28 @@ async def list_main_object_tasks(
     return list(result.scalars().all())
 
 
-def build_object_task_tree(tasks: list[ObjectTask]) -> list[dict]:
+async def _build_completed_by_map(
+    db: AsyncSession,
+    tasks: list[ObjectTask],
+) -> dict[int, dict]:
+    completed_by_ids = {
+        task.completed_by_id
+        for task in tasks
+        if task.completed_by_id is not None
+    }
+    if not completed_by_ids:
+        return {}
+
+    result = await db.execute(select(User).where(User.id.in_(completed_by_ids)))
+    return {
+        user.id: UserRead.model_validate(user).model_dump()
+        for user in result.scalars().all()
+    }
+
+
+async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> list[dict]:
+    completed_by_map = await _build_completed_by_map(db, tasks)
+
     nodes_by_id = {
         task.id: {
             "id": task.id,
@@ -113,6 +135,7 @@ def build_object_task_tree(tasks: list[ObjectTask]) -> list[dict]:
             "is_active": task.is_active,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
+            "completed_by": completed_by_map.get(task.completed_by_id),
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -315,6 +338,11 @@ async def build_available_task_tree(
     *,
     main_task: ObjectTask,
 ) -> dict:
+    completed_by_map = await _build_completed_by_map(
+        db,
+        await _list_active_object_tasks(db, object_id=main_task.object_id),
+    )
+
     async def serialize_until_blocker(task: ObjectTask) -> dict:
         node = {
             "id": task.id,
@@ -329,6 +357,7 @@ async def build_available_task_tree(
             "is_active": task.is_active,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
+            "completed_by": completed_by_map.get(task.completed_by_id),
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],

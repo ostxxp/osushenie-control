@@ -4,7 +4,7 @@ import { authService } from '@services/auth'
 
 interface LoginPageProps {
   setIsAuthenticated: (value: boolean) => void
-  setUserRole: Dispatch<SetStateAction<'admin' | 'engineer' | 'foreman' | null>>
+  setUserRole: Dispatch<SetStateAction<'admin' | 'chief_engineer' | 'engineer' | 'foreman' | null>>
 }
 
 function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
@@ -23,7 +23,7 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
       const user = await authService.login({ username, password })
       setIsAuthenticated(true)
       setUserRole(user.role)
-      navigate('/')
+      navigate('/', { replace: true })
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Ошибка входа. Проверьте учетные данные.')
       console.error('Login error:', err)

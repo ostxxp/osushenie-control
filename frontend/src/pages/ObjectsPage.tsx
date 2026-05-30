@@ -14,6 +14,45 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
     )
   }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  const detail = (error as any)?.response?.data?.detail ?? (error as any)?.message
+
+  if (typeof detail === 'string') {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item
+        }
+
+        if (item && typeof item === 'object') {
+          const maybeMsg = (item as { msg?: unknown }).msg
+          if (typeof maybeMsg === 'string') {
+            return maybeMsg
+          }
+
+          return JSON.stringify(item)
+        }
+
+        return ''
+      })
+      .filter(Boolean)
+
+    if (messages.length > 0) {
+      return messages.join(', ')
+    }
+  }
+
+  if (detail && typeof detail === 'object') {
+    return JSON.stringify(detail)
+  }
+
+  return fallback
+}
+
 
 function ObjectsPage() {
   const authContext = useContext(AuthContext)
@@ -28,8 +67,6 @@ function ObjectsPage() {
   const [newObject, setNewObject] = useState({
     name: '',
     address: '',
-    description: '',
-    is_active: true,
     start_date: new Date().toISOString().slice(0, 10),
     end_date: '',
   })
@@ -57,7 +94,7 @@ function ObjectsPage() {
         const data = await objectApi.getAll()
         setObjects(data)
       } catch (err: any) {
-        setLoadError(err.response?.data?.detail || 'Ошибка загрузки объектов')
+        setLoadError(getErrorMessage(err, 'Ошибка загрузки объектов'))
         console.error(err)
       } finally {
         setLoading(false)
@@ -87,9 +124,11 @@ function ObjectsPage() {
   }
 
   const availableWorkers = useMemo(
-    () => users.filter((user) => user.role === 'engineer' || user.role === 'foreman'),
+    () => users.filter((user) => user.role === 'engineer' || user.role === 'chief_engineer' || user.role === 'foreman'),
     [users],
   )
+
+  const getWorkerRoleLabel = (role: string) => (role === 'engineer' || role === 'chief_engineer' ? 'Инженер' : 'Foreman')
 
   const filteredWorkers = useMemo(
     () =>
@@ -121,8 +160,6 @@ function ObjectsPage() {
       const payload: any = {
         name: newObject.name,
         address: newObject.address,
-        description: newObject.description || null,
-        is_active: !!newObject.is_active,
         start_date: newObject.start_date,
         end_date: newObject.end_date || null,
       }
@@ -145,13 +182,11 @@ function ObjectsPage() {
       setNewObject({
         name: '',
         address: '',
-        description: '',
-        is_active: true,
         start_date: new Date().toISOString().slice(0, 10),
         end_date: '',
       })
     } catch (err: any) {
-      setFormError(err.response?.data?.detail || 'Ошибка создания объекта')
+      setFormError(getErrorMessage(err, 'Ошибка создания объекта'))
       console.error(err)
     } finally {
       setCreating(false)
@@ -212,7 +247,7 @@ function ObjectsPage() {
                 </button>
               )}
             </div>
-            <p className="mt-2 text-sm text-base-content/70">Поиск по названию, адресу или статусу.</p>
+            <p className="mt-2 text-sm text-base-content/70">Поиск по названию или адресу.</p>
           </div>
           <div className="flex items-center gap-2">
             {search && <span className="badge badge-outline">Найдено {filteredObjects.length}</span>}
@@ -291,23 +326,7 @@ function ObjectsPage() {
                 value={newObject.address}
                 onChange={(e) => handleChange('address', e.target.value)}
               />
-              <input
-                className="input w-full col-span-1 sm:col-span-2"
-                placeholder="Короткое описание"
-                value={newObject.description}
-                onChange={(e) => handleChange('description', e.target.value)}
-              />
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={!!newObject.is_active}
-                    onChange={(e) => handleChange('is_active', e.target.checked)}
-                    className="checkbox"
-                  />
-                  <span>Активен</span>
-                </label>
-              </div>
+              {/* Description and active status removed from creation form */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="space-y-2">
                   <span className="text-sm font-medium">Начало объекта</span>
@@ -367,7 +386,7 @@ function ObjectsPage() {
                             >
                               <div>
                                 <div className="font-medium text-slate-900">{user.full_name}</div>
-                                <div className="text-xs text-slate-600">{user.role === 'engineer' ? 'Инженер' : 'Foreman'}</div>
+                                <div className="text-xs text-slate-600">{getWorkerRoleLabel(user.role)}</div>
                               </div>
                               <span className={`badge ${selectedWorkerIds.includes(user.id) ? 'badge-primary' : 'badge-outline'}`}>
                                 {selectedWorkerIds.includes(user.id) ? 'Выбрано' : 'Выбрать'}
@@ -396,10 +415,30 @@ function ObjectsPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button className="btn" onClick={() => setShowCreateObject(false)} disabled={creating}>
+              <button
+                className="btn"
+                onClick={() => {
+                  setShowCreateObject(false)
+                  setFormError('')
+                  setSelectedWorkerIds([])
+                  setNewObject({
+                    name: '',
+                    address: '',
+                    start_date: new Date().toISOString().slice(0, 10),
+                    end_date: '',
+                  })
+                  setWorkerSearch('')
+                  setWorkerDropdownOpen(false)
+                }}
+                disabled={creating}
+              >
                 Отмена
               </button>
-              <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+              <button
+                className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                onClick={handleCreate}
+                disabled={creating}
+              >
                 {creating ? 'Сохранение...' : 'Создать'}
               </button>
             </div>

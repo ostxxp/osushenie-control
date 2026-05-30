@@ -60,20 +60,7 @@ function TaskTreeRow({
   return (
     <>
       <tr className="border-t border-base-200 hover:bg-base-100">
-        <td className="px-4 py-3" style={{ paddingLeft: `${depth * 2 + 1}rem` }}>
-          <div className="flex items-center gap-2">
-            {hasChildren && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="text-base-content/70 hover:text-base-content"
-              >
-                {isExpanded ? '−' : '+'}
-              </button>
-            )}
-            {!hasChildren && <span className="w-6"></span>}
-            <span className="font-medium">{task.title}</span>
-          </div>
-        </td>
+        {/* node name column removed */}
         <td className="px-4 py-3">
           <button
             onClick={() => onStatusChange(task.id, nextStatus(task.status))}
@@ -126,10 +113,10 @@ function ObjectDetailsPage() {
         setTasks(tasksData)
         // Try to fetch responsible users for this object (may be empty)
         try {
-          const users = await objectApi.getResponsibleUsers(Number(id))
+          // fetch actual assigned users for this object
+          const users = await objectApi.getAssignedUsers(Number(id))
           setEmployees(users)
         } catch (e) {
-          // ignore if endpoint not available or returns error
           console.warn('Failed to load object users', e)
         }
       } catch (err: any) {
@@ -297,7 +284,7 @@ function ObjectDetailsPage() {
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-blue-800"></div>
                 <span className="text-sm text-base-content/80">Инженеры</span>
-                <span className="font-semibold">{employees.filter((u) => u.role === 'engineer').length}</span>
+                <span className="font-semibold">{employees.filter((u) => u.role === 'engineer' || u.role === 'chief_engineer').length}</span>
               </div>
 
               <div className="flex items-center gap-3">
@@ -310,32 +297,7 @@ function ObjectDetailsPage() {
         </div>
       </div>
 
-      {tasks.length > 0 && (
-        <div className="rounded-lg border border-base-200 bg-base-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-base-200">
-                <tr>
-                  <th className="px-4 py-3">Наименование узла</th>
-                  <th className="px-4 py-3">Статус</th>
-                  <th className="px-4 py-3">Выполнено</th>
-                  <th className="px-4 py-3">Выполнено</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task) => (
-                  <TaskTreeRow
-                    key={task.id}
-                    task={task}
-                    objectId={Number(id)}
-                    onStatusChange={handleStatusChange}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* tasks table intentionally removed */}
     </div>
   )
 }

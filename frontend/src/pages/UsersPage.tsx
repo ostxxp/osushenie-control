@@ -11,6 +11,57 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
   )
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  const detail = (error as any)?.response?.data?.detail ?? (error as any)?.message
+
+  if (typeof detail === 'string') {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item
+        }
+
+        if (item && typeof item === 'object') {
+          const maybeMsg = (item as { msg?: unknown }).msg
+          if (typeof maybeMsg === 'string') {
+            return maybeMsg
+          }
+
+          return JSON.stringify(item)
+        }
+
+        return ''
+      })
+      .filter(Boolean)
+
+    if (messages.length > 0) {
+      return messages.join(', ')
+    }
+  }
+
+  if (detail && typeof detail === 'object') {
+    return JSON.stringify(detail)
+  }
+
+  return fallback
+}
+
+function getUserRoleLabel(role: string): string {
+  if (role === 'engineer' || role === 'chief_engineer') {
+    return 'Инженер'
+  }
+
+  if (role === 'foreman') {
+    return 'Прораб'
+  }
+
+  return role
+}
+
 function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [search, setSearch] = useState('')
@@ -40,7 +91,7 @@ function UsersPage() {
         const data = await userApi.getAll()
         setUsers(data)
       } catch (err: any) {
-        setLoadError(err.response?.data?.detail || 'Ошибка загрузки пользователей')
+        setLoadError(getErrorMessage(err, 'Ошибка загрузки пользователей'))
         console.error(err)
       } finally {
         setLoading(false)
@@ -54,7 +105,8 @@ function UsersPage() {
     setNewUser((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleCreate = async () => {
+  const handleCreate = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.preventDefault()
     // Client-side validation
     if (!newUser.full_name.trim() || !newUser.email.trim() || !newUser.password) {
       setFormError('Пожалуйста, заполните обязательные поля: имя, email и пароль.')
@@ -73,7 +125,7 @@ function UsersPage() {
         full_name: newUser.full_name,
         email: newUser.email,
         password: newUser.password,
-        role: newUser.role,
+        role: newUser.role === 'engineer' ? 'chief_engineer' : newUser.role,
         is_active: !!newUser.is_active,
       }
 
@@ -88,7 +140,7 @@ function UsersPage() {
       setShowCreateUser(false)
       setNewUser({ full_name: '', email: '', password: '', role: 'foreman', is_active: true })
     } catch (err: any) {
-      setFormError(err.response?.data?.detail || 'Ошибка создания пользователя')
+      setFormError(getErrorMessage(err, 'Ошибка создания пользователя'))
       console.error(err)
     } finally {
       setCreating(false)
@@ -149,7 +201,7 @@ function UsersPage() {
                 </button>
               )}
             </div>
-            <p className="mt-2 text-sm text-base-content/70">Поиск по имени, email или роли.</p>
+            <p className="mt-2 text-sm text-base-content/70">Поиск по имени, должности или email.</p>
           </div>
           <div className="flex items-center gap-2">
             {search && <span className="badge badge-outline">Найдено {filteredUsers.length}</span>}
@@ -180,7 +232,7 @@ function UsersPage() {
                 user.role === 'admin' ? null : (
                   <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
                     <td className="px-4 py-3">{user.full_name}</td>
-                    <td className="px-4 py-3 capitalize">{user.role === 'engineer' ? 'Инженер' : user.role === 'foreman' ? 'Прораб' : user.role}</td>
+                    <td className="px-4 py-3 capitalize">{getUserRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{user.email}</td>
                   </tr>
                 )
@@ -230,16 +282,18 @@ function UsersPage() {
                 <option value="engineer">Инженер</option>
                 <option value="foreman">Прораб</option>
               </select>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" className="checkbox" checked={!!newUser.is_active} onChange={(e) => handleChange('is_active', e.target.checked)} />
-                <span>Активен</span>
-              </label>
+              {/* Активность пользователя назначается по умолчанию, поле скрыто */}
             </div>
             <div className="flex justify-end gap-2">
-              <button className="btn" onClick={() => setShowCreateUser(false)} disabled={creating}>
+              <button type="button" className="btn" onClick={() => setShowCreateUser(false)} disabled={creating}>
                 Отмена
               </button>
-              <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+              <button
+                type="button"
+                className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                onClick={handleCreate}
+                disabled={creating}
+              >
                 {creating ? 'Сохранение...' : 'Создать'}
               </button>
             </div>
