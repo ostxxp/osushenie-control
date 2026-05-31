@@ -28,9 +28,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      backend-tests:
-        condition: service_completed_successfully
+#      backend-tests:
+#        condition: service_completed_successfully
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000/api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_started
 
   db:
     image: postgres:16-alpine

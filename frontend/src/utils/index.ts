@@ -57,3 +57,20 @@ export const formatDateRu = (value: string | Date | null | undefined): string =>
     .format(date)
     .replace(/\./g, '/')
 }
+
+export const formatDateTimeRu = (value: string | Date | null | undefined): string => {
+  if (!value) {
+    return ''
+  }
+
+  const date = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(date)
+}

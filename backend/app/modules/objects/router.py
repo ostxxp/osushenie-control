@@ -63,7 +63,7 @@ async def list_objects(
             .join(ObjectToUser)
             .where(ObjectToUser.user_id == user.id)
         )
-    elif user.role != "admin" and user.role != "chief_engineer":
+    elif user.role not in ("admin", "chief_engineer", "engineer"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     result = await db.execute(query)

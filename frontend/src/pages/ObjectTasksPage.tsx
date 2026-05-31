@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { objectApi } from '@services/api'
+import { formatDateTimeRu } from '@/utils'
 import type { ConstructionObject, ObjectTaskStatus, ObjectTaskTree } from '@/types'
 
 function TaskTreeRow({
@@ -22,21 +23,10 @@ function TaskTreeRow({
 }) {
   const hasChildren = task.children && task.children.length > 0
   const isExpanded = expandedTaskIds.includes(task.id)
-  const selectedChildId = hasChildren ? task.children.find((child) => child.status === 'DONE')?.id ?? null : null
+  
 
-  const formatCompletedAt = (value: string) => {
-    // Normalize timezone: if backend returns a naive ISO string (no timezone),
-    // treat it as UTC by appending 'Z' so Date parses it consistently across browsers.
-    const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`
-    const date = new Date(iso)
-    return new Intl.DateTimeFormat('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    }).format(date)
-  }
-
-  const formatCompletedBy = (value: number) => {
-    return value > 0 ? `Пользователь #${value}` : '—'
+  const formatCompletedBy = (task: ObjectTaskTree) => {
+    return task.completed_by?.full_name || '—'
   }
 
 
@@ -58,17 +48,19 @@ function TaskTreeRow({
             <button
               type="button"
               onClick={async () => {
-                if (hasChildren) {
-                  if (selectedChildId !== null) {
-                    await onRevertTask(selectedChildId)
-                  }
-                  onFocusTask(task.id)
-                  return
-                }
+                // If this task itself is already DONE, revert it (even if it has children).
                 if (task.status === 'DONE') {
                   await onRevertTask(task.id)
                   return
                 }
+
+                // Otherwise, if it has children, focus the header/tree.
+                if (hasChildren) {
+                  onFocusTask(task.id)
+                  return
+                }
+
+                // Leaf node not done -> pick it.
                 await onPickTask(task.id)
               }}
               className="font-medium text-left transition-colors hover:text-primary"
@@ -81,10 +73,10 @@ function TaskTreeRow({
           {task.status === 'DONE' ? (
             <div className="space-y-0.5">
               <div className="font-medium text-base-content">
-                {formatCompletedBy(task.completed_by_id ?? 0)}
+                {formatCompletedBy(task)}
               </div>
               <div className="text-xs text-base-content/60">
-                {task.completed_at ? formatCompletedAt(task.completed_at) : '—'}
+                {task.completed_at ? formatDateTimeRu(task.completed_at) : '—'}
               </div>
             </div>
           ) : (

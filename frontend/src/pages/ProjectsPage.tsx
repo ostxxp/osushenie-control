@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { projectApi, taskApi } from '@services/api'
+import { authService } from '@services/auth'
 import { formatDateRu } from '@/utils'
 import type { Project, Task } from '@/types'
 
@@ -34,10 +35,21 @@ function ProjectsPage() {
     const fetchProjects = async () => {
       try {
         const data = await projectApi.getAll()
-        setProjects(data)
+        const currentUser = authService.getCurrentUser()
+
+        // If user is not admin, show only projects assigned to them (manager_id)
+        const visible =
+          currentUser && currentUser.role !== 'admin'
+            ? data.filter((p) => p.manager_id === currentUser.id)
+            : data
+
+        setProjects(visible)
         if (data.length > 0) {
-          setSelectedProject(data[0])
-          await loadTasks(data[0].id)
+          // select first visible project when available
+          if (visible.length > 0) {
+            setSelectedProject(visible[0])
+            await loadTasks(visible[0].id)
+          }
         }
       } catch (err: any) {
         setError('Ошибка загрузки проектов')
