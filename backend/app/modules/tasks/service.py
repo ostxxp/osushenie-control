@@ -11,6 +11,7 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
+from app.modules.notifications.schemas import NotificationBase
 from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
 from app.modules.users.models import User
 
@@ -197,6 +198,13 @@ async def update_object_task(
     for field in ("title", "sort_order", "children_mode", "is_active"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
+
+    notification = NotificationBase(
+        user_id=object_task.completed_by_id,
+        object_id=object_task.object_id,
+        message=f'Задача "{object_task.title}" на объекте "{object_task.object.name}" была обновлена.',
+    )
+    db.add(notification)
 
     db.add(object_task)
     await db.commit()
