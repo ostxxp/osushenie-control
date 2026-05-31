@@ -10,6 +10,7 @@ class ObjectTaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     sort_order: int | None = Field(default=None, ge=0)
     children_mode: TaskChildrenMode = TaskChildrenMode.ALL
+    deadline: datetime | None = None
 
 
 class ObjectTaskUpdate(BaseModel):
@@ -18,6 +19,7 @@ class ObjectTaskUpdate(BaseModel):
     children_mode: TaskChildrenMode | None = None
     status: ObjectTaskStatus | None = None
     is_active: bool | None = None
+    deadline: datetime | None = None
 
 
 class ObjectTaskStatusUpdate(BaseModel):
@@ -35,6 +37,7 @@ class ObjectTaskRead(BaseModel):
     children_mode: TaskChildrenMode
     status: ObjectTaskStatus
     is_active: bool
+    deadline: datetime | None
     completed_at: datetime | None
     completed_by_id: int | None
     created_at: datetime
