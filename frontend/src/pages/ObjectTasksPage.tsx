@@ -1,100 +1,109 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { objectApi } from '@services/api'
-import { formatDateTimeRu } from '@/utils'
-import type { ConstructionObject, ObjectTaskStatus, ObjectTaskTree } from '@/types'
+import { calculateLogicalTaskStats, formatDateTimeRu } from '@/utils'
+import type { ConstructionObject, ObjectTaskTree } from '@/types'
+
+function TaskStateIcon({ task }: { task: ObjectTaskTree }) {
+  if (task.status === 'done') {
+    return (
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
+        ✓
+      </span>
+    )
+  }
+
+  return <span className="inline-block h-5 w-5 rounded-full border-2 border-base-300 bg-white" />
+}
 
 function TaskTreeRow({
   task,
-  onPickTask,
-  onRevertTask,
+  onToggleTask,
   expandedTaskIds,
   onToggleExpand,
-  onFocusTask,
   depth = 0,
 }: {
   task: ObjectTaskTree
-  onPickTask: (taskId: number) => Promise<boolean>
-  onRevertTask: (taskId: number) => Promise<boolean>
+  onToggleTask: (taskId: number) => Promise<void>
   expandedTaskIds: number[]
   onToggleExpand: (taskId: number) => void
-  onFocusTask: (taskId: number) => void
   depth?: number
 }) {
-  const hasChildren = task.children && task.children.length > 0
+  const hasChildren = task.children.length > 0
+  const isMainTask = depth === 0
   const isExpanded = expandedTaskIds.includes(task.id)
-  
+  const isDone = task.status === 'done'
+  const canToggle = task.status !== 'not_applicable' && task.status !== 'skipped'
+  const shouldShowChildren = hasChildren && (!isMainTask || isExpanded)
+  const taskClickClass = canToggle || isMainTask ? 'cursor-pointer hover:text-primary' : 'cursor-not-allowed text-base-content/60'
 
-  const formatCompletedBy = (task: ObjectTaskTree) => {
-    return task.completed_by?.full_name || '—'
+  const handleTaskClick = () => {
+    if (isMainTask && hasChildren) {
+      onToggleExpand(task.id)
+      return
+    }
+
+    if (canToggle) {
+      onToggleTask(task.id)
+    }
   }
-
 
   return (
     <>
       <tr className="border-t border-base-200 hover:bg-base-100">
         <td className="px-4 py-3" style={{ paddingLeft: `${depth * 2 + 1}rem` }}>
-          <div className="flex items-center gap-2">
-            {hasChildren && (
-              <button
-                type="button"
-                onClick={() => onToggleExpand(task.id)}
-                className="text-base-content/70 hover:text-base-content"
-              >
-                {isExpanded ? '−' : '+'}
-              </button>
+          <div className="flex items-center gap-3">
+            {isMainTask ? (
+              hasChildren ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleExpand(task.id)
+                  }}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                  aria-label={isExpanded ? 'Свернуть задачу' : 'Развернуть задачу'}
+                >
+                  {isExpanded ? '−' : '+'}
+                </button>
+              ) : (
+                <span className="inline-block h-6 w-6" />
+              )
+            ) : (
+              <TaskStateIcon task={task} />
             )}
-            {!hasChildren && <span className="w-6" />}
+
             <button
               type="button"
-              onClick={async () => {
-                // If this task itself is already DONE, revert it (even if it has children).
-                if (task.status === 'DONE') {
-                  await onRevertTask(task.id)
-                  return
-                }
-
-                // Otherwise, if it has children, focus the header/tree.
-                if (hasChildren) {
-                  onFocusTask(task.id)
-                  return
-                }
-
-                // Leaf node not done -> pick it.
-                await onPickTask(task.id)
-              }}
-              className="font-medium text-left transition-colors hover:text-primary"
+              disabled={!canToggle && !isMainTask}
+              onClick={handleTaskClick}
+              className={`text-left font-medium transition-colors ${taskClickClass} ${isDone ? 'text-base-content' : ''}`}
             >
               {task.title}
             </button>
           </div>
         </td>
         <td className="px-4 py-3 text-sm text-base-content/70">
-          {task.status === 'DONE' ? (
+          {isDone ? (
             <div className="space-y-0.5">
-              <div className="font-medium text-base-content">
-                {formatCompletedBy(task)}
-              </div>
+              <div className="font-medium text-base-content">{task.completed_by?.full_name || '—'}</div>
               <div className="text-xs text-base-content/60">
                 {task.completed_at ? formatDateTimeRu(task.completed_at) : '—'}
               </div>
             </div>
           ) : (
-            <span></span>
+            '—'
           )}
         </td>
       </tr>
-      {isExpanded &&
-        hasChildren &&
+      {shouldShowChildren &&
         task.children.map((child) => (
           <TaskTreeRow
             key={child.id}
             task={child}
-            onPickTask={onPickTask}
-            onRevertTask={onRevertTask}
+            onToggleTask={onToggleTask}
             expandedTaskIds={expandedTaskIds}
             onToggleExpand={onToggleExpand}
-            onFocusTask={onFocusTask}
             depth={depth + 1}
           />
         ))}
@@ -106,88 +115,39 @@ function ObjectTasksPage() {
   const { id } = useParams<{ id: string }>()
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
+  const [allTasks, setAllTasks] = useState<ObjectTaskTree[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
 
-  const collectExpandedTaskIds = (nodes: ObjectTaskTree[]): number[] => {
-    const expandedIds = new Set<number>()
-
-    const traverse = (items: ObjectTaskTree[], depth = 0): boolean => {
-      let hasDoneInBranch = false
-
-      for (const node of items) {
-        const childHasDone = node.children.length > 0 ? traverse(node.children, depth + 1) : false
-        const isDone = node.status === 'DONE'
-
-        if (childHasDone || isDone) {
-          // do not auto-expand top-level (root) nodes (depth === 0)
-          if (depth > 0) {
-            expandedIds.add(node.id)
-          }
-          hasDoneInBranch = true
-        }
-      }
-
-      return hasDoneInBranch
-    }
-
-    traverse(nodes, 0)
-    return Array.from(expandedIds)
-  }
-
-  const loadData = async () => {
-    if (!id) return
+  const loadData = async (): Promise<ObjectTaskTree[]> => {
+    if (!id) return []
 
     try {
-      const [objData, treeData] = await Promise.all([
+      const [objData, treeData, fullTreeData] = await Promise.all([
         objectApi.getById(Number(id)),
         objectApi.getTasksTree(Number(id)),
+        objectApi.getFullTasksTree(Number(id)),
       ])
       setObjectItem(objData)
       setTasks(treeData)
-      setExpandedTaskIds(collectExpandedTaskIds(treeData))
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Ошибка загрузки задач')
+      setAllTasks(fullTreeData)
+      setError('')
+      return treeData
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(message || 'Ошибка загрузки задач')
       console.error(err)
+      return []
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    setExpandedTaskIds([])
     loadData()
   }, [id])
-
-  const findAncestorIds = (nodes: ObjectTaskTree[], targetId: number): number[] => {
-    for (const node of nodes) {
-      if (node.children?.some((child) => child.id === targetId)) {
-        return [node.id]
-      }
-
-      const descendants = findAncestorIds(node.children || [], targetId)
-      if (descendants.length > 0) {
-        return [node.id, ...descendants]
-      }
-    }
-
-    return []
-  }
-
-  const findPathIds = (nodes: ObjectTaskTree[], targetId: number): number[] => {
-    for (const node of nodes) {
-      if (node.id === targetId) {
-        return [node.id]
-      }
-
-      const childPath = findPathIds(node.children || [], targetId)
-      if (childPath.length > 0) {
-        return [node.id, ...childPath]
-      }
-    }
-
-    return []
-  }
 
   const toggleExpand = (taskId: number) => {
     setExpandedTaskIds((prev) =>
@@ -195,76 +155,18 @@ function ObjectTasksPage() {
     )
   }
 
-  const focusTask = (taskId: number) => {
-    const pathIds = findPathIds(tasks, taskId)
-    if (pathIds.length > 0) {
-      setExpandedTaskIds(pathIds)
-    }
-  }
-
-  const handlePickTask = async (taskId: number): Promise<boolean> => {
-    if (!id) return false
+  const handleToggleTask = async (taskId: number): Promise<void> => {
+    if (!id) return
 
     try {
       await objectApi.toggleTaskStatus(Number(id), taskId)
-      const ancestorIds = findAncestorIds(tasks, taskId)
       await loadData()
-      const pathIds = findPathIds(tasks, taskId)
-      setExpandedTaskIds(Array.from(new Set([...pathIds, ...ancestorIds])))
-      return true
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Ошибка обновления статуса:', err)
-      return false
     }
   }
 
-  const handleRevertTask = async (taskId: number): Promise<boolean> => {
-    if (!id) return false
-
-    try {
-      await objectApi.toggleTaskStatus(Number(id), taskId)
-      await loadData()
-      const pathIds = findPathIds(tasks, taskId)
-      setExpandedTaskIds(pathIds)
-      return true
-    } catch (err: any) {
-      console.error('Ошибка отката статуса:', err)
-      return false
-    }
-  }
-
-  const stats = useMemo(() => {
-    const countStatus = (status: ObjectTaskStatus, items: ObjectTaskTree[]): number => {
-      let count = 0
-      const traverse = (nodes: ObjectTaskTree[]) => {
-        for (const node of nodes) {
-          if (node.status === status) count++
-          if (node.children) traverse(node.children)
-        }
-      }
-      traverse(items)
-      return count
-    }
-
-    const countTotal = (items: ObjectTaskTree[]): number => {
-      let count = 0
-      const traverse = (nodes: ObjectTaskTree[]) => {
-        count += nodes.length
-        for (const node of nodes) {
-          if (node.children) traverse(node.children)
-        }
-      }
-      traverse(items)
-      return count
-    }
-
-    return {
-      total: countTotal(tasks),
-      done: countStatus('DONE', tasks),
-      inProgress: countStatus('IN_PROGRESS', tasks),
-      todo: countStatus('TODO', tasks),
-    }
-  }, [tasks])
+  const stats = useMemo(() => calculateLogicalTaskStats(allTasks), [allTasks])
 
   if (loading) {
     return (
@@ -297,10 +199,10 @@ function ObjectTasksPage() {
       <div className="space-y-2">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex flex-col items-start gap-2">
-          <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs text-sm px-2">
-            ← К объекту
-          </Link>
-          <h1 className="text-3xl font-semibold mt-1">{objectItem.name}</h1>
+            <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs text-sm px-2">
+              ← К объекту
+            </Link>
+            <h1 className="text-3xl font-semibold mt-1">{objectItem.name}</h1>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:mt-1">
@@ -333,7 +235,7 @@ function ObjectTasksPage() {
             <thead className="bg-base-200">
               <tr>
                 <th className="px-4 py-3">Наименование задачи</th>
-                <th className="px-4 py-3">Выполнено</th>
+                <th className="px-4 py-3">Кто выполнил</th>
               </tr>
             </thead>
             <tbody>
@@ -341,11 +243,9 @@ function ObjectTasksPage() {
                 <TaskTreeRow
                   key={task.id}
                   task={task}
-                  onPickTask={handlePickTask}
-                  onRevertTask={handleRevertTask}
+                  onToggleTask={handleToggleTask}
                   expandedTaskIds={expandedTaskIds}
                   onToggleExpand={toggleExpand}
-                  onFocusTask={focusTask}
                 />
               ))}
             </tbody>

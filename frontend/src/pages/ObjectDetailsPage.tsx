@@ -1,96 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { objectApi } from '@services/api'
-import { formatDateRu } from '@/utils'
-import type { ConstructionObject, ObjectTaskTree, ObjectTaskStatus, User } from '@/types'
-
-function TaskTreeRow({
-  task,
-  objectId,
-  onStatusChange,
-  depth = 0,
-}: {
-  task: ObjectTaskTree
-  objectId: number
-  onStatusChange: (taskId: number, status: ObjectTaskStatus) => void
-  depth?: number
-}) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const hasChildren = task.children && task.children.length > 0
-
-  const statusColor = (status: ObjectTaskStatus) => {
-    switch (status) {
-      case 'DONE':
-        return 'text-green-600'
-      case 'IN_PROGRESS':
-        return 'text-blue-600'
-      case 'TODO':
-        return 'text-gray-400'
-      default:
-        return 'text-gray-400'
-    }
-  }
-
-  const statusIcon = (status: ObjectTaskStatus) => {
-    switch (status) {
-      case 'DONE':
-        return '✓'
-      case 'IN_PROGRESS':
-        return '●'
-      case 'TODO':
-        return '○'
-      default:
-        return '○'
-    }
-  }
-
-  const nextStatus = (current: ObjectTaskStatus): ObjectTaskStatus => {
-    switch (current) {
-      case 'TODO':
-        return 'IN_PROGRESS'
-      case 'IN_PROGRESS':
-        return 'DONE'
-      case 'DONE':
-        return 'TODO'
-      default:
-        return 'TODO'
-    }
-  }
-
-  return (
-    <>
-      <tr className="border-t border-base-200 hover:bg-base-100">
-        {/* node name column removed */}
-        <td className="px-4 py-3">
-          <button
-            onClick={() => onStatusChange(task.id, nextStatus(task.status))}
-            className={`text-2xl hover:opacity-70 transition-opacity ${statusColor(task.status)}`}
-            title={`Статус: ${task.status}`}
-          >
-            {statusIcon(task.status)}
-          </button>
-        </td>
-        <td className="px-4 py-3 text-sm text-base-content/70">
-          {task.completed_at ? formatDateRu(task.completed_at) : '—'}
-        </td>
-        <td className="px-4 py-3 text-sm text-base-content/70">
-          {task.completed_by?.full_name || '—'}
-        </td>
-      </tr>
-      {isExpanded &&
-        hasChildren &&
-        task.children.map((child) => (
-          <TaskTreeRow
-            key={child.id}
-            task={child}
-            objectId={objectId}
-            onStatusChange={onStatusChange}
-            depth={depth + 1}
-          />
-        ))}
-    </>
-  )
-}
+import { calculateLogicalTaskStats, formatDateRu } from '@/utils'
+import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
 
 function ObjectDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -107,7 +19,7 @@ function ObjectDetailsPage() {
       try {
         const [objData, tasksData] = await Promise.all([
           objectApi.getById(Number(id)),
-          objectApi.getTasksTree(Number(id)),
+          objectApi.getFullTasksTree(Number(id)),
         ])
         setObjectItem(objData)
         setTasks(tasksData)
@@ -119,8 +31,9 @@ function ObjectDetailsPage() {
         } catch (e) {
           console.warn('Failed to load object users', e)
         }
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Ошибка загрузки данных')
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        setError(detail || 'Ошибка загрузки данных')
         console.error(err)
       } finally {
         setLoading(false)
@@ -130,50 +43,7 @@ function ObjectDetailsPage() {
     fetchData()
   }, [id])
 
-  const handleStatusChange = async (taskId: number, newStatus: ObjectTaskStatus) => {
-    if (!id) return
-    try {
-      await objectApi.updateTaskStatus(Number(id), taskId, newStatus)
-      // Refresh tasks
-      const updatedTasks = await objectApi.getTasksTree(Number(id))
-      setTasks(updatedTasks)
-    } catch (err: any) {
-      console.error('Ошибка обновления статуса:', err)
-    }
-  }
-
-  const stats = useMemo(() => {
-    const countStatus = (status: ObjectTaskStatus, items: ObjectTaskTree[]): number => {
-      let count = 0
-      const traverse = (nodes: ObjectTaskTree[]) => {
-        for (const node of nodes) {
-          if (node.status === status) count++
-          if (node.children) traverse(node.children)
-        }
-      }
-      traverse(items)
-      return count
-    }
-
-    const countTotal = (items: ObjectTaskTree[]): number => {
-      let count = 0
-      const traverse = (nodes: ObjectTaskTree[]) => {
-        count += nodes.length
-        for (const node of nodes) {
-          if (node.children) traverse(node.children)
-        }
-      }
-      traverse(items)
-      return count
-    }
-
-    return {
-      total: countTotal(tasks),
-      done: countStatus('DONE', tasks),
-      inProgress: countStatus('IN_PROGRESS', tasks),
-      todo: countStatus('TODO', tasks),
-    }
-  }, [tasks])
+  const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
 
   if (loading) {
     return (
@@ -284,7 +154,7 @@ function ObjectDetailsPage() {
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-blue-800"></div>
                 <span className="text-sm text-base-content/80">Инженеры</span>
-                <span className="font-semibold">{employees.filter((u) => u.role === 'engineer' || u.role === 'chief_engineer').length}</span>
+                <span className="font-semibold">{employees.filter((u) => u.role === 'chief_engineer').length}</span>
               </div>
 
               <div className="flex items-center gap-3">

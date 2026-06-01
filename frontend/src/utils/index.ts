@@ -1,5 +1,73 @@
-// Placeholder for utility functions
-// Add date formatters, validators, etc.
+import type { ObjectTaskTree } from '@/types'
+
+export type TaskStats = {
+  total: number
+  done: number
+  inProgress: number
+  todo: number
+}
+
+const createEmptyTaskStats = (): TaskStats => ({
+  total: 0,
+  done: 0,
+  inProgress: 0,
+  todo: 0,
+})
+
+const addTaskStatus = (stats: TaskStats, status: ObjectTaskTree['status']) => {
+  stats.total += 1
+
+  if (status === 'done') {
+    stats.done += 1
+  } else if (status === 'in_progress') {
+    stats.inProgress += 1
+  } else {
+    stats.todo += 1
+  }
+}
+
+const getSingleChoiceGroupStatus = (tasks: ObjectTaskTree[]): ObjectTaskTree['status'] => {
+  if (tasks.some((task) => task.status === 'done')) {
+    return 'done'
+  }
+
+  if (tasks.some((task) => task.status === 'in_progress')) {
+    return 'in_progress'
+  }
+
+  return 'todo'
+}
+
+export const calculateLogicalTaskStats = (tasks: ObjectTaskTree[]): TaskStats => {
+  const stats = createEmptyTaskStats()
+
+  const countChildren = (children: ObjectTaskTree[], childrenMode: ObjectTaskTree['children_mode']) => {
+    if (childrenMode === 'single_choice') {
+      if (children.length > 0) {
+        addTaskStatus(stats, getSingleChoiceGroupStatus(children))
+      }
+
+      children.forEach((child) => countChildren(child.children, child.children_mode))
+      return
+    }
+
+    children.forEach((child) => {
+      addTaskStatus(stats, child.status)
+      countChildren(child.children, child.children_mode)
+    })
+  }
+
+  tasks.forEach((rootTask) => {
+    if (rootTask.children.length === 0) {
+      addTaskStatus(stats, rootTask.status)
+      return
+    }
+
+    countChildren(rootTask.children, rootTask.children_mode)
+  })
+
+  return stats
+}
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
