@@ -30,7 +30,7 @@ async def set_responsible_status(
     if object_to_user is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must be assigned to the object before changing responsible status.",
+            detail="Пользователь не назначен на этот объект.",
         )
 
     object_to_user.is_responsible = is_responsible

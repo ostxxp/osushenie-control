@@ -19,15 +19,15 @@ def _validate_phone_number(value: str | None) -> str | None:
 
     if not _PHONE_ALLOWED_PATTERN.fullmatch(phone_number):
         raise ValueError(
-            "Phone number can contain only digits, spaces, '.', '-', parentheses, and one leading '+'."
+            "Номер телефона может содержать только цифры, пробелы, '.', '-', круглые скобки и один ведущий '+'."
         )
 
     if not _has_valid_parentheses(phone_number):
-        raise ValueError("Phone number contains invalid parentheses.")
+        raise ValueError("Номер телефона содержит недопустимые круглые скобки.")
 
     digits_count = sum(char.isdigit() for char in phone_number)
     if digits_count < 7 or digits_count > 15:
-        raise ValueError("Phone number must contain 7 to 15 digits.")
+        raise ValueError("Номер телефона должен содержать от 7 до 15 цифр.")
 
     return phone_number
 

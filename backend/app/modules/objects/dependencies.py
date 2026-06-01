@@ -21,7 +21,7 @@ async def get_object_or_404(
     if obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Object not found",
+            detail="Объект не найден.",
         )
 
     return obj
@@ -43,7 +43,7 @@ async def get_object_to_user_or_404(
     if obj_to_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User is not assigned to the object.",
+            detail="Пользователь не назначен на этот объект.",
         )
 
     return obj_to_user
@@ -66,6 +66,6 @@ async def user_can_access_object(
     if obj_to_user is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this object.",
+            detail="У вас нет доступа к этому объекту.",
         )
     return obj_to_user is not None

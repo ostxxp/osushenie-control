@@ -156,7 +156,7 @@ async def get_object(
         if association is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have access to this object.",
+                detail="У вас нет доступа к этому объекту.",
             )
     return object
 
@@ -216,7 +216,7 @@ async def assign_user_to_object(
     if existing_association.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is already assigned to the object.",
+            detail="Пользователь уже назначен на этот объект.",
         )
     association = ObjectToUser(
         object_id=object.id,
@@ -241,7 +241,7 @@ async def unassign_user_from_object(
     if object_to_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User is not assigned to the object.",
+            detail="Пользователь не назначен на этот объект.",
         )
     await db.delete(object_to_user)
     await db.commit()

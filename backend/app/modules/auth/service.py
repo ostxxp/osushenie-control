@@ -246,7 +246,7 @@ def _get_required_token_claims(payload: dict) -> tuple[int, str, str]:
 def _invalid_credentials() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="Неправильный токен",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
