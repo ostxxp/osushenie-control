@@ -1,5 +1,23 @@
 import authApi from './auth'
-import type { Project, Task, User, ConstructionObject, ObjectTask } from '@/types'
+import type {
+  Project,
+  Task,
+  User,
+  UserRole,
+  ConstructionObject,
+  ObjectTask,
+  ObjectTaskStatus,
+  ObjectTaskStatusUpdateResponse,
+  ObjectTaskTree,
+} from '@/types'
+
+type ConstructionObjectCreatePayload = {
+  name: string
+  address: string
+  is_active?: boolean
+  start_date: string
+  end_date?: string | null
+}
 
 export const projectApi = {
   getAll: async (): Promise<Project[]> => {
@@ -32,11 +50,43 @@ export const userApi = {
     const response = await authApi.get('/users')
     return response.data
   },
-  create: async (user: Omit<User, 'id' | 'created_at' | 'updated_at'> & { password: string }): Promise<User> => {
+  getForemen: async (): Promise<User[]> => {
+    const response = await authApi.get('/users/foremen')
+    return response.data
+  },
+  create: async (user: {
+    full_name: string
+    email: string
+    phone_number?: string | null
+    password: string
+    role: UserRole
+    is_active: boolean
+  }): Promise<User> => {
     const response = await authApi.post('/users', user)
     return response.data
   },
+  update: async (
+    userId: number,
+    user: Partial<{
+      full_name: string
+      email: string
+      phone_number: string | null
+      password: string
+      role: UserRole
+      is_active: boolean
+    }>,
+  ): Promise<User> => {
+    const response = await authApi.patch(`/users/${userId}`, user)
+    return response.data
+  },
 }
+
+const normalizeTask = (task: ObjectTaskTree, options: { hideNotApplicable: boolean }): ObjectTaskTree => ({
+  ...task,
+  children: (task.children || [])
+    .filter((child) => !options.hideNotApplicable || child.status !== 'not_applicable')
+    .map((child) => normalizeTask(child, options)),
+})
 
 export const objectApi = {
   getAll: async (): Promise<ConstructionObject[]> => {
@@ -47,7 +97,7 @@ export const objectApi = {
     const response = await authApi.get(`/objects/${id}`)
     return response.data
   },
-  create: async (obj: Omit<ConstructionObject, 'id' | 'created_at' | 'updated_at'>): Promise<ConstructionObject> => {
+  create: async (obj: ConstructionObjectCreatePayload): Promise<ConstructionObject> => {
     const response = await authApi.post('/objects', obj)
     return response.data
   },
@@ -59,14 +109,15 @@ export const objectApi = {
     const response = await authApi.delete(`/objects/${objectId}/unassign/${userId}`)
     return response.data
   },
-  getTasksTree: async (objectId: number): Promise<any[]> => {
+  getTasksTree: async (objectId: number): Promise<ObjectTaskTree[]> => {
     // Prefer /tasks/available, but fall back to /tasks/tree if unavailable.
     const tryAvailable = async () => {
       try {
         const resp = await authApi.get(`/objects/${objectId}/tasks/available`)
         return resp
-      } catch (err: any) {
-        if (err.response && (err.response.status === 404 || err.response.status === 405)) return null
+      } catch (err) {
+        const status = (err as { response?: { status?: number } }).response?.status
+        if (status === 404 || status === 405) return null
         throw err
       }
     }
@@ -80,15 +131,14 @@ export const objectApi = {
       return []
     }
 
-    const normalize = (nodes: any[]): any[] => {
-      return nodes.map((n: any) => ({
-        ...n,
-        status: typeof n.status === 'string' ? n.status.toUpperCase() : n.status,
-        children: n.children ? normalize(n.children) : [],
-      }))
-    }
-
-    return normalize(response.data || [])
+    return (response.data || [])
+      .filter((task: ObjectTaskTree) => task.status !== 'not_applicable')
+      .map((task: ObjectTaskTree) => normalizeTask(task, { hideNotApplicable: true }))
+  },
+  getFullTasksTree: async (objectId: number): Promise<ObjectTaskTree[]> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/tree`)
+    return (response.data || [])
+      .map((task: ObjectTaskTree) => normalizeTask(task, { hideNotApplicable: false }))
   },
   getTasksHeaders: async (objectId: number): Promise<ObjectTask[]> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/headers`)
@@ -110,7 +160,7 @@ export const objectApi = {
     const response = await authApi.patch(`/objects/${objectId}/assign/${userId}/responsible`)
     return response.data
   },
-  toggleTaskStatus: async (objectId: number, taskId: number): Promise<any> => {
+  toggleTaskStatus: async (objectId: number, taskId: number): Promise<ObjectTaskStatusUpdateResponse> => {
     const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}/toggle_status`)
     return response.data
   },
@@ -118,12 +168,24 @@ export const objectApi = {
     const response = await authApi.patch(`/objects/${objectId}/unassign/${userId}/responsible`)
     return response.data
   },
-  updateTaskStatus: async (objectId: number, taskId: number, status: string): Promise<any> => {
-    const normalizedStatus = status.toLowerCase()
-    const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}/status`, {
-      status: normalizedStatus,
-    })
-    return response.data
+  updateTaskStatus: async (
+    objectId: number,
+    taskId: number,
+    status: ObjectTaskStatus,
+  ): Promise<ObjectTaskStatusUpdateResponse> => {
+    try {
+      const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}/status`, {
+        status,
+      })
+      return response.data
+    } catch (err) {
+      const responseStatus = (err as { response?: { status?: number } }).response?.status
+      if (responseStatus !== 404 && responseStatus !== 405) {
+        throw err
+      }
+
+      return objectApi.toggleTaskStatus(objectId, taskId)
+    }
   },
 }
 

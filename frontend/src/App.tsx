@@ -9,22 +9,31 @@ import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
 import PlaceholderPage from '@pages/PlaceholderPage'
 import Layout from '@components/Layout'
-import { AuthContext } from '@services/auth'
+import { AuthContext, authService } from '@services/auth'
+import type { UserRole } from '@/types'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<'admin' | 'chief_engineer' | 'engineer' | 'foreman' | null>(null)
+  const [userRole, setUserRole] = useState<UserRole | null>(null)
 
   useEffect(() => {
-    // Check if user is already logged in
-    const token = localStorage.getItem('token')
-    const role = localStorage.getItem('role')
-    if (token && role) {
-      setIsAuthenticated(true)
-      setUserRole(role as any)
+    let cancelled = false
+
+    const checkAuth = async () => {
+      const user = await authService.loadCurrentUser()
+      if (cancelled) return
+
+      setIsAuthenticated(user !== null)
+      setUserRole(user?.role ?? null)
+      setLoading(false)
     }
-    setLoading(false)
+
+    checkAuth()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (loading) {
@@ -47,7 +56,7 @@ function App() {
             <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
             <Route
               path="/users"
-              element={userRole === 'admin' || userRole === 'chief_engineer' ? <UsersPage /> : <Navigate to="/" replace />}
+              element={userRole === 'admin' ? <UsersPage /> : <Navigate to="/" replace />}
             />
             <Route path="/notifications" element={<PlaceholderPage title="Уведомления" description="Здесь будут уведомления." />} />
           </Route>

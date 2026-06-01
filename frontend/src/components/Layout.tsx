@@ -8,8 +8,8 @@ function Layout() {
   const userRole = authContext?.userRole
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    authService.logout()
+  const handleLogout = async () => {
+    await authService.logout()
     flushSync(() => {
       authContext?.setIsAuthenticated?.(false)
       authContext?.setUserRole?.(null)
@@ -33,7 +33,7 @@ function Layout() {
             <Link to="/objects" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
               Объекты
             </Link>
-            {(userRole === 'admin' || userRole === 'chief_engineer') && (
+            {userRole === 'admin' && (
               <Link to="/users" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
                 Пользователи
               </Link>

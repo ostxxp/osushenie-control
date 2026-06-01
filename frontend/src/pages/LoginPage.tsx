@@ -1,10 +1,11 @@
 import { useState, Dispatch, SetStateAction } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authService } from '@services/auth'
+import type { UserRole } from '@/types'
 
 interface LoginPageProps {
   setIsAuthenticated: (value: boolean) => void
-  setUserRole: Dispatch<SetStateAction<'admin' | 'chief_engineer' | 'engineer' | 'foreman' | null>>
+  setUserRole: Dispatch<SetStateAction<UserRole | null>>
 }
 
 function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
@@ -24,8 +25,9 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
       setIsAuthenticated(true)
       setUserRole(user.role)
       navigate('/', { replace: true })
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Ошибка входа. Проверьте учетные данные.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Ошибка входа. Проверьте учетные данные.')
       console.error('Login error:', err)
     } finally {
       setLoading(false)

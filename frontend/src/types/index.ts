@@ -1,14 +1,16 @@
 // Users
 export interface User {
   id: number
-  username: string
   email: string
   full_name: string
+  phone_number?: string | null
   role: UserRole
   is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
-export type UserRole = 'admin' | 'chief_engineer' | 'engineer' | 'foreman'
+export type UserRole = 'admin' | 'chief_engineer' | 'foreman'
 
 // Projects
 export interface Project {
@@ -59,14 +61,17 @@ export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'completed'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
 // Object Tasks
-export type ObjectTaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE'
+export type ObjectTaskStatus = 'todo' | 'in_progress' | 'done' | 'skipped' | 'not_applicable'
+export type TaskChildrenMode = 'all' | 'single_choice'
 
 export interface ObjectTask {
   id: number
   object_id: number
   parent_id: number | null
+  template_id?: number | null
   title: string
   status: ObjectTaskStatus
+  children_mode: TaskChildrenMode
   depth: number
   sort_order: number
   is_active: boolean
@@ -79,6 +84,10 @@ export interface ObjectTask {
 
 export interface ObjectTaskTree extends ObjectTask {
   children: ObjectTaskTree[]
+}
+
+export interface ObjectTaskStatusUpdateResponse extends ObjectTask {
+  main_task_id: number
 }
 
 // Auth
