@@ -51,7 +51,7 @@ function ProjectsPage() {
             await loadTasks(visible[0].id)
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError('Ошибка загрузки проектов')
         
         console.error(err)
@@ -67,7 +67,7 @@ function ProjectsPage() {
     try {
       const data = await taskApi.getByProjectId(projectId)
       setTasks(data)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading tasks:', err)
       setTasks([])
     }

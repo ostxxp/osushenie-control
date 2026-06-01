@@ -11,11 +11,12 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-10 w-full max-w-2xl rounded-lg bg-base-100 p-6 shadow-lg">{children}</div>
     </div>
-    )
-  }
+  )
+}
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as any)?.response?.data?.detail ?? (error as any)?.message
+  const detail = (error as { response?: { data?: { detail?: unknown } }; message?: unknown })?.response?.data?.detail
+    ?? (error as { message?: unknown })?.message
 
   if (typeof detail === 'string') {
     return detail
@@ -93,7 +94,7 @@ function ObjectsPage() {
       try {
         const data = await objectApi.getAll()
         setObjects(data)
-      } catch (err: any) {
+      } catch (err: unknown) {
         setLoadError(getErrorMessage(err, 'Ошибка загрузки объектов'))
         console.error(err)
       } finally {
@@ -106,16 +107,18 @@ function ObjectsPage() {
 
   useEffect(() => {
     const fetchUsers = async () => {
+      if (userRole !== 'admin') return
+
       try {
         const data = await userApi.getAll()
         setUsers(data)
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err)
       }
     }
 
     fetchUsers()
-  }, [])
+  }, [userRole])
 
   const toggleWorker = (userId: number) => {
     setSelectedWorkerIds((prev) =>
@@ -124,11 +127,11 @@ function ObjectsPage() {
   }
 
   const availableWorkers = useMemo(
-    () => users.filter((user) => user.role === 'engineer' || user.role === 'chief_engineer' || user.role === 'foreman'),
+    () => users.filter((user) => user.role === 'chief_engineer' || user.role === 'foreman'),
     [users],
   )
 
-  const getWorkerRoleLabel = (role: string) => (role === 'engineer' || role === 'chief_engineer' ? 'Инженер' : 'Foreman')
+  const getWorkerRoleLabel = (role: string) => (role === 'chief_engineer' ? 'Инженер' : 'Прораб')
 
   const filteredWorkers = useMemo(
     () =>
@@ -157,9 +160,10 @@ function ObjectsPage() {
     setCreating(true)
     setFormError('')
     try {
-      const payload: any = {
+      const payload = {
         name: newObject.name,
         address: newObject.address,
+        is_active: true,
         start_date: newObject.start_date,
         end_date: newObject.end_date || null,
       }
@@ -185,7 +189,7 @@ function ObjectsPage() {
         start_date: new Date().toISOString().slice(0, 10),
         end_date: '',
       })
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormError(getErrorMessage(err, 'Ошибка создания объекта'))
       console.error(err)
     } finally {
@@ -249,12 +253,16 @@ function ObjectsPage() {
             </div>
             <p className="mt-2 text-sm text-base-content/70">Поиск по названию или адресу.</p>
           </div>
-          <div className="flex items-center gap-2">
-            {search && <span className="badge badge-outline">Найдено {filteredObjects.length}</span>}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            {search && (
+              <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
+                Найдено {filteredObjects.length}
+              </span>
+            )}
             {userRole === 'admin' && (
               <button
                 type="button"
-                className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
                 onClick={() => {
                   setFormError('')
                   setSelectedWorkerIds([])
@@ -358,7 +366,7 @@ function ObjectsPage() {
               </div>
               <div className="col-span-1 sm:col-span-2">
                 <div className="space-y-2 rounded-lg border border-base-200 bg-base-100 p-4">
-                  <p className="text-sm font-medium">Назначить инженеров и foremen</p>
+                  <p className="text-sm font-medium">Назначить сотрудников</p>
                   <div className="relative">
                     <input
                       className="input w-full"
@@ -450,4 +458,3 @@ function ObjectsPage() {
 }
 
 export default ObjectsPage
-

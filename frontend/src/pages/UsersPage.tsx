@@ -1,6 +1,30 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { userApi } from '@services/api'
-import type { User } from '@/types'
+import type { User, UserRole } from '@/types'
+
+type UserFormState = {
+  full_name: string
+  email: string
+  phone_number: string
+  password: string
+  role: UserRole
+  is_active: boolean
+}
+
+const emptyUserForm: UserFormState = {
+  full_name: '',
+  email: '',
+  phone_number: '',
+  password: '',
+  role: 'foreman',
+  is_active: true,
+}
+
+const roleLabel: Record<UserRole, string> = {
+  admin: 'Администратор',
+  chief_engineer: 'Инженер',
+  foreman: 'Прораб',
+}
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -12,7 +36,8 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  const detail = (error as any)?.response?.data?.detail ?? (error as any)?.message
+  const detail = (error as { response?: { data?: { detail?: unknown } }; message?: unknown })?.response?.data?.detail
+    ?? (error as { message?: unknown })?.message
 
   if (typeof detail === 'string') {
     return detail
@@ -21,20 +46,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
   if (Array.isArray(detail)) {
     const messages = detail
       .map((item) => {
-        if (typeof item === 'string') {
-          return item
-        }
-
-        if (item && typeof item === 'object') {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object' && 'msg' in item) {
           const maybeMsg = (item as { msg?: unknown }).msg
-          if (typeof maybeMsg === 'string') {
-            return maybeMsg
-          }
-
-          return JSON.stringify(item)
+          return typeof maybeMsg === 'string' ? maybeMsg : JSON.stringify(item)
         }
-
-        return ''
+        return JSON.stringify(item)
       })
       .filter(Boolean)
 
@@ -50,27 +67,21 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function getUserRoleLabel(role: string): string {
-  if (role === 'engineer' || role === 'chief_engineer') {
-    return 'Инженер'
-  }
-
-  if (role === 'foreman') {
-    return 'Прораб'
-  }
-
-  return role
-}
-
 function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
-  const [showCreateUser, setShowCreateUser] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [newUser, setNewUser] = useState({ full_name: '', email: '', password: '', role: 'foreman', is_active: true })
+  const [saving, setSaving] = useState(false)
+  const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [userForm, setUserForm] = useState<UserFormState>(emptyUserForm)
+
+  const loadUsers = async () => {
+    const data = await userApi.getAll()
+    setUsers(data)
+  }
 
   const filteredUsers = useMemo(
     () =>
@@ -79,7 +90,8 @@ function UsersPage() {
         return (
           user.full_name.toLowerCase().includes(query) ||
           user.email.toLowerCase().includes(query) ||
-          user.role.toLowerCase().includes(query)
+          (user.phone_number ?? '').toLowerCase().includes(query) ||
+          roleLabel[user.role].toLowerCase().includes(query)
         )
       }),
     [search, users],
@@ -88,9 +100,8 @@ function UsersPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const data = await userApi.getAll()
-        setUsers(data)
-      } catch (err: any) {
+        await loadUsers()
+      } catch (err: unknown) {
         setLoadError(getErrorMessage(err, 'Ошибка загрузки пользователей'))
         console.error(err)
       } finally {
@@ -101,49 +112,92 @@ function UsersPage() {
     fetchUsers()
   }, [])
 
-  const handleChange = (field: string, value: string | boolean) => {
-    setNewUser((prev) => ({ ...prev, [field]: value }))
+  const openCreateModal = () => {
+    setEditingUser(null)
+    setUserForm(emptyUserForm)
+    setFormError('')
+    setModalMode('create')
   }
 
-  const handleCreate = async (e?: React.MouseEvent<HTMLButtonElement>) => {
-    e?.preventDefault()
-    // Client-side validation
-    if (!newUser.full_name.trim() || !newUser.email.trim() || !newUser.password) {
-      setFormError('Пожалуйста, заполните обязательные поля: имя, email и пароль.')
-      return
-    }
-
-    if (newUser.password.length < 8) {
-      setFormError('Пароль должен содержать минимум 8 символов.')
-      return
-    }
-
-    setCreating(true)
+  const openEditModal = (user: User) => {
+    setEditingUser(user)
+    setUserForm({
+      full_name: user.full_name,
+      email: user.email,
+      phone_number: user.phone_number ?? '',
+      password: '',
+      role: user.role,
+      is_active: user.is_active,
+    })
     setFormError('')
+    setModalMode('edit')
+  }
+
+  const closeModal = () => {
+    setModalMode(null)
+    setEditingUser(null)
+    setUserForm(emptyUserForm)
+    setFormError('')
+  }
+
+  const handleChange = (field: keyof UserFormState, value: string | boolean) => {
+    setUserForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const validateForm = () => {
+    if (!userForm.full_name.trim() || !userForm.email.trim()) {
+      return 'Пожалуйста, заполните обязательные поля: имя и email.'
+    }
+
+    if (modalMode === 'create' && !userForm.password) {
+      return 'Пожалуйста, укажите пароль.'
+    }
+
+    if (userForm.password && userForm.password.length < 8) {
+      return 'Пароль должен содержать минимум 8 символов.'
+    }
+
+    return ''
+  }
+
+  const handleSubmit = async () => {
+    const validationError = validateForm()
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+
+    setSaving(true)
+    setFormError('')
+
+    const basePayload = {
+      full_name: userForm.full_name.trim(),
+      email: userForm.email.trim(),
+      phone_number: userForm.phone_number.trim() || null,
+      role: userForm.role,
+      is_active: userForm.is_active,
+    }
+
     try {
-      const payload: any = {
-        full_name: newUser.full_name,
-        email: newUser.email,
-        password: newUser.password,
-        role: newUser.role === 'engineer' ? 'chief_engineer' : newUser.role,
-        is_active: !!newUser.is_active,
+      if (modalMode === 'create') {
+        await userApi.create({
+          ...basePayload,
+          password: userForm.password,
+        })
+      } else if (modalMode === 'edit' && editingUser) {
+        await userApi.update(editingUser.id, {
+          ...basePayload,
+          ...(userForm.password ? { password: userForm.password } : {}),
+        })
       }
 
-      const created = await userApi.create(payload)
-      // Refresh list from server to avoid rendering errors if backend returns partial data
-      try {
-        const data = await userApi.getAll()
-        setUsers(data)
-      } catch (err) {
-        setUsers((prev) => [created, ...prev])
-      }
-      setShowCreateUser(false)
-      setNewUser({ full_name: '', email: '', password: '', role: 'foreman', is_active: true })
-    } catch (err: any) {
-      setFormError(getErrorMessage(err, 'Ошибка создания пользователя'))
+      await loadUsers()
+      closeModal()
+    } catch (err: unknown) {
+      setFormError(getErrorMessage(err, modalMode === 'create' ? 'Ошибка создания пользователя' : 'Ошибка обновления пользователя'))
       console.error(err)
     } finally {
-      setCreating(false)
+      setSaving(false)
     }
   }
 
@@ -201,17 +255,18 @@ function UsersPage() {
                 </button>
               )}
             </div>
-            <p className="mt-2 text-sm text-base-content/70">Поиск по имени, должности или email.</p>
+            <p className="mt-2 text-sm text-base-content/70">Поиск по имени, должности, телефону или email.</p>
           </div>
-          <div className="flex items-center gap-2">
-            {search && <span className="badge badge-outline">Найдено {filteredUsers.length}</span>}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            {search && (
+              <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
+                Найдено {filteredUsers.length}
+              </span>
+            )}
             <button
               type="button"
-              className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
-              onClick={() => {
-                setFormError('')
-                setShowCreateUser(true)
-              }}
+              className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
+              onClick={openCreateModal}
             >
               Добавить пользователя
             </button>
@@ -224,22 +279,34 @@ function UsersPage() {
               <tr>
                 <th className="px-4 py-3">Имя</th>
                 <th className="px-4 py-3">Должность</th>
+                <th className="px-4 py-3">Телефон</th>
                 <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Статус</th>
+                <th className="px-4 py-3 text-right">Действия</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                user.role === 'admin' ? null : (
-                  <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
-                    <td className="px-4 py-3">{user.full_name}</td>
-                    <td className="px-4 py-3 capitalize">{getUserRoleLabel(user.role)}</td>
-                    <td className="px-4 py-3">{user.email}</td>
-                  </tr>
-                )
+                <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
+                  <td className="px-4 py-3">{user.full_name}</td>
+                  <td className="px-4 py-3">{roleLabel[user.role]}</td>
+                  <td className="px-4 py-3">{user.phone_number || '—'}</td>
+                  <td className="px-4 py-3">{user.email}</td>
+                  <td className="px-4 py-3">
+                    <span className={`badge ${user.is_active ? 'badge-success' : 'badge-ghost'}`}>
+                      {user.is_active ? 'Работает' : 'Уволен'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => openEditModal(user)}>
+                      Редактировать
+                    </button>
+                  </td>
+                </tr>
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={6} className="px-4 py-6 text-center text-base-content/70">
                     Пользователей не найдено.
                   </td>
                 </tr>
@@ -248,53 +315,70 @@ function UsersPage() {
           </table>
         </div>
       </div>
-      {showCreateUser && (
-        <ModalBackdrop
-          onClose={() => {
-            setShowCreateUser(false)
-            setFormError('')
-          }}
-        >
+
+      {modalMode && (
+        <ModalBackdrop onClose={closeModal}>
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Создать пользователя</h2>
+            <h2 className="text-xl font-semibold">
+              {modalMode === 'create' ? 'Создать пользователя' : 'Редактировать пользователя'}
+            </h2>
             {formError && <div className="alert alert-error">{formError}</div>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input
                 className="input w-full"
                 placeholder="Ф.И.О. *"
-                value={newUser.full_name}
+                value={userForm.full_name}
                 onChange={(e) => handleChange('full_name', e.target.value)}
               />
               <input
                 className="input w-full"
                 placeholder="Email *"
-                value={newUser.email}
+                value={userForm.email}
                 onChange={(e) => handleChange('email', e.target.value)}
               />
               <input
                 className="input w-full"
-                placeholder="Пароль * (минимум 8 символов)"
+                placeholder="Телефон"
+                value={userForm.phone_number}
+                onChange={(e) => handleChange('phone_number', e.target.value)}
+              />
+              <input
+                className="input w-full"
+                placeholder={modalMode === 'create' ? 'Пароль * (минимум 8 символов)' : 'Новый пароль, если нужно'}
                 type="password"
-                value={newUser.password}
+                value={userForm.password}
                 onChange={(e) => handleChange('password', e.target.value)}
               />
-              <select className="select w-full" value={newUser.role} onChange={(e) => handleChange('role', e.target.value)}>
-                <option value="engineer">Инженер</option>
+              <select
+                className="select w-full"
+                value={userForm.role}
+                onChange={(e) => handleChange('role', e.target.value as UserRole)}
+              >
+                <option value="admin">Администратор</option>
+                <option value="chief_engineer">Инженер</option>
                 <option value="foreman">Прораб</option>
               </select>
-              {/* Активность пользователя назначается по умолчанию, поле скрыто */}
+              <label className="flex items-center gap-2 rounded-lg border border-base-200 px-3 py-2">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-primary"
+                  checked={userForm.is_active}
+                  onChange={(e) => handleChange('is_active', e.target.checked)}
+                />
+                <span>Работает</span>
+              </label>
             </div>
             <div className="flex justify-end gap-2">
-              <button type="button" className="btn" onClick={() => setShowCreateUser(false)} disabled={creating}>
+              <button type="button" className="btn" onClick={closeModal} disabled={saving}>
                 Отмена
               </button>
               <button
                 type="button"
                 className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
-                onClick={handleCreate}
-                disabled={creating}
+                onClick={handleSubmit}
+                disabled={saving}
               >
-                {creating ? 'Сохранение...' : 'Создать'}
+                {saving ? 'Сохранение...' : 'Сохранить'}
               </button>
             </div>
           </div>
