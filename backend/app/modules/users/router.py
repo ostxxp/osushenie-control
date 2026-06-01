@@ -154,8 +154,14 @@ async def activate_user_endpoint(
 )
 async def deactivate_user_endpoint(
     user: User = Depends(get_user_or_404),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user)
 ) -> None:
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account.",
+        )
     user.is_active = False
     await db.commit()
     await db.refresh(user)
