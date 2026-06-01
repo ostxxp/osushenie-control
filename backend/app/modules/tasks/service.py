@@ -11,6 +11,7 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
+from app.modules.notifications.models import Notifications
 from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
 from app.modules.users.models import User
 from app.modules.users.schemas import UserRead
@@ -132,6 +133,7 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
             "status": task.status,
+            "deadline": task.deadline,
             "is_active": task.is_active,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
@@ -219,6 +221,15 @@ async def update_object_task(
     for field in ("title", "sort_order", "children_mode", "is_active"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
+
+    construction_object = await db.get(ConstructionObject, object_task.object_id)
+    object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
+    notification = Notifications(
+        user_id=current_user.id,
+        object_id=object_task.object_id,
+        message=f'Задача "{object_task.title}" на объекте "{object_name}" была обновлена.',
+    )
+    db.add(notification)
 
     db.add(object_task)
     await db.commit()
@@ -354,6 +365,9 @@ async def build_available_task_tree(
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
             "status": task.status,
+            "deadline": task.deadline,
+            "days_until_deadline": (task.deadline - datetime.now(UTC)).days if task.deadline is not None else None,
+            "is_overdue": task.deadline is not None and task.deadline < datetime.now(UTC) and task.status != ObjectTaskStatus.DONE,
             "is_active": task.is_active,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,

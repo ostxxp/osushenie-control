@@ -144,6 +144,31 @@ async def update_task_for_object(
     )
 
 @router.patch(
+    "/{object_id}/tasks/{task_id}/status",
+    response_model=ObjectTaskStatusUpdateRead,
+    summary="Update object task status",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def update_task_status_for_object(
+    task_data: ObjectTaskStatusUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404)
+) -> dict:
+    updated_task = await update_object_task(
+        db,
+        object_task=object_task,
+        task_data=task_data,
+        current_user=current_user,
+    )
+    response = ObjectTaskRead.model_validate(updated_task).model_dump()
+    response["main_task_id"] = await get_main_task_id(
+        db,
+        object_task=updated_task,
+    )
+    return response
+
+@router.patch(
     "/{object_id}/tasks/{task_id}/toggle_status",
     response_model=ObjectTaskStatusUpdateRead,
     summary="Toggle object task status between TODO and DONE",
