@@ -11,7 +11,7 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
-from app.modules.notifications.schemas import NotificationBase
+from app.modules.notifications.models import Notifications
 from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
 from app.modules.users.models import User
 
@@ -199,10 +199,12 @@ async def update_object_task(
         if field in update_data:
             setattr(object_task, field, update_data[field])
 
-    notification = NotificationBase(
-        user_id=object_task.completed_by_id,
+    construction_object = await db.get(ConstructionObject, object_task.object_id)
+    object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
+    notification = Notifications(
+        user_id=current_user.id,
         object_id=object_task.object_id,
-        message=f'Задача "{object_task.title}" на объекте "{object_task.object.name}" была обновлена.',
+        message=f'Задача "{object_task.title}" на объекте "{object_name}" была обновлена.',
     )
     db.add(notification)
 
