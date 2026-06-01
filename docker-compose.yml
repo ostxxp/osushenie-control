@@ -1,8 +1,23 @@
 services:
+  backend-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m pytest -q -o asyncio_mode=auto -o asyncio_default_fixture_loop_scope=function tests
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: base
     container_name: backend
     env_file:
       - ./backend/.env
@@ -11,8 +26,28 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+#      backend-tests:
+#        condition: service_completed_successfully
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000/api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_started
+
   db:
     image: postgres:16-alpine
     container_name: db
@@ -22,5 +57,11 @@ services:
       - "5433:5432"
     volumes:
       - osushenie_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   osushenie_postgres_data:
