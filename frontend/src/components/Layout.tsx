@@ -1,10 +1,20 @@
-import { Outlet, Link } from 'react-router-dom'
-import { authService } from '@services/auth'
+import { Outlet, Link, useNavigate } from 'react-router-dom'
+import { useContext } from 'react'
+import { flushSync } from 'react-dom'
+import { authService, AuthContext } from '@services/auth'
 
 function Layout() {
-  const handleLogout = () => {
-    authService.logout()
-    window.location.href = '/login'
+  const authContext = useContext(AuthContext)
+  const userRole = authContext?.userRole
+  const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    await authService.logout()
+    flushSync(() => {
+      authContext?.setIsAuthenticated?.(false)
+      authContext?.setUserRole?.(null)
+    })
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -23,14 +33,13 @@ function Layout() {
             <Link to="/objects" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
               Объекты
             </Link>
-            <Link to="/users" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
-              Пользователи
-            </Link>
+            {userRole === 'admin' && (
+              <Link to="/users" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
+                Пользователи
+              </Link>
+            )}
             <Link to="/notifications" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
               Уведомления
-            </Link>
-            <Link to="/settings" className="block rounded-lg px-4 py-3 text-base font-medium text-base-content hover:bg-base-200">
-              Настройки
             </Link>
           </div>
         </aside>

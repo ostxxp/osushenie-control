@@ -1,13 +1,80 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { objectApi } from '@services/api'
-import type { ConstructionObject } from '@/types'
+import { objectApi, userApi } from '@services/api'
+import { formatDateRu } from '@/utils'
+import type { ConstructionObject, User } from '@/types'
+import { AuthContext } from '@services/auth'
+
+function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl rounded-lg bg-base-100 p-6 shadow-lg">{children}</div>
+    </div>
+  )
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } }; message?: unknown })?.response?.data?.detail
+    ?? (error as { message?: unknown })?.message
+
+  if (typeof detail === 'string') {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item
+        }
+
+        if (item && typeof item === 'object') {
+          const maybeMsg = (item as { msg?: unknown }).msg
+          if (typeof maybeMsg === 'string') {
+            return maybeMsg
+          }
+
+          return JSON.stringify(item)
+        }
+
+        return ''
+      })
+      .filter(Boolean)
+
+    if (messages.length > 0) {
+      return messages.join(', ')
+    }
+  }
+
+  if (detail && typeof detail === 'object') {
+    return JSON.stringify(detail)
+  }
+
+  return fallback
+}
+
 
 function ObjectsPage() {
+  const authContext = useContext(AuthContext)
+  const userRole = authContext?.userRole
   const [objects, setObjects] = useState<ConstructionObject[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [formError, setFormError] = useState('')
+  const [showCreateObject, setShowCreateObject] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newObject, setNewObject] = useState({
+    name: '',
+    address: '',
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: '',
+  })
+  const [users, setUsers] = useState<User[]>([])
+  const [selectedWorkerIds, setSelectedWorkerIds] = useState<number[]>([])
+  const [workerSearch, setWorkerSearch] = useState('')
+  const [workerDropdownOpen, setWorkerDropdownOpen] = useState(false)
 
   const filteredObjects = useMemo(
     () =>
@@ -27,8 +94,8 @@ function ObjectsPage() {
       try {
         const data = await objectApi.getAll()
         setObjects(data)
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Ошибка загрузки объектов')
+      } catch (err: unknown) {
+        setLoadError(getErrorMessage(err, 'Ошибка загрузки объектов'))
         console.error(err)
       } finally {
         setLoading(false)
@@ -38,6 +105,98 @@ function ObjectsPage() {
     fetchObjects()
   }, [])
 
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if (userRole !== 'admin') return
+
+      try {
+        const data = await userApi.getAll()
+        setUsers(data)
+      } catch (err: unknown) {
+        console.error(err)
+      }
+    }
+
+    fetchUsers()
+  }, [userRole])
+
+  const toggleWorker = (userId: number) => {
+    setSelectedWorkerIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    )
+  }
+
+  const availableWorkers = useMemo(
+    () => users.filter((user) => user.role === 'chief_engineer' || user.role === 'foreman'),
+    [users],
+  )
+
+  const getWorkerRoleLabel = (role: string) => (role === 'chief_engineer' ? 'Инженер' : 'Прораб')
+
+  const filteredWorkers = useMemo(
+    () =>
+      availableWorkers.filter((user) =>
+        user.full_name.toLowerCase().includes(workerSearch.toLowerCase()),
+      ),
+    [availableWorkers, workerSearch],
+  )
+
+  const handleChange = (field: string, value: string | boolean) => {
+    setNewObject((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleCreate = async () => {
+    // Client-side validation
+    if (!newObject.name.trim() || !newObject.address.trim() || !newObject.start_date) {
+      setFormError('Пожалуйста, заполните обязательные поля: название, адрес и дату начала.')
+      return
+    }
+
+    if (newObject.end_date && newObject.end_date < newObject.start_date) {
+      setFormError('Дата сдачи не может быть раньше даты начала.')
+      return
+    }
+
+    setCreating(true)
+    setFormError('')
+    try {
+      const payload = {
+        name: newObject.name,
+        address: newObject.address,
+        is_active: true,
+        start_date: newObject.start_date,
+        end_date: newObject.end_date || null,
+      }
+      const created = await objectApi.create(payload)
+      if (selectedWorkerIds.length > 0) {
+        await Promise.all(
+          selectedWorkerIds.map((userId) => objectApi.assignUserToObject(created.id, userId)),
+        )
+      }
+      // Refresh list from server to ensure consistent shape
+      try {
+        const data = await objectApi.getAll()
+        setObjects(data)
+      } catch (err) {
+        // fallback: prepend created object
+        setObjects((prev) => [created, ...prev])
+      }
+      setShowCreateObject(false)
+      setSelectedWorkerIds([])
+      setNewObject({
+        name: '',
+        address: '',
+        start_date: new Date().toISOString().slice(0, 10),
+        end_date: '',
+      })
+    } catch (err: unknown) {
+      setFormError(getErrorMessage(err, 'Ошибка создания объекта'))
+      console.error(err)
+    } finally {
+      setCreating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -46,11 +205,11 @@ function ObjectsPage() {
     )
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="alert alert-error shadow-lg w-full max-w-md">
-          <span>{error}</span>
+          <span>{loadError}</span>
         </div>
       </div>
     )
@@ -66,23 +225,54 @@ function ObjectsPage() {
       <div className="flex flex-col gap-4 rounded-lg border border-base-200 bg-base-100 p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-none w-full max-w-sm">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по объектам..."
-              className="w-full rounded-lg border border-base-300 bg-white px-4 py-2 outline-none transition-colors focus:border-primary focus:ring focus:ring-primary/20 placeholder:text-gray-400"
-            />
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M11 18C14.866 18 18 14.866 18 11C18 7.13401 14.866 4 11 4C7.13401 4 4 7.13401 4 11C4 14.866 7.13401 18 11 18Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M20 20L16.65 16.65" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск по объектам..."
+                className="w-full rounded-lg border border-base-300 bg-white px-10 py-2 text-slate-900 outline-none transition-colors focus:border-primary focus:ring focus:ring-primary/20 placeholder:text-gray-400"
+                aria-label="Поиск по объектам"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-base-200 p-1 text-base-content/70 transition-colors hover:bg-base-300"
+                  aria-label="Очистить поиск"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-base-content/70">Поиск по названию или адресу.</p>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm whitespace-nowrap"
-            onClick={() => {
-              // TODO: Добавить действие для создания объекта
-            }}
-          >
-            Добавить объект
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            {search && (
+              <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
+                Найдено {filteredObjects.length}
+              </span>
+            )}
+            {userRole === 'admin' && (
+              <button
+                type="button"
+                className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
+                onClick={() => {
+                  setFormError('')
+                  setSelectedWorkerIds([])
+                  setShowCreateObject(true)
+                }}
+              >
+                Добавить объект
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-base-200 bg-base-100">
@@ -91,7 +281,6 @@ function ObjectsPage() {
               <tr>
                 <th className="px-4 py-3">Название объекта</th>
                 <th className="px-4 py-3">Адрес</th>
-                <th className="px-4 py-3">Статус</th>
                 <th className="px-4 py-3">Начало работ</th>
                 <th className="px-4 py-3">Сдача по плану</th>
               </tr>
@@ -99,7 +288,7 @@ function ObjectsPage() {
             <tbody>
               {filteredObjects.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={4} className="px-4 py-6 text-center text-base-content/70">
                     Объектов не найдено.
                   </td>
                 </tr>
@@ -112,9 +301,8 @@ function ObjectsPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">{objectItem.address}</td>
-                    <td className="px-4 py-3">{objectItem.is_active ? 'Активен' : 'Неактивен'}</td>
-                    <td className="px-4 py-3">{new Date(objectItem.start_date).toLocaleDateString('ru-RU')}</td>
-                    <td className="px-4 py-3">{objectItem.end_date ? new Date(objectItem.end_date).toLocaleDateString('ru-RU') : '-'}</td>
+                    <td className="px-4 py-3">{formatDateRu(objectItem.start_date)}</td>
+                    <td className="px-4 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
                   </tr>
                 ))
               )}
@@ -122,6 +310,149 @@ function ObjectsPage() {
           </table>
         </div>
       </div>
+      {showCreateObject && (
+        <ModalBackdrop
+          onClose={() => {
+            setShowCreateObject(false)
+            setFormError('')
+            setSelectedWorkerIds([])
+          }}
+        >
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Создать объект</h2>
+            {formError && <div className="alert alert-error">{formError}</div>}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <input
+                className="input w-full"
+                placeholder="Название *"
+                value={newObject.name}
+                onChange={(e) => handleChange('name', e.target.value)}
+              />
+              <input
+                className="input w-full"
+                placeholder="Адрес *"
+                value={newObject.address}
+                onChange={(e) => handleChange('address', e.target.value)}
+              />
+              {/* Description and active status removed from creation form */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Начало объекта</span>
+                  <input
+                    type="date"
+                    className="input w-full"
+                    value={newObject.start_date}
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => {
+                      const newStart = e.target.value
+                      setNewObject((prev) => ({
+                        ...prev,
+                        start_date: newStart,
+                        end_date: prev.end_date && prev.end_date < newStart ? newStart : prev.end_date,
+                      }))
+                    }}
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Сдача объекта</span>
+                  <input
+                    type="date"
+                    className="input w-full"
+                    value={newObject.end_date}
+                    min={newObject.start_date}
+                    onChange={(e) => handleChange('end_date', e.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="col-span-1 sm:col-span-2">
+                <div className="space-y-2 rounded-lg border border-base-200 bg-base-100 p-4">
+                  <p className="text-sm font-medium">Назначить сотрудников</p>
+                  <div className="relative">
+                    <input
+                      className="input w-full"
+                      placeholder="Поиск по имени сотрудника..."
+                      value={workerSearch}
+                      onChange={(e) => setWorkerSearch(e.target.value)}
+                      onFocus={() => setWorkerDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setWorkerDropdownOpen(false), 150)}
+                      aria-label="Поиск по имени сотрудника"
+                    />
+                    {workerDropdownOpen && (
+                      <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
+                        {filteredWorkers.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-base-content/60">Не найдено сотрудников.</div>
+                        ) : (
+                          filteredWorkers.map((user) => (
+                            <button
+                              type="button"
+                              key={user.id}
+                              className={`flex w-full items-center justify-between gap-3 border-b border-base-200 px-4 py-3 text-left transition ${
+                                selectedWorkerIds.includes(user.id) ? 'bg-primary/10' : 'hover:bg-base-200'
+                              }`}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => toggleWorker(user.id)}
+                            >
+                              <div>
+                                <div className="font-medium text-slate-900">{user.full_name}</div>
+                                <div className="text-xs text-slate-600">{getWorkerRoleLabel(user.role)}</div>
+                              </div>
+                              <span className={`badge ${selectedWorkerIds.includes(user.id) ? 'badge-primary' : 'badge-outline'}`}>
+                                {selectedWorkerIds.includes(user.id) ? 'Выбрано' : 'Выбрать'}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {selectedWorkerIds.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedWorkerIds.map((id) => {
+                        const user = users.find((u) => u.id === id)
+                        return (
+                          user && (
+                            <span key={id} className="badge badge-sm badge-info">
+                              {user.full_name}
+                            </span>
+                          )
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn"
+                onClick={() => {
+                  setShowCreateObject(false)
+                  setFormError('')
+                  setSelectedWorkerIds([])
+                  setNewObject({
+                    name: '',
+                    address: '',
+                    start_date: new Date().toISOString().slice(0, 10),
+                    end_date: '',
+                  })
+                  setWorkerSearch('')
+                  setWorkerDropdownOpen(false)
+                }}
+                disabled={creating}
+              >
+                Отмена
+              </button>
+              <button
+                className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                onClick={handleCreate}
+                disabled={creating}
+              >
+                {creating ? 'Сохранение...' : 'Создать'}
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
     </div>
   )
 }

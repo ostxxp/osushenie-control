@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { projectApi, taskApi } from '@services/api'
+import { authService } from '@services/auth'
+import { formatDateRu } from '@/utils'
 import type { Project, Task } from '@/types'
 
 const projectButtonClasses = (isActive: boolean) =>
@@ -33,12 +35,23 @@ function ProjectsPage() {
     const fetchProjects = async () => {
       try {
         const data = await projectApi.getAll()
-        setProjects(data)
+        const currentUser = authService.getCurrentUser()
+
+        // If user is not admin, show only projects assigned to them (manager_id)
+        const visible =
+          currentUser && currentUser.role !== 'admin'
+            ? data.filter((p) => p.manager_id === currentUser.id)
+            : data
+
+        setProjects(visible)
         if (data.length > 0) {
-          setSelectedProject(data[0])
-          await loadTasks(data[0].id)
+          // select first visible project when available
+          if (visible.length > 0) {
+            setSelectedProject(visible[0])
+            await loadTasks(visible[0].id)
+          }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError('Ошибка загрузки проектов')
         
         console.error(err)
@@ -54,7 +67,7 @@ function ProjectsPage() {
     try {
       const data = await taskApi.getByProjectId(projectId)
       setTasks(data)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading tasks:', err)
       setTasks([])
     }
@@ -150,7 +163,7 @@ function ProjectsPage() {
                             </div>
                             {task.due_date && (
                               <div className="mt-3 text-sm text-base-content/60">
-                                Срок: {new Date(task.due_date).toLocaleDateString('ru-RU')}
+                                Срок: {formatDateRu(task.due_date)}
                               </div>
                             )}
                           </div>

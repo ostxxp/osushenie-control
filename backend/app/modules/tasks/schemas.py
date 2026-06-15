@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.modules.tasks.models import ObjectTaskStatus, TaskChildrenMode
+from app.modules.users.schemas import UserRead
 
 
 class ObjectTaskCreate(BaseModel):
@@ -40,6 +41,7 @@ class ObjectTaskRead(BaseModel):
     deadline: datetime | None
     completed_at: datetime | None
     completed_by_id: int | None
+    completed_by: UserRead | None = None
     created_at: datetime
     updated_at: datetime
 
