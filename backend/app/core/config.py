@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
     CORS_ORIGINS: str = "http://localhost:3000"
+    UPLOAD_DIR: str = "uploads"
+    MAX_PHOTO_SIZE_BYTES: int = 5 * 1024 * 1024
     
     POSTGRES_DB: str = "osushenie_control"
     POSTGRES_USER: str = "osushenie_app"

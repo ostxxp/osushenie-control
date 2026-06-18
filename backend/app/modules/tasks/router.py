@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
 from app.db.session import get_db_session
 from app.modules.objects.dependencies import get_object_or_404, user_can_access_object
@@ -211,3 +212,45 @@ async def delete_task_for_object(
 ) -> None:
     await deactivate_object_task(db, object_task=object_task)
     response.status_code = status.HTTP_204_NO_CONTENT
+
+@router.get(
+    "/{object_id}/tasks/overdue",
+    response_model=list[ObjectTaskRead],
+    summary="Get overdue tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_overdue_tasks_for_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ObjectTask]:
+    tasks = await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.object_id == object.id,
+            ObjectTask.status == ObjectTaskStatus.TODO,
+            ObjectTask.deadline < func.now()
+        )
+    )
+    return tasks.scalars().all()
+
+
+@router.get(
+    "/{object_id}/tasks/overdue_count",
+    response_model=int,
+    summary="Get count of overdue tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_overdue_tasks_count_for_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> int:
+    tasks = await db.execute(
+        select(func.count(ObjectTask.id))
+        .where(
+            ObjectTask.object_id == object.id,
+            ObjectTask.status == ObjectTaskStatus.TODO,
+            ObjectTask.deadline < func.now()
+        )
+    )
+    return tasks.scalar()
+

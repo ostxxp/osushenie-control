@@ -11,10 +11,12 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
-from app.modules.notifications.models import Notifications
+from app.modules.notifications.models import Notifications, NotificationReads as NotificationReceipt
 from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
-from app.modules.users.models import User
+from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import UserRead
+
+from app.modules.notifications.models import NotificationType
 
 BLOCKING_STATUSES = {
     ObjectTaskStatus.SKIPPED,
@@ -224,13 +226,29 @@ async def update_object_task(
 
     construction_object = await db.get(ConstructionObject, object_task.object_id)
     object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
-    notification = Notifications(
-        user_id=current_user.id,
-        object_id=object_task.object_id,
-        message=f'Задача "{object_task.title}" на объекте "{object_name}" была обновлена.',
-    )
-    db.add(notification)
-
+    
+    if "status" in update_data:
+        notification_message = f'Статус задачи "{object_task.title}" на объекте "{object_name}" был изменен на "{object_task.status}".'
+        if task_data.status == ObjectTaskStatus.DONE:
+            notification_message = f'Задача "{object_task.title}" на объекте "{object_name}" была выполнена.'
+        elif task_data.status == ObjectTaskStatus.TODO:
+            notification_message = f'Задача "{object_task.title}" на объекте "{object_name}" была возвращена в статус "К выполнению".'
+        notification = Notifications(
+            user_id=current_user.id,
+            object_id=object_task.object_id,
+            message=notification_message,
+        )
+        db.add(notification)
+        admins_and_chief_engineers = await db.execute(
+            select(User)            
+            .where(User.role.in_([UserRole.ADMIN, UserRole.CHIEF_ENGINEER]))
+        )
+        for user in admins_and_chief_engineers.scalars().all():
+            notification_receipt = NotificationReceipt(
+                user_id=user.id,
+                notification=notification,
+            )
+            db.add(notification_receipt)
     db.add(object_task)
     await db.commit()
     await db.refresh(object_task)

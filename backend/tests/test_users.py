@@ -96,3 +96,52 @@ async def test_user_cannot_change_own_role_or_active_status(
 
     assert role_response.status_code == 403
     assert active_response.status_code == 403
+
+
+async def test_admin_cannot_deactivate_own_account_with_update(
+    client: AsyncClient,
+    create_test_user,
+) -> None:
+    admin = await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    access_token = await login(client, email="admin@example.com")
+
+    response = await client.patch(
+        f"/api/v1/users/{admin.id}",
+        headers=auth_headers(access_token),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "You cannot deactivate your own account."
+
+
+async def test_admin_cannot_deactivate_own_account_with_endpoint(
+    client: AsyncClient,
+    create_test_user,
+) -> None:
+    admin = await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    access_token = await login(client, email="admin@example.com")
+
+    response = await client.patch(
+        f"/api/v1/users/{admin.id}/deactivate",
+        headers=auth_headers(access_token),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "You cannot deactivate your own account."
+
+
+async def test_admin_cannot_delete_own_account(
+    client: AsyncClient,
+    create_test_user,
+) -> None:
+    admin = await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    access_token = await login(client, email="admin@example.com")
+
+    response = await client.delete(
+        f"/api/v1/users/{admin.id}",
+        headers=auth_headers(access_token),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "You cannot delete your own account."

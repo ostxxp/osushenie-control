@@ -15,6 +15,14 @@ from app.modules.users.dependencies import get_user_or_404, require_logged_in_us
 
 router = APIRouter()
 
+
+def _raise_if_self_target(current_user: User, user: User, message: str) -> None:
+    if current_user.id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+        )
+
 @router.post(
         "", response_model=UserRead,
         status_code=status.HTTP_201_CREATED,
@@ -111,6 +119,13 @@ async def update_user_endpoint(
             detail="Only admins can change user roles."
         )
 
+    if update_data.get("is_active") is False:
+        _raise_if_self_target(
+            current_user,
+            user,
+            "You cannot deactivate your own account.",
+        )
+
     if "email" in update_data:
         existing_user = await get_user_by_email(db=db, email=update_data["email"])
 
@@ -154,8 +169,15 @@ async def activate_user_endpoint(
 )
 async def deactivate_user_endpoint(
     user: User = Depends(get_user_or_404),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
 ) -> None:
+    _raise_if_self_target(
+        current_user,
+        user,
+        "You cannot deactivate your own account.",
+    )
+
     user.is_active = False
     await db.commit()
     await db.refresh(user)
@@ -168,7 +190,14 @@ async def deactivate_user_endpoint(
 )
 async def delete_user_endpoint(
     user: User = Depends(get_user_or_404),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
 ) -> None:
+    _raise_if_self_target(
+        current_user,
+        user,
+        "You cannot delete your own account.",
+    )
+
     await db.delete(user)
     await db.commit()
