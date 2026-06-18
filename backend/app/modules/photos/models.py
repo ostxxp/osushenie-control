@@ -67,12 +67,12 @@ class Photo(Base):
     user: Mapped["User | None"] = relationship(
         "User",
         foreign_keys=[user_id],
-        back_populates="photo",
+        back_populates="photos",
     )
     object: Mapped["ConstructionObject | None"] = relationship(
         "ConstructionObject",
         foreign_keys=[object_id],
-        back_populates="photo",
+        back_populates="photos",
     )
     uploaded_by: Mapped["User | None"] = relationship(
         "User",
