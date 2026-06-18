@@ -235,7 +235,7 @@ async def get_overdue_tasks_for_object(
 
 
 @router.get(
-    "/{object_id}/tasks/overdue-count",
+    "/{object_id}/tasks/overdue_count",
     response_model=int,
     summary="Get count of overdue tasks for object",
     dependencies=[Depends(user_can_access_object)]
@@ -254,6 +254,3 @@ async def get_overdue_tasks_count_for_object(
     )
     return tasks.scalar()
 
-# @router.patch(
-#     "{object_id}/tasks"
-# )

@@ -47,3 +47,16 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
+    photos: Mapped[list["Photo"]] = relationship(
+        "Photo",
+        foreign_keys="Photo.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    uploaded_photos: Mapped[list["Photo"]] = relationship(
+        "Photo",
+        foreign_keys="Photo.uploaded_by_id",
+        back_populates="uploaded_by",
+    )

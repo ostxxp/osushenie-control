@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from app.db.base import Base
 from sqlalchemy import Boolean, Date, DateTime, String, func, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class ConstructionObject(Base):
@@ -27,6 +27,12 @@ class ConstructionObject(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    photos: Mapped[list["Photo"]] = relationship(
+        "Photo",
+        back_populates="object",
+        cascade="all, delete-orphan",
     )
 
 class ObjectToUser(Base):

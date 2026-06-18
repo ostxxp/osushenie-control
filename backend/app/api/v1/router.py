@@ -6,6 +6,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.objects.router import router as objects_router
 from app.modules.tasks.router import router as object_tasks_router
 from app.modules.notifications.router import router as notifications_router
+from app.modules.photos.router import router as photos_router
 
 api_router = APIRouter()
 
@@ -43,4 +44,10 @@ api_router.include_router(
     notifications_router,
     prefix="/notifications",
     tags=["Notifications"],
+)
+
+api_router.include_router(
+    photos_router,
+    prefix="/photos",
+    tags=["Photos"],
 )
