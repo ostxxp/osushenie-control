@@ -200,7 +200,7 @@ async def update_task_status_for_object(
     return response
 
 @router.delete(
-    "/{object_id}/tasks/{task_id}",
+    "{object_id}/tasks/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Deactivate object task",
     dependencies=[Depends(user_can_access_object), Depends(require_chief_engineer_or_admin)]
@@ -214,7 +214,7 @@ async def delete_task_for_object(
     response.status_code = status.HTTP_204_NO_CONTENT
 
 @router.get(
-    "/{object_id}/overdue",
+    "{object_id}/tasks/overdue",
     response_model=list[ObjectTaskRead],
     summary="Get overdue tasks for object",
     dependencies=[Depends(user_can_access_object)]
@@ -235,7 +235,7 @@ async def get_overdue_tasks_for_object(
 
 
 @router.get(
-    "/{object_id}/overdue/count",
+    "/{object_id}/tasks/overdue-count",
     response_model=int,
     summary="Get count of overdue tasks for object",
     dependencies=[Depends(user_can_access_object)]
@@ -253,3 +253,7 @@ async def get_overdue_tasks_count_for_object(
         )
     )
     return tasks.scalar()
+
+# @router.patch(
+#     "{object_id}/tasks"
+# )
