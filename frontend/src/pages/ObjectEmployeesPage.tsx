@@ -10,11 +10,30 @@ const roleLabel: Record<UserRole, string> = {
   foreman: 'Прораб',
 }
 
+const formatEmployeeCount = (count: number): string => {
+  const lastTwoDigits = count % 100
+  const lastDigit = count % 10
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+    return 'сотрудников'
+  }
+
+  if (lastDigit === 1) {
+    return 'сотрудник'
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'сотрудника'
+  }
+
+  return 'сотрудников'
+}
+
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-lg bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 w-full max-w-2xl rounded-[1.75rem] bg-base-100 p-6 shadow-lg">{children}</div>
     </div>
   )
 }
@@ -203,19 +222,35 @@ function ObjectEmployeesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex flex-col items-start gap-2">
+      <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-4">
             <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs text-sm px-2">
               ← К объекту
             </Link>
-            <h1 className="text-3xl font-semibold mt-1">{objectItem.name}</h1>
-            <p className="text-base-content/70">Сотрудники на объекте</p>
+            <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
+            <div className="inline-flex flex-wrap items-center gap-3 rounded-2xl border border-base-200 bg-base-200/40 px-4 py-3">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-base-content/50">Пользователи на объекте</div>
+                <div className="mt-0.5 flex items-end gap-2">
+                  <span className="text-3xl font-semibold leading-none tabular-nums">{stats.total}</span>
+                  <span className="pb-0.5 text-sm text-base-content/60">{formatEmployeeCount(stats.total)}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
+                  Инженеры: {stats.engineers}
+                </span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                  Прорабы: {stats.foremen}
+                </span>
+              </div>
+            </div>
           </div>
           {canManageEmployees && (
             <button
               type="button"
-              className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+              className="bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
               onClick={openAddUserModal}
             >
               Добавить сотрудника
@@ -224,26 +259,8 @@ function ObjectEmployeesPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
-        <div className="rounded-lg border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Сводка</h2>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-base-content/70">Всего сотрудников</span>
-              <span className="font-semibold">{stats.total}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-base-content/70">Инженеры</span>
-              <span className="font-semibold">{stats.engineers}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-base-content/70">Прорабы</span>
-              <span className="font-semibold">{stats.foremen}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-base-200 bg-base-100 shadow-sm overflow-hidden">
+      <div>
+        <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100 shadow-sm">
           <div className="border-b border-base-200 px-6 py-4">
             <h2 className="text-lg font-semibold">Список сотрудников</h2>
           </div>
@@ -313,7 +330,7 @@ function ObjectEmployeesPage() {
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
             />
-            <div className="max-h-80 overflow-y-auto rounded-lg border border-base-200">
+            <div className="max-h-80 overflow-y-auto rounded-[1.75rem] border border-base-200">
               {loadingAssignableUsers ? (
                 <div className="flex items-center justify-center px-4 py-8">
                   <span className="loading loading-spinner text-primary" />

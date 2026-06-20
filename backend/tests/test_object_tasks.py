@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from httpx import AsyncClient
 
@@ -499,3 +499,53 @@ async def test_chief_engineer_can_add_and_delete_object_task(
     assert delete_response.status_code == 204
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+
+async def test_post_task_update_alias_can_set_deadline_and_count_overdue(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    await create_task_template(title="Deadline task", source_id="deadline-task")
+    admin_token = await login(client, email="admin@example.com")
+
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(admin_token),
+        json=object_payload(),
+    )
+    object_id = create_response.json()["id"]
+    tasks_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(admin_token),
+    )
+    task_id = tasks_response.json()[0]["id"]
+
+    overdue_deadline = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+    update_response = await client.post(
+        f"/api/v1/objects/{object_id}/tasks/{task_id}",
+        headers=auth_headers(admin_token),
+        json={"title": "Deadline task", "deadline": overdue_deadline},
+    )
+    overdue_count_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks/overdue_count",
+        headers=auth_headers(admin_token),
+    )
+    overdue_tasks_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks/overdue",
+        headers=auth_headers(admin_token),
+    )
+    cleared_response = await client.post(
+        f"/api/v1/objects/{object_id}/tasks/{task_id}",
+        headers=auth_headers(admin_token),
+        json={"title": "Deadline task", "deadline": None},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["deadline"] is not None
+    assert overdue_count_response.json() == 1
+    assert len(overdue_tasks_response.json()) == 1
+    assert cleared_response.status_code == 200
+    assert cleared_response.json()["deadline"] is None

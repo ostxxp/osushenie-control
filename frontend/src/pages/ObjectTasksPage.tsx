@@ -1,8 +1,76 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { objectApi } from '@services/api'
-import { calculateLogicalTaskStats, formatDateTimeRu } from '@/utils'
-import type { ConstructionObject, ObjectTaskTree } from '@/types'
+import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu } from '@/utils'
+import type {
+  ConstructionObject,
+  ObjectTask,
+  ObjectTaskStatus,
+  ObjectTaskTree,
+  ObjectTaskUpsertPayload,
+  TaskChildrenMode,
+} from '@/types'
+
+type FlatTaskOption = {
+  task: ObjectTaskTree
+  depth: number
+}
+
+type TaskFormState = {
+  title: string
+  parentId: string
+  sortOrder: string
+  childrenMode: TaskChildrenMode
+  status: ObjectTaskStatus
+  deadline: string
+}
+
+const emptyTaskForm = (): TaskFormState => ({
+  title: '',
+  parentId: '',
+  sortOrder: '',
+  childrenMode: 'all',
+  status: 'todo',
+  deadline: '',
+})
+
+const toDateInputValue = (value: string | null | undefined): string => {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return date.toISOString().slice(0, 10)
+}
+
+const toDeadlineIso = (value: string): string | null => {
+  if (!value) {
+    return null
+  }
+
+  return new Date(`${value}T23:59:59.999`).toISOString()
+}
+
+const flattenTaskTree = (tasks: ObjectTaskTree[], depth = 0): FlatTaskOption[] =>
+  tasks.flatMap((task) => [
+    { task, depth },
+    ...flattenTaskTree(task.children, depth + 1),
+  ])
+
+function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button type="button" className="absolute inset-0 bg-black/50" onClick={onClose} aria-label="Закрыть окно" />
+      <div className="relative z-10 w-full max-w-xl rounded-3xl border border-base-200 bg-base-100 shadow-2xl">
+        {children}
+      </div>
+    </div>
+  )
+}
 
 function TaskStateIcon({ task }: { task: ObjectTaskTree }) {
   if (task.status === 'done') {
@@ -21,12 +89,18 @@ function TaskTreeRow({
   onToggleTask,
   expandedTaskIds,
   onToggleExpand,
+  onEditTask,
+  onCreateChild,
+  overdueTaskIds,
   depth = 0,
 }: {
   task: ObjectTaskTree
   onToggleTask: (taskId: number) => Promise<void>
   expandedTaskIds: number[]
   onToggleExpand: (taskId: number) => void
+  onEditTask: (task: ObjectTaskTree) => void
+  onCreateChild: (task: ObjectTaskTree) => void
+  overdueTaskIds: Set<number>
   depth?: number
 }) {
   const hasChildren = task.children.length > 0
@@ -34,6 +108,7 @@ function TaskTreeRow({
   const isExpanded = expandedTaskIds.includes(task.id)
   const isDone = task.status === 'done'
   const canToggle = task.status !== 'not_applicable' && task.status !== 'skipped'
+  const isOverdue = overdueTaskIds.has(task.id)
   const shouldShowChildren = hasChildren && (!isMainTask || isExpanded)
   const taskClickClass = canToggle || isMainTask ? 'cursor-pointer hover:text-primary' : 'cursor-not-allowed text-base-content/60'
 
@@ -84,16 +159,36 @@ function TaskTreeRow({
           </div>
         </td>
         <td className="px-4 py-3 text-sm text-base-content/70">
+          <div className="space-y-1.5">
+            <div className="font-medium text-base-content">
+              {task.deadline ? formatDateRu(task.deadline) : ''}
+            </div>
+            {isOverdue && (
+              <span className="badge badge-error badge-sm">Просрочено</span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-3 text-sm text-base-content/70">
           {isDone ? (
             <div className="space-y-0.5">
-              <div className="font-medium text-base-content">{task.completed_by?.full_name || '—'}</div>
+              <div className="font-medium text-base-content">{task.completed_by?.full_name || ''}</div>
               <div className="text-xs text-base-content/60">
-                {task.completed_at ? formatDateTimeRu(task.completed_at) : '—'}
+                {task.completed_at ? formatDateTimeRu(task.completed_at) : ''}
               </div>
             </div>
           ) : (
-            '—'
+            ''
           )}
+        </td>
+        <td className="px-4 py-3 text-sm text-base-content/70">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => onEditTask(task)}>
+              Редактировать
+            </button>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => onCreateChild(task)}>
+              + Подзадача
+            </button>
+          </div>
         </td>
       </tr>
       {shouldShowChildren &&
@@ -104,6 +199,9 @@ function TaskTreeRow({
             onToggleTask={onToggleTask}
             expandedTaskIds={expandedTaskIds}
             onToggleExpand={onToggleExpand}
+            onEditTask={onEditTask}
+            onCreateChild={onCreateChild}
+            overdueTaskIds={overdueTaskIds}
             depth={depth + 1}
           />
         ))}
@@ -116,22 +214,36 @@ function ObjectTasksPage() {
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
   const [allTasks, setAllTasks] = useState<ObjectTaskTree[]>([])
+  const [overdueTasks, setOverdueTasks] = useState<ObjectTask[]>([])
+  const [overdueCount, setOverdueCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false)
+  const [taskEditorTarget, setTaskEditorTarget] = useState<ObjectTaskTree | null>(null)
+  const [taskEditorMode, setTaskEditorMode] = useState<'create' | 'edit'>('create')
+  const [taskForm, setTaskForm] = useState<TaskFormState>(emptyTaskForm())
+  const [savingTask, setSavingTask] = useState(false)
+
+  const flatTaskOptions = useMemo(() => flattenTaskTree(allTasks), [allTasks])
+  const overdueTaskIds = useMemo(() => new Set(overdueTasks.map((task) => task.id)), [overdueTasks])
 
   const loadData = async (): Promise<ObjectTaskTree[]> => {
     if (!id) return []
 
     try {
-      const [objData, treeData, fullTreeData] = await Promise.all([
+      const [objData, treeData, fullTreeData, overdueData, overdueCountValue] = await Promise.all([
         objectApi.getById(Number(id)),
         objectApi.getTasksTree(Number(id)),
         objectApi.getFullTasksTree(Number(id)),
+        objectApi.getOverdueTasks(Number(id)).catch(() => []),
+        objectApi.getOverdueCount(Number(id)).catch(() => 0),
       ])
       setObjectItem(objData)
       setTasks(treeData)
       setAllTasks(fullTreeData)
+      setOverdueTasks(overdueData)
+      setOverdueCount(overdueCountValue)
       setError('')
       return treeData
     } catch (err: unknown) {
@@ -166,6 +278,73 @@ function ObjectTasksPage() {
     }
   }
 
+  const openCreateTask = (parentTask?: ObjectTaskTree) => {
+    setTaskEditorMode('create')
+    setTaskEditorTarget(parentTask ?? null)
+    setTaskForm({
+      ...emptyTaskForm(),
+      parentId: parentTask ? String(parentTask.id) : '',
+    })
+    setTaskEditorOpen(true)
+  }
+
+  const openEditTask = (task: ObjectTaskTree) => {
+    setTaskEditorMode('edit')
+    setTaskEditorTarget(task)
+    setTaskForm({
+      title: task.title,
+      parentId: task.parent_id ? String(task.parent_id) : '',
+      sortOrder: String(task.sort_order),
+      childrenMode: task.children_mode,
+      status: task.status,
+      deadline: toDateInputValue(task.deadline),
+    })
+    setTaskEditorOpen(true)
+  }
+
+  const closeTaskEditor = () => {
+    setTaskEditorOpen(false)
+    setTaskEditorTarget(null)
+    setTaskForm(emptyTaskForm())
+  }
+
+  const handleSaveTask = async () => {
+    if (!id || !taskForm.title.trim()) {
+      return
+    }
+
+    setSavingTask(true)
+    try {
+      const deadline = toDeadlineIso(taskForm.deadline)
+      if (taskEditorMode === 'create') {
+        const payload: ObjectTaskUpsertPayload = {
+          parent_id: taskForm.parentId ? Number(taskForm.parentId) : null,
+          title: taskForm.title.trim(),
+          sort_order: taskForm.sortOrder === '' ? null : Number(taskForm.sortOrder),
+          children_mode: taskForm.childrenMode,
+          deadline,
+        }
+        await objectApi.createTask(Number(id), payload)
+      } else if (taskEditorTarget) {
+        const payload: ObjectTaskUpsertPayload = {
+          title: taskForm.title.trim(),
+          sort_order: taskForm.sortOrder === '' ? null : Number(taskForm.sortOrder),
+          children_mode: taskForm.childrenMode,
+          status: taskForm.status,
+          deadline,
+        }
+        await objectApi.updateTask(Number(id), taskEditorTarget.id, payload)
+      }
+
+      closeTaskEditor()
+      await loadData()
+    } catch (err) {
+      console.error('Ошибка сохранения задачи:', err)
+    } finally {
+      setSavingTask(false)
+    }
+  }
+
   const stats = useMemo(() => calculateLogicalTaskStats(allTasks), [allTasks])
 
   if (loading) {
@@ -196,38 +375,63 @@ function ObjectTasksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex flex-col items-start gap-2">
-            <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs text-sm px-2">
-              ← К объекту
-            </Link>
+      <div className="flex flex-col gap-4 rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs w-fit text-sm px-2">
+            ← К объекту
+          </Link>
+          <div>
             <h1 className="text-3xl font-semibold mt-1">{objectItem.name}</h1>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:mt-1">
-            <div className="rounded-md border border-base-200 bg-base-100 px-3 py-2 text-center">
-              <div className="text-xs text-base-content/70">Всего задач</div>
-              <div className="font-semibold">{stats.total}</div>
-            </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+            <div className="text-xs uppercase tracking-wide text-base-content/60">Всего</div>
+            <div className="font-semibold text-lg">{stats.total}</div>
+          </div>
 
-            <div className="rounded-md border border-base-200 bg-base-100 px-3 py-2 text-center">
-              <div className="text-xs text-base-content/70">Выполнено</div>
-              <div className="font-semibold">{stats.done}</div>
-            </div>
+          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+            <div className="text-xs uppercase tracking-wide text-base-content/60">Готово</div>
+            <div className="font-semibold text-lg">{stats.done}</div>
+          </div>
 
-            <div className="rounded-md border border-base-200 bg-base-100 px-3 py-2 text-center">
-              <div className="text-xs text-base-content/70">Не выполнено</div>
-              <div className="font-semibold">{stats.todo}</div>
-            </div>
+          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+            <div className="text-xs uppercase tracking-wide text-base-content/60">В работе</div>
+            <div className="font-semibold text-lg">{stats.inProgress}</div>
+          </div>
 
-            <div className="rounded-md border border-base-200 bg-base-100 px-3 py-2 text-center">
-              <div className="text-xs text-base-content/70">В работе</div>
-              <div className="font-semibold">{stats.inProgress}</div>
-            </div>
+          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+            <div className="text-xs uppercase tracking-wide text-base-content/60">К выполнению</div>
+            <div className="font-semibold text-lg">{stats.todo}</div>
+          </div>
+
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-center shadow-sm">
+            <div className="text-xs uppercase tracking-wide text-rose-700">Просрочено</div>
+            <div className="font-semibold text-lg text-rose-700">{overdueCount}</div>
           </div>
         </div>
       </div>
+
+      {overdueCount > 0 && (
+        <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm uppercase tracking-wide text-rose-700">Просроченные задачи</div>
+              <div className="text-lg font-semibold">Нужно закрыть {overdueCount} задач</div>
+            </div>
+            <div className="badge badge-error badge-lg">{overdueCount}</div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {overdueTasks.slice(0, 8).map((task) => (
+              <span key={task.id} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-rose-900 shadow-sm">
+                {task.title}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-base-200 bg-base-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -235,7 +439,9 @@ function ObjectTasksPage() {
             <thead className="bg-base-200">
               <tr>
                 <th className="px-4 py-3">Наименование задачи</th>
+                <th className="px-4 py-3">Дедлайн</th>
                 <th className="px-4 py-3">Кто выполнил</th>
+                <th className="px-4 py-3">Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -246,12 +452,90 @@ function ObjectTasksPage() {
                   onToggleTask={handleToggleTask}
                   expandedTaskIds={expandedTaskIds}
                   onToggleExpand={toggleExpand}
+                  onEditTask={openEditTask}
+                  onCreateChild={(parentTask) => openCreateTask(parentTask)}
+                  overdueTaskIds={overdueTaskIds}
                 />
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {taskEditorOpen && (
+        <ModalBackdrop onClose={closeTaskEditor}>
+          <div className="overflow-hidden rounded-3xl">
+            <div className="border-b border-base-200 bg-base-200/40 px-6 py-5">
+              <div>
+                <h2 className="text-2xl font-semibold leading-tight">
+                  {taskEditorMode === 'create' ? 'Добавить задачу' : 'Изменить задачу'}
+                </h2>
+                {taskEditorMode === 'create' && taskEditorTarget && (
+                  <p className="mt-1 text-sm text-base-content/60">
+                    Подзадача для: <span className="font-medium text-base-content">{taskEditorTarget.title}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-5 p-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <label className="space-y-3 md:col-span-2">
+                  <span className="text-sm font-medium">Название задачи</span>
+                  <input
+                    className="input w-full"
+                    value={taskForm.title}
+                    onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
+                    placeholder="Введите название задачи"
+                  />
+                </label>
+
+                {taskEditorMode === 'create' && !taskEditorTarget ? (
+                  <label className="space-y-3">
+                    <span className="text-sm font-medium">Родительская задача</span>
+                    <select
+                      className="select w-full"
+                      value={taskForm.parentId}
+                      onChange={(event) => setTaskForm((prev) => ({ ...prev, parentId: event.target.value }))}
+                    >
+                      <option value="">Корневая задача</option>
+                      {flatTaskOptions.map(({ task, depth }) => (
+                        <option key={task.id} value={task.id}>
+                          {`${'— '.repeat(depth)}${task.title}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                <label className={`space-y-3 ${taskEditorMode === 'create' && !taskEditorTarget ? '' : 'md:col-span-2 md:max-w-64'}`}>
+                  <span className="text-sm font-medium">Дедлайн</span>
+                  <input
+                    className="input w-full"
+                    value={taskForm.deadline}
+                    onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
+                    type="date"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-2 border-t border-base-200 pt-5 sm:flex-row sm:justify-end">
+                <button type="button" className="btn btn-ghost" onClick={closeTaskEditor}>
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="rounded-2xl bg-[#ff4539] px-4 py-2 font-medium text-white transition-colors hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#ff918a]"
+                  onClick={handleSaveTask}
+                  disabled={savingTask}
+                >
+                  {savingTask ? 'Сохранение...' : taskEditorMode === 'create' ? 'Добавить задачу' : 'Сохранить изменения'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
     </div>
   )
 }

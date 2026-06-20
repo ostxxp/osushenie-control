@@ -144,6 +144,25 @@ async def update_task_for_object(
         current_user=current_user,
     )
 
+@router.post(
+    "/{object_id}/tasks/{task_id}",
+    response_model=ObjectTaskRead,
+    summary="Update object task",
+    dependencies=[Depends(user_can_access_object), Depends(require_chief_engineer_or_admin)]
+)
+async def update_task_for_object_post(
+    task_data: ObjectTaskUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404)
+) -> ObjectTask:
+    return await update_object_task(
+        db,
+        object_task=object_task,
+        task_data=task_data,
+        current_user=current_user,
+    )
+
 @router.patch(
     "/{object_id}/tasks/{task_id}/status",
     response_model=ObjectTaskStatusUpdateRead,

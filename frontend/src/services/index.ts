@@ -1,2 +1,2 @@
 export { authService, AuthContext } from './auth'
-export { projectApi, taskApi } from './api'
+export { projectApi, taskApi, notificationApi } from './api'

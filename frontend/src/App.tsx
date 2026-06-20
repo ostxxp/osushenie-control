@@ -7,8 +7,8 @@ import ObjectDetailsPage from '@pages/ObjectDetailsPage'
 import ObjectTasksPage from '@pages/ObjectTasksPage'
 import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
-import PlaceholderPage from '@pages/PlaceholderPage'
-import Layout from '@components/Layout'
+import NotificationsPage from '@pages/NotificationsPage'
+import Layout from './components/Layout'
 import { AuthContext, authService } from '@services/auth'
 import type { UserRole } from '@/types'
 
@@ -58,7 +58,10 @@ function App() {
               path="/users"
               element={userRole === 'admin' ? <UsersPage /> : <Navigate to="/" replace />}
             />
-            <Route path="/notifications" element={<PlaceholderPage title="Уведомления" description="Здесь будут уведомления." />} />
+            <Route
+              path="/notifications"
+              element={userRole === 'admin' || userRole === 'chief_engineer' ? <NotificationsPage /> : <Navigate to="/" replace />}
+            />
           </Route>
         </Routes>
       </Router>

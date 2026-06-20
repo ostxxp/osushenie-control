@@ -30,7 +30,7 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-lg bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 w-full max-w-2xl rounded-3xl bg-base-100 p-6 shadow-lg">{children}</div>
     </div>
   )
 }
@@ -223,10 +223,9 @@ function UsersPage() {
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold">Пользователи</h1>
-        <p className="text-base-content/70">Управление пользователями системы</p>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-lg border border-base-200 bg-base-100 p-4 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
@@ -265,7 +264,7 @@ function UsersPage() {
             )}
             <button
               type="button"
-              className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
+              className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
               onClick={openCreateModal}
             >
               Добавить пользователя
@@ -273,7 +272,7 @@ function UsersPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-base-200 bg-base-100">
+        <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
           <table className="min-w-full text-left">
             <thead className="bg-base-200">
               <tr>
@@ -282,7 +281,7 @@ function UsersPage() {
                 <th className="px-4 py-3">Телефон</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3 text-right">Действия</th>
+                <th className="px-4 py-3 text-right">Действие</th>
               </tr>
             </thead>
             <tbody>
@@ -294,7 +293,7 @@ function UsersPage() {
                   <td className="px-4 py-3">{user.email}</td>
                   <td className="px-4 py-3">
                     <span className={`badge ${user.is_active ? 'badge-success' : 'badge-ghost'}`}>
-                      {user.is_active ? 'Работает' : 'Уволен'}
+                      {user.is_active ? 'Работает' : 'Не активен'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -374,7 +373,7 @@ function UsersPage() {
               </button>
               <button
                 type="button"
-                className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                className="bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
                 onClick={handleSubmit}
                 disabled={saving}
               >
