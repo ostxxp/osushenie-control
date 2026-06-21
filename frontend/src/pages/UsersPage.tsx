@@ -323,41 +323,59 @@ function UsersPage() {
             </h2>
             {formError && <div className="alert alert-error">{formError}</div>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <input
-                className="input w-full"
-                placeholder="Ф.И.О. *"
-                value={userForm.full_name}
-                onChange={(e) => handleChange('full_name', e.target.value)}
-              />
-              <input
-                className="input w-full"
-                placeholder="Email *"
-                value={userForm.email}
-                onChange={(e) => handleChange('email', e.target.value)}
-              />
-              <input
-                className="input w-full"
-                placeholder="Телефон"
-                value={userForm.phone_number}
-                onChange={(e) => handleChange('phone_number', e.target.value)}
-              />
-              <input
-                className="input w-full"
-                placeholder={modalMode === 'create' ? 'Пароль * (минимум 8 символов)' : 'Новый пароль, если нужно'}
-                type="password"
-                value={userForm.password}
-                onChange={(e) => handleChange('password', e.target.value)}
-              />
-              <select
-                className="select w-full"
-                value={userForm.role}
-                onChange={(e) => handleChange('role', e.target.value as UserRole)}
-              >
-                <option value="admin">Администратор</option>
-                <option value="chief_engineer">Инженер</option>
-                <option value="foreman">Прораб</option>
-              </select>
-              <label className="flex items-center gap-2 rounded-lg border border-base-200 px-3 py-2">
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Ф.И.О. *</span>
+                <input
+                  className="input w-full"
+                  placeholder="Иванов Иван Иванович"
+                  value={userForm.full_name}
+                  onChange={(e) => handleChange('full_name', e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Email *</span>
+                <input
+                  className="input w-full"
+                  placeholder="user@example.com"
+                  value={userForm.email}
+                  onChange={(e) => handleChange('email', e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Телефон</span>
+                <input
+                  className="input w-full"
+                  placeholder="+7 999 123-45-67"
+                  value={userForm.phone_number}
+                  onChange={(e) => handleChange('phone_number', e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">
+                  {modalMode === 'create' ? 'Пароль *' : 'Новый пароль'}
+                </span>
+                <input
+                  className="input w-full"
+                  placeholder={modalMode === 'create' ? 'Минимум 8 символов' : 'Оставьте пустым, если не меняете'}
+                  type="password"
+                  value={userForm.password}
+                  onChange={(e) => handleChange('password', e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Должность</span>
+                <select
+                  className="select w-full"
+                  value={userForm.role}
+                  onChange={(e) => handleChange('role', e.target.value as UserRole)}
+                >
+                  <option value="chief_engineer">Инженер</option>
+                  <option value="foreman">Прораб</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Статус</span>
+                <span className="flex items-center gap-2 rounded-lg border border-base-200 px-3 py-2">
                 <input
                   type="checkbox"
                   className="checkbox checkbox-primary"
@@ -365,6 +383,7 @@ function UsersPage() {
                   onChange={(e) => handleChange('is_active', e.target.checked)}
                 />
                 <span>Работает</span>
+                </span>
               </label>
             </div>
             <div className="flex justify-end gap-2">
