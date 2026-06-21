@@ -9,7 +9,7 @@ import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
 import NotificationsPage from '@pages/NotificationsPage'
 import Layout from './components/Layout'
-import { AuthContext, authService } from '@services/auth'
+import { AUTH_EXPIRED_EVENT, AuthContext, authService } from '@services/auth'
 import type { UserRole } from '@/types'
 
 function App() {
@@ -19,6 +19,13 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
+
+    const handleAuthExpired = () => {
+      setIsAuthenticated(false)
+      setUserRole(null)
+    }
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
 
     const checkAuth = async () => {
       const user = await authService.loadCurrentUser()
@@ -33,6 +40,7 @@ function App() {
 
     return () => {
       cancelled = true
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
     }
   }, [])
 

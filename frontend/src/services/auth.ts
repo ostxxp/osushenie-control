@@ -16,6 +16,14 @@ const authApi = axios.create({
   withCredentials: true,
 })
 
+export const AUTH_EXPIRED_EVENT = 'auth:expired'
+
+const clearAuthStorage = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('role')
+  localStorage.removeItem('user')
+}
+
 // Add token to requests
 authApi.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
@@ -24,6 +32,18 @@ authApi.interceptors.request.use((config) => {
   }
   return config
 })
+
+authApi.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && error.config?.url !== '/auth/login') {
+      clearAuthStorage()
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    }
+
+    return Promise.reject(error)
+  },
+)
 
 export const authService = {
   login: async (credentials: LoginRequest): Promise<User> => {
@@ -55,16 +75,13 @@ export const authService = {
       console.warn('Logout request failed', error)
     }
 
-    localStorage.removeItem('token')
-    localStorage.removeItem('role')
-    localStorage.removeItem('user')
+    clearAuthStorage()
   },
 
   loadCurrentUser: async (): Promise<User | null> => {
     const token = localStorage.getItem('token')
     if (!token) {
-      localStorage.removeItem('role')
-      localStorage.removeItem('user')
+      clearAuthStorage()
       return null
     }
 
@@ -75,9 +92,7 @@ export const authService = {
       localStorage.setItem('user', JSON.stringify(user))
       return user
     } catch (error) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('role')
-      localStorage.removeItem('user')
+      clearAuthStorage()
       return null
     }
   },
