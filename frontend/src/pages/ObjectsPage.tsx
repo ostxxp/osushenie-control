@@ -356,20 +356,19 @@ function ObjectsPage() {
             setResponsibleSearch('')
           }}
         >
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-semibold">Создать объект</h2>
-              <p className="mt-1 text-sm text-base-content/60">Заполните основные данные и назначьте команду.</p>
+          <div className="space-y-2">
+            <div className="border-b border-base-200 px-4 pb-2">
+              <h2 className="text-3xl font-semibold">Создать объект</h2>
             </div>
             {formError && <div className="alert alert-error">{formError}</div>}
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-              <section className="space-y-4">
-                <div className="flex h-9 items-start border-b border-base-200 pb-2">
-                  <h3 className="font-semibold">Данные объекта</h3>
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+              <section className="space-y-4 rounded-2xl border border-base-200 bg-white p-4">
+                <div className="border-b border-base-200 pb-3">
+                  <h3 className="text-lg font-semibold">Данные объекта</h3>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="space-y-3 sm:col-span-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Название *</span>
                     <input
                       className="input w-full"
@@ -379,7 +378,7 @@ function ObjectsPage() {
                     />
                   </label>
 
-                  <label className="space-y-3 sm:col-span-2">
+                  <label className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Адрес *</span>
                     <input
                       className="input w-full"
@@ -389,7 +388,7 @@ function ObjectsPage() {
                     />
                   </label>
 
-                  <label className="space-y-3 sm:col-span-2">
+                  <label className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Тип объекта</span>
                     <input
                       className="input w-full"
@@ -399,7 +398,7 @@ function ObjectsPage() {
                     />
                   </label>
 
-                  <label className="space-y-3">
+                  <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium">Начало объекта</span>
                     <input
                       type="date"
@@ -417,7 +416,7 @@ function ObjectsPage() {
                     />
                   </label>
 
-                  <label className="space-y-3">
+                  <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium">Сдача объекта</span>
                     <input
                       type="date"
@@ -430,12 +429,12 @@ function ObjectsPage() {
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-2xl border border-base-200 bg-base-200/30 p-4 pt-0">
-                <div className="flex h-9 items-start border-b border-base-200 pt-4 pb-2">
-                  <h3 className="font-semibold">Команда</h3>
+              <section className="space-y-4 rounded-2xl border border-base-200 bg-white p-4">
+                <div className="border-b border-base-200 pb-3">
+                  <h3 className="text-lg font-semibold">Команда</h3>
                 </div>
 
-                <div className="space-y-3">
+                <div className="flex flex-col gap-2">
                   <span className="text-sm font-medium">Ответственный</span>
                   <div className="relative">
                     <input
@@ -480,7 +479,7 @@ function ObjectsPage() {
                     )}
                   </div>
                   {responsibleUser && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="flex flex-wrap gap-2 rounded-xl bg-base-200/50 p-2">
                       <button
                         type="button"
                         className="badge badge-info badge-sm gap-2"
@@ -495,7 +494,7 @@ function ObjectsPage() {
                   )}
                 </div>
 
-                <div className="space-y-3">
+                <div className="flex flex-col gap-2">
                   <p className="text-sm font-medium">Дополнительные сотрудники</p>
                   <div className="relative">
                     <input
@@ -536,7 +535,7 @@ function ObjectsPage() {
                     )}
                   </div>
                   {selectedWorkerIds.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="flex flex-wrap gap-2 rounded-xl bg-base-200/50 p-2">
                       {selectedWorkerIds.map((id) => {
                         const user = users.find((u) => u.id === id)
                         return (
@@ -552,7 +551,7 @@ function ObjectsPage() {
                 </div>
               </section>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t border-base-200 pt-4">
               <button
                 className="btn"
                 onClick={() => {
