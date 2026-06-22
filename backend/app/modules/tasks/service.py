@@ -228,11 +228,11 @@ async def update_object_task(
     object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
     
     if "status" in update_data:
-        notification_message = f'Статус задачи "{object_task.title}" на объекте "{object_name}" был изменен на "{object_task.status}".'
+        notification_message = f'Статус задачи "{object_task.title}" был изменен на "{object_task.status}".'
         if task_data.status == ObjectTaskStatus.DONE:
-            notification_message = f'Задача "{object_task.title}" на объекте "{object_name}" была выполнена.'
+            notification_message = f'Задача "{object_task.title}" была выполнена.'
         elif task_data.status == ObjectTaskStatus.TODO:
-            notification_message = f'Задача "{object_task.title}" на объекте "{object_name}" была возвращена в статус "К выполнению".'
+            notification_message = f'Задача "{object_task.title}" была возвращена в статус "К выполнению".'
         notification = Notifications(
             user_id=current_user.id,
             object_id=object_task.object_id,
