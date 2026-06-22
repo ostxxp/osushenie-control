@@ -1,14 +1,22 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useContext, useEffect, useState, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { objectApi } from '@services/api'
-import { calculateLogicalTaskStats, formatDateRu } from '@/utils'
+import { AuthContext } from '@services/auth'
+import { calculateLogicalTaskStats, formatApiError, formatDateRu } from '@/utils'
 import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
+const toDateInputValue = (value: string | null | undefined): string => {
+  if (!value) return ''
+  return value.slice(0, 10)
+}
+
 function ObjectDetailsPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const authContext = useContext(AuthContext)
+  const userRole = authContext?.userRole
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
   const [progress, setProgress] = useState<number>(0)
@@ -16,6 +24,17 @@ function ObjectDetailsPage() {
   const [employees, setEmployees] = useState<User[]>([])
   const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
   const [objectType, setObjectType] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [editForm, setEditForm] = useState({
+    name: '',
+    address: '',
+    object_type: '',
+    is_active: true,
+    start_date: '',
+    end_date: '',
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -29,6 +48,14 @@ function ObjectDetailsPage() {
         ])
         setObjectItem(objData)
         setObjectType(localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '')
+        setEditForm({
+          name: objData.name,
+          address: objData.address,
+          object_type: localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '',
+          is_active: objData.is_active,
+          start_date: toDateInputValue(objData.start_date),
+          end_date: toDateInputValue(objData.end_date),
+        })
         setTasks(tasksData)
         try {
           const [progressValue, overdueValue] = await Promise.all([
@@ -65,6 +92,79 @@ function ObjectDetailsPage() {
   }, [id])
 
   const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
+  const canEditObject = userRole === 'admin'
+
+  const resetEditForm = () => {
+    if (!objectItem) return
+
+    setEditForm({
+      name: objectItem.name,
+      address: objectItem.address,
+      object_type: objectType,
+      is_active: objectItem.is_active,
+      start_date: toDateInputValue(objectItem.start_date),
+      end_date: toDateInputValue(objectItem.end_date),
+    })
+    setFormError('')
+  }
+
+  const startEditing = () => {
+    resetEditForm()
+    setIsEditing(true)
+  }
+
+  const cancelEditing = () => {
+    resetEditForm()
+    setIsEditing(false)
+  }
+
+  const updateEditForm = (field: keyof typeof editForm, value: string | boolean) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const saveObject = async () => {
+    if (!objectItem) return
+
+    if (!editForm.name.trim() || !editForm.address.trim() || !editForm.start_date) {
+      setFormError('Заполните название, адрес и дату начала.')
+      return
+    }
+
+    if (editForm.end_date && editForm.end_date < editForm.start_date) {
+      setFormError('Дата сдачи не может быть раньше даты начала.')
+      return
+    }
+
+    setSaving(true)
+    setFormError('')
+
+    try {
+      const updated = await objectApi.update(objectItem.id, {
+        name: editForm.name.trim(),
+        address: editForm.address.trim(),
+        is_active: editForm.is_active,
+        start_date: editForm.start_date,
+        end_date: editForm.end_date || null,
+      })
+
+      const nextObjectType = editForm.object_type.trim()
+      if (nextObjectType) {
+        localStorage.setItem(objectTypeStorageKey(objectItem.id), nextObjectType)
+      } else {
+        localStorage.removeItem(objectTypeStorageKey(objectItem.id))
+      }
+
+      setObjectItem(updated)
+      setObjectType(nextObjectType)
+      setIsEditing(false)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: unknown } })?.response?.data
+      setFormError(formatApiError(detail, 'Не удалось сохранить изменения объекта.'))
+      console.error(err)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -99,41 +199,139 @@ function ObjectDetailsPage() {
         <div className="flex flex-col lg:flex-row lg:items-stretch gap-6">
           {/* Левая часть - информация об объекте */}
           <div className="flex-1">
-            <div className="flex flex-col items-start gap-2 mb-4">
-              <button onClick={() => navigate('/objects')} className="btn btn-ghost btn-xs text-sm px-2">
-                ← К списку объектов
-              </button>
-              <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
+            <div className="mb-4 flex flex-col gap-3">
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <button onClick={() => navigate('/objects')} className="btn btn-ghost btn-xs text-sm px-2">
+                  ← К списку объектов
+                </button>
+                {canEditObject && !isEditing && (
+                  <button
+                    type="button"
+                    className="rounded-2xl bg-[#ff4539] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#cc372e]"
+                    onClick={startEditing}
+                  >
+                    Редактировать
+                  </button>
+                )}
+              </div>
+              {isEditing ? (
+                <input
+                  className="input w-full max-w-2xl text-2xl font-semibold"
+                  value={editForm.name}
+                  onChange={(e) => updateEditForm('name', e.target.value)}
+                  aria-label="Название объекта"
+                />
+              ) : (
+                <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="text-base-content/50 text-xs uppercase tracking-wide">Адрес</div>
-                <div className="font-medium mt-0.5">{objectItem.address}</div>
+            {formError && (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {formError}
               </div>
-              <div>
-                <div className="text-base-content/50 text-xs uppercase tracking-wide">Тип объекта</div>
-                <div className="font-medium mt-0.5">{objectType || '—'}</div>
-              </div>
-              <div>
-                <div className="text-base-content/50 text-xs uppercase tracking-wide">Ответственный</div>
-                <div className="font-medium mt-0.5">
-                  {responsibleUsers.length > 0
-                    ? responsibleUsers.map((user) => user.full_name).join(', ')
-                    : '—'}
+            )}
+
+            {isEditing ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+                  <label className="flex flex-col gap-2 md:col-span-2">
+                    <span className="text-xs uppercase tracking-wide text-base-content/50">Адрес</span>
+                    <input
+                      className="input w-full"
+                      value={editForm.address}
+                      onChange={(e) => updateEditForm('address', e.target.value)}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 md:col-span-2">
+                    <span className="text-xs uppercase tracking-wide text-base-content/50">Тип объекта</span>
+                    <input
+                      className="input w-full"
+                      value={editForm.object_type}
+                      onChange={(e) => updateEditForm('object_type', e.target.value)}
+                      placeholder="Например: квартира, дом, офис"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-xs uppercase tracking-wide text-base-content/50">Начало работ</span>
+                    <input
+                      type="date"
+                      className="input w-full"
+                      value={editForm.start_date}
+                      onChange={(e) => {
+                        const nextStartDate = e.target.value
+                        setEditForm((prev) => ({
+                          ...prev,
+                          start_date: nextStartDate,
+                          end_date: prev.end_date && prev.end_date < nextStartDate ? nextStartDate : prev.end_date,
+                        }))
+                      }}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-xs uppercase tracking-wide text-base-content/50">Сдача объекта</span>
+                    <input
+                      type="date"
+                      className="input w-full"
+                      value={editForm.end_date}
+                      min={editForm.start_date}
+                      onChange={(e) => updateEditForm('end_date', e.target.value)}
+                    />
+                  </label>
+                  <label className="flex items-center gap-3 rounded-2xl border border-base-200 bg-base-50 px-4 py-3 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-primary"
+                      checked={editForm.is_active}
+                      onChange={(e) => updateEditForm('is_active', e.target.checked)}
+                    />
+                    <span className="font-medium">Объект активен</span>
+                  </label>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button type="button" className="btn" onClick={cancelEditing} disabled={saving}>
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-2xl bg-[#ff4539] px-4 py-2 font-medium text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a]"
+                    onClick={saveObject}
+                    disabled={saving}
+                  >
+                    {saving ? 'Сохранение...' : 'Сохранить'}
+                  </button>
                 </div>
               </div>
-              <div>
-                <div className="text-base-content/50 text-xs uppercase tracking-wide">Период работ</div>
-                <div className="font-medium mt-0.5">
-                  {objectItem.start_date && objectItem.end_date 
-                    ? `${formatDateRu(objectItem.start_date)} — ${formatDateRu(objectItem.end_date)}`
-                    : objectItem.start_date 
-                      ? `с ${formatDateRu(objectItem.start_date)}`
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Адрес</div>
+                  <div className="font-medium mt-0.5">{objectItem.address}</div>
+                </div>
+                <div>
+                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Тип объекта</div>
+                  <div className="font-medium mt-0.5">{objectType || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Ответственный</div>
+                  <div className="font-medium mt-0.5">
+                    {responsibleUsers.length > 0
+                      ? responsibleUsers.map((user) => user.full_name).join(', ')
                       : '—'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Период работ</div>
+                  <div className="font-medium mt-0.5">
+                    {objectItem.start_date && objectItem.end_date 
+                      ? `${formatDateRu(objectItem.start_date)} — ${formatDateRu(objectItem.end_date)}`
+                      : objectItem.start_date 
+                        ? `с ${formatDateRu(objectItem.start_date)}`
+                        : '—'}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Правая часть - прогресс объекта */}

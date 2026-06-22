@@ -13,6 +13,8 @@ import type {
   NotificationLog,
 } from '@/types'
 
+export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
+
 type ConstructionObjectCreatePayload = {
   name: string
   address: string
@@ -20,6 +22,8 @@ type ConstructionObjectCreatePayload = {
   start_date: string
   end_date?: string | null
 }
+
+type ConstructionObjectUpdatePayload = Partial<ConstructionObjectCreatePayload>
 
 export const projectApi = {
   getAll: async (): Promise<Project[]> => {
@@ -101,6 +105,10 @@ export const objectApi = {
   },
   create: async (obj: ConstructionObjectCreatePayload): Promise<ConstructionObject> => {
     const response = await authApi.post('/objects', obj)
+    return response.data
+  },
+  update: async (id: number, obj: ConstructionObjectUpdatePayload): Promise<ConstructionObject> => {
+    const response = await authApi.patch(`/objects/${id}`, obj)
     return response.data
   },
   assignUserToObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {

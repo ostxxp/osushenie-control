@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { notificationApi, objectApi } from '@services/api'
+import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
 import type { NotificationLog } from '@/types'
@@ -90,6 +90,7 @@ function NotificationsPage() {
             : notification,
         ),
       )
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
       setError(formatApiError(err, 'Не удалось отметить уведомление как прочитанное'))
     } finally {
@@ -109,6 +110,7 @@ function NotificationsPage() {
           return matched ?? notification
         }),
       )
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
       setError(formatApiError(err, 'Не удалось отметить все уведомления как прочитанные'))
     } finally {
