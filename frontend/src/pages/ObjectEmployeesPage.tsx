@@ -225,8 +225,12 @@ function ObjectEmployeesPage() {
       <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-4">
-            <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs text-sm px-2">
-              ← К объекту
+            <Link
+              to={`/objects/${objectItem.id}`}
+              className="inline-flex w-fit items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+            >
+              <span aria-hidden="true">←</span>
+              К объекту
             </Link>
             <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
             <div className="inline-flex flex-wrap items-center gap-3 rounded-2xl border border-base-200 bg-base-200/40 px-4 py-3">

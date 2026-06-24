@@ -377,8 +377,12 @@ function ObjectTasksPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
-          <Link to={`/objects/${objectItem.id}`} className="btn btn-ghost btn-xs w-fit text-sm px-2">
-            ← К объекту
+          <Link
+            to={`/objects/${objectItem.id}`}
+            className="inline-flex w-fit items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+          >
+            <span aria-hidden="true">←</span>
+            К объекту
           </Link>
           <div>
             <h1 className="text-3xl font-semibold mt-1">{objectItem.name}</h1>

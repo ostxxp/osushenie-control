@@ -261,7 +261,7 @@ function ObjectDetailsPage() {
           <div className="min-w-0">
             <button
               onClick={() => navigate('/objects')}
-              className="mb-3 inline-flex items-center gap-1 rounded-lg px-1 py-1 text-sm font-medium text-slate-700 transition hover:text-slate-950"
+              className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
             >
               <span aria-hidden="true">←</span>
               К списку объектов
