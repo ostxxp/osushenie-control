@@ -111,6 +111,10 @@ export const objectApi = {
     const response = await authApi.patch(`/objects/${id}`, obj)
     return response.data
   },
+  deactivate: async (id: number): Promise<ConstructionObject> => {
+    const response = await authApi.patch(`/objects/${id}/deactivate`)
+    return response.data
+  },
   assignUserToObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
     const response = await authApi.post(`/objects/${objectId}/assign/${userId}`)
     return response.data

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, useMemo } from 'react'
+import { useContext, useEffect, useState, useMemo, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { objectApi } from '@services/api'
 import { AuthContext } from '@services/auth'
@@ -25,7 +25,9 @@ function ObjectDetailsPage() {
   const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
   const [objectType, setObjectType] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [formError, setFormError] = useState('')
   const [editForm, setEditForm] = useState({
     name: '',
@@ -91,8 +93,47 @@ function ObjectDetailsPage() {
     fetchData()
   }, [id])
 
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!actionsOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target
+      if (target instanceof Node && actionsMenuRef.current?.contains(target)) {
+        return
+      }
+
+      setActionsOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActionsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [actionsOpen])
+
   const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
   const canEditObject = userRole === 'admin'
+  const progressLabel =
+    progress === 0
+      ? 'Ещё не начат'
+      : progress < 30
+        ? 'Только начали'
+        : progress < 70
+          ? 'В процессе'
+          : progress < 100
+            ? 'Почти готово'
+            : 'Завершён'
 
   const resetEditForm = () => {
     if (!objectItem) return
@@ -166,6 +207,27 @@ function ObjectDetailsPage() {
     }
   }
 
+  const deactivateObject = async () => {
+    if (!objectItem || deleting) return
+
+    const confirmed = window.confirm('Деактивировать объект? Он будет скрыт из активной работы.')
+    if (!confirmed) return
+
+    setDeleting(true)
+    setFormError('')
+
+    try {
+      await objectApi.deactivate(objectItem.id)
+      navigate('/objects')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: unknown } })?.response?.data
+      setFormError(formatApiError(detail, 'Не удалось деактивировать объект.'))
+      console.error(err)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -194,35 +256,72 @@ function ObjectDetailsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Карточка с информацией об объекте и прогрессом */}
-      <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-stretch gap-6">
-          {/* Левая часть - информация об объекте */}
-          <div className="flex-1">
-            <div className="mb-4 flex flex-col gap-3">
-              <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <button onClick={() => navigate('/objects')} className="btn btn-ghost btn-xs text-sm px-2">
-                  ← К списку объектов
-                </button>
-                {canEditObject && !isEditing && (
-                  <button
-                    type="button"
-                    className="rounded-2xl bg-[#ff4539] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#cc372e]"
-                    onClick={startEditing}
-                  >
-                    Редактировать
-                  </button>
-                )}
-              </div>
+      <div className="rounded-[1.75rem] border border-slate-200/70 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+        <div className="grid gap-6 lg:grid-cols-[1fr_220px] lg:items-stretch">
+          <div className="min-w-0">
+            <button
+              onClick={() => navigate('/objects')}
+              className="mb-3 inline-flex items-center gap-1 rounded-lg px-1 py-1 text-sm font-medium text-slate-700 transition hover:text-slate-950"
+            >
+              <span aria-hidden="true">←</span>
+              К списку объектов
+            </button>
+
+            <div className="mb-5 flex min-w-0 items-center gap-2">
               {isEditing ? (
                 <input
-                  className="input w-full max-w-2xl text-2xl font-semibold"
+                  className="input min-h-0 w-full max-w-2xl rounded-xl border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-950"
                   value={editForm.name}
                   onChange={(e) => updateEditForm('name', e.target.value)}
                   aria-label="Название объекта"
                 />
               ) : (
-                <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
+                <h1 className="min-w-0 truncate text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
+                  {objectItem.name}
+                </h1>
+              )}
+
+              {canEditObject && !isEditing && (
+                <div ref={actionsMenuRef} className="relative">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm min-h-0 h-9 w-9 rounded-xl border border-slate-200 bg-white p-0 text-slate-700 shadow-sm hover:bg-slate-50"
+                    aria-label="Действия с объектом"
+                    aria-expanded={actionsOpen}
+                    onClick={() => setActionsOpen((isOpen) => !isOpen)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM12 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM12 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                  {actionsOpen && (
+                    <div className="absolute left-0 z-20 mt-2 w-44 rounded-xl border border-slate-100 bg-white p-2 shadow-[0_14px_32px_rgba(15,23,42,0.14)]">
+                      <button
+                        type="button"
+                        className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-slate-800 transition hover:bg-slate-50"
+                        onClick={() => {
+                          setActionsOpen(false)
+                          startEditing()
+                        }}
+                      >
+                        <span className="w-4 text-center text-slate-700" aria-hidden="true">✎</span>
+                        Редактировать
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-red-600 transition hover:bg-red-50"
+                        onClick={() => {
+                          setActionsOpen(false)
+                          void deactivateObject()
+                        }}
+                        disabled={deleting}
+                      >
+                        <span className="w-4 text-center" aria-hidden="true">×</span>
+                        {deleting ? 'Деактивация...' : 'Деактивировать'}
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -303,26 +402,26 @@ function ObjectDetailsPage() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 gap-x-14 gap-y-4 text-sm sm:grid-cols-2 xl:max-w-3xl">
                 <div>
-                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Адрес</div>
-                  <div className="font-medium mt-0.5">{objectItem.address}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Адрес</div>
+                  <div className="mt-1 font-semibold text-slate-950">{objectItem.address}</div>
                 </div>
                 <div>
-                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Тип объекта</div>
-                  <div className="font-medium mt-0.5">{objectType || '—'}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Тип объекта</div>
+                  <div className="mt-1 font-semibold text-slate-950">{objectType || '—'}</div>
                 </div>
                 <div>
-                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Ответственный</div>
-                  <div className="font-medium mt-0.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ответственный</div>
+                  <div className="mt-1 font-semibold text-slate-950">
                     {responsibleUsers.length > 0
                       ? responsibleUsers.map((user) => user.full_name).join(', ')
                       : '—'}
                   </div>
                 </div>
                 <div>
-                  <div className="text-base-content/50 text-xs uppercase tracking-wide">Период работ</div>
-                  <div className="font-medium mt-0.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Период работ</div>
+                  <div className="mt-1 font-semibold text-slate-950">
                     {objectItem.start_date && objectItem.end_date 
                       ? `${formatDateRu(objectItem.start_date)} — ${formatDateRu(objectItem.end_date)}`
                       : objectItem.start_date 
@@ -334,30 +433,22 @@ function ObjectDetailsPage() {
             )}
           </div>
 
-          {/* Правая часть - прогресс объекта */}
-          <div className="lg:w-64 lg:min-w-[200px] flex flex-col justify-center items-center bg-slate-50/50 rounded-2xl p-6 border border-slate-200/50">
-            <div className="text-sm text-base-content/60 font-medium uppercase tracking-wider mb-2">
+          <div className="flex min-h-[132px] flex-col items-center justify-center rounded-2xl border border-slate-200/70 bg-slate-50/40 px-6 py-5">
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
               Прогресс
             </div>
-            <div className="text-5xl font-bold tabular-nums text-primary">
+            <div className="text-5xl font-bold tabular-nums leading-none text-primary">
               {progress}%
             </div>
-            
-            {/* Мини-прогресс бар */}
-            <div className="mt-4 w-full h-2 overflow-hidden rounded-full bg-base-200">
+            <div className="mt-4 h-px w-full bg-white shadow-[0_1px_0_rgba(15,23,42,0.06)]" />
+            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
                 style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
               />
             </div>
-
-            {/* Статус прогресса */}
-            <div className="mt-3 text-xs text-base-content/50">
-              {progress === 0 && 'Ещё не начат'}
-              {progress > 0 && progress < 30 && 'Только начали'}
-              {progress >= 30 && progress < 70 && 'В процессе'}
-              {progress >= 70 && progress < 100 && 'Почти готово'}
-              {progress === 100 && 'Завершён!'}
+            <div className="mt-3 text-xs font-medium text-slate-400">
+              {progressLabel}
             </div>
           </div>
         </div>
