@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi } from '@services/api'
 import { AuthContext } from '@services/auth'
@@ -48,8 +48,12 @@ function NotificationsPage() {
     [notifications, viewFilter],
   )
 
-  const fetchNotifications = async () => {
-    setLoading(true)
+  const fetchNotifications = useCallback(async (options?: { showLoading?: boolean }) => {
+    if (!canViewNotifications) return
+
+    if (options?.showLoading !== false) {
+      setLoading(true)
+    }
     setError('')
 
     try {
@@ -61,12 +65,15 @@ function NotificationsPage() {
       setObjectNames(
         Object.fromEntries(objects.map((objectItem) => [objectItem.id, objectItem.name])),
       )
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
       setError(formatApiError(err, 'Не удалось загрузить уведомления'))
     } finally {
-      setLoading(false)
+      if (options?.showLoading !== false) {
+        setLoading(false)
+      }
     }
-  }
+  }, [canViewNotifications])
 
   useEffect(() => {
     if (!canViewNotifications) {
@@ -75,7 +82,29 @@ function NotificationsPage() {
     }
 
     fetchNotifications()
-  }, [canViewNotifications])
+  }, [canViewNotifications, fetchNotifications])
+
+  useEffect(() => {
+    if (!canViewNotifications) return
+
+    const refreshSilently = () => fetchNotifications({ showLoading: false })
+    const intervalId = window.setInterval(refreshSilently, 30000)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSilently()
+      }
+    }
+
+    window.addEventListener('focus', refreshSilently)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshSilently)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [canViewNotifications, fetchNotifications])
 
   const markAsRead = async (notificationId: number) => {
     setActionId(notificationId)
@@ -177,7 +206,7 @@ function NotificationsPage() {
             <button
               type="button"
               className="rounded-2xl border border-base-300 bg-base-100 px-5 py-3 font-medium transition hover:border-[#ff4539]/30 hover:bg-[#ff4539]/5 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={fetchNotifications}
+              onClick={() => fetchNotifications()}
             >
               Обновить
             </button>

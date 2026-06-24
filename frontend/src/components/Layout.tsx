@@ -38,6 +38,27 @@ function Layout() {
     }
   }, [refreshUnreadNotificationsCount])
 
+  useEffect(() => {
+    if (!canViewNotifications) return
+
+    const intervalId = window.setInterval(refreshUnreadNotificationsCount, 30000)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshUnreadNotificationsCount()
+      }
+    }
+
+    window.addEventListener('focus', refreshUnreadNotificationsCount)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshUnreadNotificationsCount)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [canViewNotifications, refreshUnreadNotificationsCount])
+
   const navItems = [
     { to: '/', label: 'Главная', isActive: location.pathname === '/' },
     {
