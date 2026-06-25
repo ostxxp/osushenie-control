@@ -7,9 +7,9 @@ import ObjectDetailsPage from '@pages/ObjectDetailsPage'
 import ObjectTasksPage from '@pages/ObjectTasksPage'
 import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
-import PlaceholderPage from '@pages/PlaceholderPage'
-import Layout from '@components/Layout'
-import { AuthContext, authService } from '@services/auth'
+import NotificationsPage from '@pages/NotificationsPage'
+import Layout from './components/Layout'
+import { AUTH_EXPIRED_EVENT, AuthContext, authService } from '@services/auth'
 import type { UserRole } from '@/types'
 
 function App() {
@@ -19,6 +19,13 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
+
+    const handleAuthExpired = () => {
+      setIsAuthenticated(false)
+      setUserRole(null)
+    }
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
 
     const checkAuth = async () => {
       const user = await authService.loadCurrentUser()
@@ -33,6 +40,7 @@ function App() {
 
     return () => {
       cancelled = true
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
     }
   }, [])
 
@@ -58,7 +66,10 @@ function App() {
               path="/users"
               element={userRole === 'admin' ? <UsersPage /> : <Navigate to="/" replace />}
             />
-            <Route path="/notifications" element={<PlaceholderPage title="Уведомления" description="Здесь будут уведомления." />} />
+            <Route
+              path="/notifications"
+              element={userRole === 'admin' || userRole === 'chief_engineer' ? <NotificationsPage /> : <Navigate to="/" replace />}
+            />
           </Route>
         </Routes>
       </Router>

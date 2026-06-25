@@ -1,4 +1,4 @@
-from app.modules.notifications.models import Notifications
+from app.modules.notifications.models import NotificationType
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 
@@ -8,10 +8,13 @@ class NotificationBase(BaseModel):
     user_id: int
     object_id: int
     message: str = Field(min_length=1, max_length=255)
-    is_read: bool = False
+    type: NotificationType
 
 class NotificationRead(NotificationBase):
     id: int
+    receipt_id: int
+    is_read: bool
+    read_at: datetime | None = None
     created_at: datetime
 
     model_config = {

@@ -30,6 +30,7 @@ export interface ConstructionObject {
   id: number
   name: string
   description?: string
+  object_type?: string | null
   address: string
   is_active: boolean
   start_date: string
@@ -64,6 +65,23 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 export type ObjectTaskStatus = 'todo' | 'in_progress' | 'done' | 'skipped' | 'not_applicable'
 export type TaskChildrenMode = 'all' | 'single_choice'
 
+export type NotificationType =
+  | 'user_assigned_to_object'
+  | 'object_created'
+  | 'user_created'
+
+export interface NotificationLog {
+  id: number
+  receipt_id: number
+  user_id: number
+  object_id: number
+  message: string
+  type: NotificationType
+  is_read: boolean
+  read_at: string | null
+  created_at: string
+}
+
 export interface ObjectTask {
   id: number
   object_id: number
@@ -75,11 +93,22 @@ export interface ObjectTask {
   depth: number
   sort_order: number
   is_active: boolean
+  deadline: string | null
   completed_at: string | null
   completed_by_id: number | null
   completed_by?: User
   created_at: string
   updated_at: string
+}
+
+export interface ObjectTaskUpsertPayload {
+  parent_id?: number | null
+  title: string
+  sort_order?: number | null
+  children_mode?: TaskChildrenMode
+  status?: ObjectTaskStatus
+  is_active?: boolean
+  deadline?: string | null
 }
 
 export interface ObjectTaskTree extends ObjectTask {

@@ -87,7 +87,7 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer">
+                className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer">
                 {loading ? 'Вход...' : 'Войти'}
               </button>
             </form>

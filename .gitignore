@@ -31,4 +31,6 @@ htmlcov/
 # Logs
 *.log
 
+backend/uploads/
+
 devdata/
