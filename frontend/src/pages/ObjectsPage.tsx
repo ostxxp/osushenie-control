@@ -5,11 +5,13 @@ import { formatDateRu } from '@/utils'
 import type { ConstructionObject, User } from '@/types'
 import { AuthContext } from '@services/auth'
 
+const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
+
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-lg bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-base-100 p-6 shadow-lg">{children}</div>
     </div>
   )
 }
@@ -67,12 +69,16 @@ function ObjectsPage() {
   const [creating, setCreating] = useState(false)
   const [newObject, setNewObject] = useState({
     name: '',
+    object_type: '',
     address: '',
     start_date: new Date().toISOString().slice(0, 10),
     end_date: '',
   })
   const [users, setUsers] = useState<User[]>([])
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<number[]>([])
+  const [responsibleUserId, setResponsibleUserId] = useState('')
+  const [responsibleSearch, setResponsibleSearch] = useState('')
+  const [responsibleDropdownOpen, setResponsibleDropdownOpen] = useState(false)
   const [workerSearch, setWorkerSearch] = useState('')
   const [workerDropdownOpen, setWorkerDropdownOpen] = useState(false)
 
@@ -141,6 +147,19 @@ function ObjectsPage() {
     [availableWorkers, workerSearch],
   )
 
+  const filteredResponsibleWorkers = useMemo(
+    () =>
+      availableWorkers.filter((user) =>
+        user.full_name.toLowerCase().includes(responsibleSearch.toLowerCase()),
+      ),
+    [availableWorkers, responsibleSearch],
+  )
+
+  const responsibleUser = useMemo(
+    () => availableWorkers.find((user) => String(user.id) === responsibleUserId) || null,
+    [availableWorkers, responsibleUserId],
+  )
+
   const handleChange = (field: string, value: string | boolean) => {
     setNewObject((prev) => ({ ...prev, [field]: value }))
   }
@@ -168,9 +187,22 @@ function ObjectsPage() {
         end_date: newObject.end_date || null,
       }
       const created = await objectApi.create(payload)
-      if (selectedWorkerIds.length > 0) {
+      const objectType = newObject.object_type.trim()
+      const responsibleId = responsibleUserId ? Number(responsibleUserId) : null
+
+      if (objectType) {
+        localStorage.setItem(objectTypeStorageKey(created.id), objectType)
+      }
+
+      if (responsibleId) {
+        await objectApi.assignUserToObject(created.id, responsibleId)
+        await objectApi.assignResponsibleToObject(created.id, responsibleId)
+      }
+
+      const workerIdsToAssign = selectedWorkerIds.filter((userId) => userId !== responsibleId)
+      if (workerIdsToAssign.length > 0) {
         await Promise.all(
-          selectedWorkerIds.map((userId) => objectApi.assignUserToObject(created.id, userId)),
+          workerIdsToAssign.map((userId) => objectApi.assignUserToObject(created.id, userId)),
         )
       }
       // Refresh list from server to ensure consistent shape
@@ -183,8 +215,11 @@ function ObjectsPage() {
       }
       setShowCreateObject(false)
       setSelectedWorkerIds([])
+      setResponsibleUserId('')
+      setResponsibleSearch('')
       setNewObject({
         name: '',
+        object_type: '',
         address: '',
         start_date: new Date().toISOString().slice(0, 10),
         end_date: '',
@@ -219,10 +254,9 @@ function ObjectsPage() {
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold">Объекты строительства</h1>
-        <p className="text-base-content/70">Управление строительными объектами компании</p>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-lg border border-base-200 bg-base-100 p-4 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
@@ -262,10 +296,12 @@ function ObjectsPage() {
             {userRole === 'admin' && (
               <button
                 type="button"
-                className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
+                className="w-full whitespace-nowrap bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
                 onClick={() => {
                   setFormError('')
                   setSelectedWorkerIds([])
+                  setResponsibleUserId('')
+                  setResponsibleSearch('')
                   setShowCreateObject(true)
                 }}
               >
@@ -275,7 +311,7 @@ function ObjectsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-base-200 bg-base-100">
+        <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
           <table className="min-w-full text-left">
             <thead className="bg-base-200">
               <tr>
@@ -316,61 +352,154 @@ function ObjectsPage() {
             setShowCreateObject(false)
             setFormError('')
             setSelectedWorkerIds([])
+            setResponsibleUserId('')
+            setResponsibleSearch('')
           }}
         >
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Создать объект</h2>
+          <div className="space-y-2">
+            <div className="border-b border-base-200 px-4 pb-2">
+              <h2 className="text-3xl font-semibold">Создать объект</h2>
+            </div>
             {formError && <div className="alert alert-error">{formError}</div>}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <input
-                className="input w-full"
-                placeholder="Название *"
-                value={newObject.name}
-                onChange={(e) => handleChange('name', e.target.value)}
-              />
-              <input
-                className="input w-full"
-                placeholder="Адрес *"
-                value={newObject.address}
-                onChange={(e) => handleChange('address', e.target.value)}
-              />
-              {/* Description and active status removed from creation form */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium">Начало объекта</span>
-                  <input
-                    type="date"
-                    className="input w-full"
-                    value={newObject.start_date}
-                    min={new Date().toISOString().slice(0, 10)}
-                    onChange={(e) => {
-                      const newStart = e.target.value
-                      setNewObject((prev) => ({
-                        ...prev,
-                        start_date: newStart,
-                        end_date: prev.end_date && prev.end_date < newStart ? newStart : prev.end_date,
-                      }))
-                    }}
-                  />
-                </label>
-                <label className="space-y-2">
-                  <span className="text-sm font-medium">Сдача объекта</span>
-                  <input
-                    type="date"
-                    className="input w-full"
-                    value={newObject.end_date}
-                    min={newObject.start_date}
-                    onChange={(e) => handleChange('end_date', e.target.value)}
-                  />
-                </label>
-              </div>
-              <div className="col-span-1 sm:col-span-2">
-                <div className="space-y-2 rounded-lg border border-base-200 bg-base-100 p-4">
-                  <p className="text-sm font-medium">Назначить сотрудников</p>
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+              <section className="space-y-4 rounded-2xl border border-base-200 bg-white p-4">
+                <div className="border-b border-base-200 pb-3">
+                  <h3 className="text-lg font-semibold">Данные объекта</h3>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 sm:col-span-2">
+                    <span className="text-sm font-medium">Название *</span>
+                    <input
+                      className="input w-full"
+                      placeholder="Например: ЖК Северный, корпус 2"
+                      value={newObject.name}
+                      onChange={(e) => handleChange('name', e.target.value)}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 sm:col-span-2">
+                    <span className="text-sm font-medium">Адрес *</span>
+                    <input
+                      className="input w-full"
+                      placeholder="Город, улица, дом"
+                      value={newObject.address}
+                      onChange={(e) => handleChange('address', e.target.value)}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 sm:col-span-2">
+                    <span className="text-sm font-medium">Тип объекта</span>
+                    <input
+                      className="input w-full"
+                      placeholder="Например: квартира, дом, офис"
+                      value={newObject.object_type}
+                      onChange={(e) => handleChange('object_type', e.target.value)}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium">Начало объекта</span>
+                    <input
+                      type="date"
+                      className="input w-full"
+                      value={newObject.start_date}
+                      min={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => {
+                        const newStart = e.target.value
+                        setNewObject((prev) => ({
+                          ...prev,
+                          start_date: newStart,
+                          end_date: prev.end_date && prev.end_date < newStart ? newStart : prev.end_date,
+                        }))
+                      }}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium">Сдача объекта</span>
+                    <input
+                      type="date"
+                      className="input w-full"
+                      value={newObject.end_date}
+                      min={newObject.start_date}
+                      onChange={(e) => handleChange('end_date', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-2xl border border-base-200 bg-white p-4">
+                <div className="border-b border-base-200 pb-3">
+                  <h3 className="text-lg font-semibold">Команда</h3>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium">Ответственный</span>
                   <div className="relative">
                     <input
                       className="input w-full"
-                      placeholder="Поиск по имени сотрудника..."
+                      placeholder="Поиск по имени..."
+                      value={responsibleSearch}
+                      onChange={(e) => setResponsibleSearch(e.target.value)}
+                      onFocus={() => setResponsibleDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setResponsibleDropdownOpen(false), 150)}
+                      aria-label="Поиск ответственного"
+                    />
+                    {responsibleDropdownOpen && (
+                      <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
+                        {filteredResponsibleWorkers.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-base-content/60">Не найдено сотрудников.</div>
+                        ) : (
+                          filteredResponsibleWorkers.map((user) => (
+                            <button
+                              type="button"
+                              key={user.id}
+                              className={`flex w-full items-center justify-between gap-3 border-b border-base-200 px-4 py-3 text-left transition ${
+                                responsibleUserId === String(user.id) ? 'bg-primary/10' : 'hover:bg-base-200'
+                              }`}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setResponsibleUserId(String(user.id))
+                                setResponsibleSearch(user.full_name)
+                                setResponsibleDropdownOpen(false)
+                              }}
+                            >
+                              <div>
+                                <div className="font-medium text-slate-900">{user.full_name}</div>
+                                <div className="text-xs text-slate-600">{getWorkerRoleLabel(user.role)}</div>
+                              </div>
+                              <span className={`badge ${responsibleUserId === String(user.id) ? 'badge-primary' : 'badge-outline'}`}>
+                                {responsibleUserId === String(user.id) ? 'Выбрано' : 'Выбрать'}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {responsibleUser && (
+                    <div className="flex flex-wrap gap-2 rounded-xl bg-base-200/50 p-2">
+                      <button
+                        type="button"
+                        className="badge badge-info badge-sm gap-2"
+                        onClick={() => {
+                          setResponsibleUserId('')
+                          setResponsibleSearch('')
+                        }}
+                      >
+                        {responsibleUser.full_name} ×
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm font-medium">Дополнительные сотрудники</p>
+                  <div className="relative">
+                    <input
+                      className="input w-full"
+                      placeholder="Поиск по имени..."
                       value={workerSearch}
                       onChange={(e) => setWorkerSearch(e.target.value)}
                       onFocus={() => setWorkerDropdownOpen(true)}
@@ -406,7 +535,7 @@ function ObjectsPage() {
                     )}
                   </div>
                   {selectedWorkerIds.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 rounded-xl bg-base-200/50 p-2">
                       {selectedWorkerIds.map((id) => {
                         const user = users.find((u) => u.id === id)
                         return (
@@ -420,22 +549,26 @@ function ObjectsPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </section>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t border-base-200 pt-4">
               <button
                 className="btn"
                 onClick={() => {
                   setShowCreateObject(false)
                   setFormError('')
                   setSelectedWorkerIds([])
+                  setResponsibleUserId('')
+                  setResponsibleSearch('')
                   setNewObject({
                     name: '',
+                    object_type: '',
                     address: '',
                     start_date: new Date().toISOString().slice(0, 10),
                     end_date: '',
                   })
                   setWorkerSearch('')
+                  setResponsibleDropdownOpen(false)
                   setWorkerDropdownOpen(false)
                 }}
                 disabled={creating}
@@ -443,7 +576,7 @@ function ObjectsPage() {
                 Отмена
               </button>
               <button
-                className="bg-[#ff4539] text-white py-2 px-4 rounded-lg hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+                className="bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
                 onClick={handleCreate}
                 disabled={creating}
               >

@@ -9,7 +9,11 @@ import type {
   ObjectTaskStatus,
   ObjectTaskStatusUpdateResponse,
   ObjectTaskTree,
+  ObjectTaskUpsertPayload,
+  NotificationLog,
 } from '@/types'
+
+export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
 
 type ConstructionObjectCreatePayload = {
   name: string
@@ -18,6 +22,8 @@ type ConstructionObjectCreatePayload = {
   start_date: string
   end_date?: string | null
 }
+
+type ConstructionObjectUpdatePayload = Partial<ConstructionObjectCreatePayload>
 
 export const projectApi = {
   getAll: async (): Promise<Project[]> => {
@@ -101,6 +107,14 @@ export const objectApi = {
     const response = await authApi.post('/objects', obj)
     return response.data
   },
+  update: async (id: number, obj: ConstructionObjectUpdatePayload): Promise<ConstructionObject> => {
+    const response = await authApi.patch(`/objects/${id}`, obj)
+    return response.data
+  },
+  deactivate: async (id: number): Promise<ConstructionObject> => {
+    const response = await authApi.patch(`/objects/${id}/deactivate`)
+    return response.data
+  },
   assignUserToObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
     const response = await authApi.post(`/objects/${objectId}/assign/${userId}`)
     return response.data
@@ -144,6 +158,14 @@ export const objectApi = {
     const response = await authApi.get(`/objects/${objectId}/tasks/headers`)
     return response.data
   },
+  getOverdueTasks: async (objectId: number): Promise<ObjectTask[]> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/overdue`)
+    return response.data
+  },
+  getOverdueCount: async (objectId: number): Promise<number> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/overdue_count`)
+    return response.data
+  },
   getProgress: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/progress`)
     return response.data
@@ -162,6 +184,14 @@ export const objectApi = {
   },
   toggleTaskStatus: async (objectId: number, taskId: number): Promise<ObjectTaskStatusUpdateResponse> => {
     const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}/toggle_status`)
+    return response.data
+  },
+  createTask: async (objectId: number, task: ObjectTaskUpsertPayload): Promise<ObjectTask> => {
+    const response = await authApi.post(`/objects/${objectId}/tasks`, task)
+    return response.data
+  },
+  updateTask: async (objectId: number, taskId: number, task: ObjectTaskUpsertPayload): Promise<ObjectTask> => {
+    const response = await authApi.post(`/objects/${objectId}/tasks/${taskId}`, task)
     return response.data
   },
   unassignResponsibleFromObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
@@ -207,5 +237,34 @@ export const taskApi = {
 
   delete: async (projectId: number, taskId: number): Promise<void> => {
     await authApi.delete(`/projects/${projectId}/tasks/${taskId}`)
+  },
+}
+
+export const notificationApi = {
+  getAll: async (): Promise<NotificationLog[]> => {
+    const response = await authApi.get('/notifications')
+    return response.data
+  },
+  getUnread: async (): Promise<NotificationLog[]> => {
+    const response = await authApi.get('/notifications/unread')
+    return response.data
+  },
+  getUnreadCount: async (): Promise<number> => {
+    const response = await authApi.get('/notifications/unread-count')
+    return response.data
+  },
+  markAsRead: async (notificationId: number): Promise<NotificationLog> => {
+    const response = await authApi.patch(`/notifications/${notificationId}/read`)
+    return response.data
+  },
+  markAllAsRead: async (): Promise<NotificationLog[]> => {
+    const response = await authApi.patch('/notifications')
+    return response.data
+  },
+  deleteAll: async (): Promise<void> => {
+    await authApi.delete('/notifications')
+  },
+  deleteOne: async (notificationId: number): Promise<void> => {
+    await authApi.delete(`/notifications/${notificationId}`)
   },
 }

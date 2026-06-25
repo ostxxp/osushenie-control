@@ -37,3 +37,7 @@ select {
 #root {
   min-height: 100%;
 }
+
+.btn {
+  border-radius: 1rem;
+}

@@ -192,6 +192,7 @@ async def create_object_task(
         depth=0 if parent is None else parent.depth + 1,
         sort_order=sort_order,
         children_mode=task_data.children_mode,
+        deadline=task_data.deadline,
     )
     db.add(object_task)
     await db.commit()
@@ -225,7 +226,7 @@ async def update_object_task(
                 root_task=object_task,
             )
 
-    for field in ("title", "sort_order", "children_mode", "is_active"):
+    for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
 
