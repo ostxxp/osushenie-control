@@ -279,12 +279,82 @@ async def test_single_choice_task_marks_only_sibling_choice_not_applicable(
     assert next(task for task in reset_tasks if task["title"] == "Есть РД")[
         "status"
     ] == "todo"
+    assert next(task for task in reset_tasks if task["title"] == "Continue with RD")[
+        "status"
+    ] == "todo"
     assert next(task for task in reset_tasks if task["title"] == "Нет РД")[
         "status"
     ] == "todo"
     assert next(task for task in reset_tasks if task["title"] == "Work by PPR")[
         "status"
     ] == "todo"
+
+
+async def test_resetting_task_to_todo_resets_all_descendants(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    root_template = await create_task_template(
+        title="Root task",
+        source_id="root-1",
+    )
+    child_template = await create_task_template(
+        title="Child task",
+        parent_id=root_template.id,
+        source_id="child-1",
+        parent_source_id="root-1",
+        depth=1,
+    )
+    await create_task_template(
+        title="Grandchild task",
+        parent_id=child_template.id,
+        source_id="grandchild-1",
+        parent_source_id="child-1",
+        depth=2,
+    )
+    access_token = await login(client, email="admin@example.com")
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(access_token),
+        json=object_payload(),
+    )
+    object_id = create_response.json()["id"]
+    tasks_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(access_token),
+    )
+    tasks = tasks_response.json()
+    root_task = next(task for task in tasks if task["title"] == "Root task")
+    child_task = next(task for task in tasks if task["title"] == "Child task")
+    grandchild_task = next(task for task in tasks if task["title"] == "Grandchild task")
+
+    for task in (root_task, child_task, grandchild_task):
+        response = await client.patch(
+            f"/api/v1/objects/{object_id}/tasks/{task['id']}/status",
+            headers=auth_headers(access_token),
+            json={"status": "done"},
+        )
+        assert response.status_code == 200
+
+    reset_response = await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{root_task['id']}/status",
+        headers=auth_headers(access_token),
+        json={"status": "todo"},
+    )
+    list_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(access_token),
+    )
+
+    assert reset_response.status_code == 200
+    reset_tasks = list_response.json()
+    for title in ("Root task", "Child task", "Grandchild task"):
+        task = next(task for task in reset_tasks if task["title"] == title)
+        assert task["status"] == "todo"
+        assert task["completed_at"] is None
+        assert task["completed_by_id"] is None
 
 
 async def test_foreman_cannot_edit_object_task_title(
