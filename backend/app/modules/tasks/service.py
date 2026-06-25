@@ -220,6 +220,11 @@ async def update_object_task(
             changed_task=object_task,
             current_user=current_user,
         )
+        if task_data.status == ObjectTaskStatus.TODO:
+            await _reset_descendants_to_todo(
+                db,
+                root_task=object_task,
+            )
 
     for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
         if field in update_data:
@@ -229,11 +234,11 @@ async def update_object_task(
     object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
     
     if "status" in update_data:
-        notification_message = f'Статус задачи "{object_task.title}" на объекте "{object_name}" был изменен на "{object_task.status}".'
+        notification_message = f'Статус задачи "{object_task.title}" был изменен на "{object_task.status}".'
         if task_data.status == ObjectTaskStatus.DONE:
-            notification_message = f'Задача "{object_task.title}" на объекте "{object_name}" была выполнена.'
+            notification_message = f'Задача "{object_task.title}" была выполнена.'
         elif task_data.status == ObjectTaskStatus.TODO:
-            notification_message = f'Задача "{object_task.title}" на объекте "{object_name}" была возвращена в статус "К выполнению".'
+            notification_message = f'Задача "{object_task.title}" была возвращена в статус "К выполнению".'
         notification = Notifications(
             user_id=current_user.id,
             object_id=object_task.object_id,
@@ -331,6 +336,22 @@ async def _sync_single_choice_siblings(
             continue
         if sibling.status == ObjectTaskStatus.NOT_APPLICABLE:
             _set_task_status(sibling, ObjectTaskStatus.TODO)
+
+
+async def _reset_descendants_to_todo(
+    db: AsyncSession,
+    *,
+    root_task: ObjectTask,
+) -> None:
+    tasks = await _list_active_object_tasks(db, object_id=root_task.object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+
+    def reset_children(parent_id: int) -> None:
+        for child in children_by_parent_id.get(parent_id, []):
+            _set_task_status(child, ObjectTaskStatus.TODO)
+            reset_children(child.id)
+
+    reset_children(root_task.id)
 
 
 async def _list_active_object_tasks(

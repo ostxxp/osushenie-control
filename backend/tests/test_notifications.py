@@ -401,7 +401,7 @@ async def test_task_status_change_notifies_admins_and_chief_engineers(
     assert admin_notifications[0]["user_id"] == admin.id
     assert chief_notifications[0]["user_id"] == chief.id
     assert admin_notifications[0]["message"] == (
-        'Задача "Принят отделом ПТО" на объекте "ЖК Осел" была выполнена.'
+        'Задача "Принят отделом ПТО" была выполнена.'
     )
     assert admin_notifications[0]["type"] == NotificationType.TASK_STATUS_CHANGED
     assert admin_notifications[0]["is_read"] is False
