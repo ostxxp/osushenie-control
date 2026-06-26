@@ -41,6 +41,8 @@ class Notifications(Base):
         cascade="all, delete-orphan",
     )
 
+    actor: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+
 class NotificationReads(Base):
     __tablename__ = "notification_reads"
 

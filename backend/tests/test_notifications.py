@@ -94,6 +94,8 @@ async def test_user_can_list_only_own_notifications(
     assert body[0]["id"] == notification_id
     assert body[0]["receipt_id"] == receipt_id
     assert body[0]["user_id"] == chief.id
+    assert body[0]["actor_user_id"] == admin.id
+    assert body[0]["actor_full_name"] == admin.full_name
     assert body[0]["object_id"] == obj.id
     assert body[0]["message"] == "Visible notification"
     assert body[0]["type"] == NotificationType.TASK_STATUS_CHANGED
@@ -400,6 +402,10 @@ async def test_task_status_change_notifies_admins_and_chief_engineers(
     assert len(chief_notifications) == 1
     assert admin_notifications[0]["user_id"] == admin.id
     assert chief_notifications[0]["user_id"] == chief.id
+    assert admin_notifications[0]["actor_user_id"] == foreman.id
+    assert admin_notifications[0]["actor_full_name"] == foreman.full_name
+    assert chief_notifications[0]["actor_user_id"] == foreman.id
+    assert chief_notifications[0]["actor_full_name"] == foreman.full_name
     assert admin_notifications[0]["message"] == (
         'Задача "Принят отделом ПТО" на объекте "ЖК Осел" была выполнена.'
     )
