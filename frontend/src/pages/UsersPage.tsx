@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { userApi } from '@services/api'
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
+import { photoApi, userApi } from '@services/api'
 import type { User, UserRole } from '@/types'
 
 type UserFormState = {
@@ -69,6 +69,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
+  const [avatarUrls, setAvatarUrls] = useState<Record<number, string>>({})
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -77,6 +78,9 @@ function UsersPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [userForm, setUserForm] = useState<UserFormState>(emptyUserForm)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('')
+  const [pendingAvatarUserId, setPendingAvatarUserId] = useState<number | null>(null)
 
   const loadUsers = async () => {
     const data = await userApi.getAll()
@@ -112,9 +116,56 @@ function UsersPage() {
     fetchUsers()
   }, [])
 
+  useEffect(() => {
+    if (users.length === 0) {
+      setAvatarUrls({})
+      return
+    }
+
+    let cancelled = false
+    const createdUrls: string[] = []
+
+    const loadAvatars = async () => {
+      const entries = await Promise.all(
+        users.map(async (user): Promise<[number, string] | null> => {
+          try {
+            const avatar = await photoApi.getUserAvatar(user.id)
+            if (!avatar) return null
+
+            const url = URL.createObjectURL(avatar)
+            if (cancelled) {
+              URL.revokeObjectURL(url)
+              return null
+            }
+
+            createdUrls.push(url)
+            return [user.id, url]
+          } catch (error) {
+            console.warn(`Не удалось загрузить фото пользователя ${user.id}`, error)
+            return null
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setAvatarUrls(Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)))
+      }
+    }
+
+    loadAvatars()
+
+    return () => {
+      cancelled = true
+      createdUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [users])
+
   const openCreateModal = () => {
     setEditingUser(null)
     setUserForm(emptyUserForm)
+    setAvatarFile(null)
+    setAvatarPreviewUrl('')
+    setPendingAvatarUserId(null)
     setFormError('')
     setModalMode('create')
   }
@@ -134,10 +185,40 @@ function UsersPage() {
   }
 
   const closeModal = () => {
+    if (avatarPreviewUrl) {
+      URL.revokeObjectURL(avatarPreviewUrl)
+    }
     setModalMode(null)
     setEditingUser(null)
     setUserForm(emptyUserForm)
+    setAvatarFile(null)
+    setAvatarPreviewUrl('')
+    setPendingAvatarUserId(null)
     setFormError('')
+  }
+
+  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+
+    if (file && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setFormError('Выберите изображение в формате JPG, PNG или WebP.')
+      event.target.value = ''
+      return
+    }
+
+    if (file && file.size > 5 * 1024 * 1024) {
+      setFormError('Размер аватара не должен превышать 5 МБ.')
+      event.target.value = ''
+      return
+    }
+
+    if (avatarPreviewUrl) {
+      URL.revokeObjectURL(avatarPreviewUrl)
+    }
+
+    setFormError('')
+    setAvatarFile(file)
+    setAvatarPreviewUrl(file ? URL.createObjectURL(file) : '')
   }
 
   const handleChange = (field: keyof UserFormState, value: string | boolean) => {
@@ -178,12 +259,26 @@ function UsersPage() {
       is_active: userForm.is_active,
     }
 
+    let uploadingAvatar = false
+
     try {
       if (modalMode === 'create') {
-        await userApi.create({
-          ...basePayload,
-          password: userForm.password,
-        })
+        let userId = pendingAvatarUserId
+
+        if (userId === null) {
+          const createdUser = await userApi.create({
+            ...basePayload,
+            password: userForm.password,
+          })
+          userId = createdUser.id
+        }
+
+        if (avatarFile) {
+          setPendingAvatarUserId(userId)
+          uploadingAvatar = true
+          await photoApi.uploadUserAvatar(userId, avatarFile)
+          setPendingAvatarUserId(null)
+        }
       } else if (modalMode === 'edit' && editingUser) {
         await userApi.update(editingUser.id, {
           ...basePayload,
@@ -194,7 +289,17 @@ function UsersPage() {
       await loadUsers()
       closeModal()
     } catch (err: unknown) {
-      setFormError(getErrorMessage(err, modalMode === 'create' ? 'Ошибка создания пользователя' : 'Ошибка обновления пользователя'))
+      if (uploadingAvatar) {
+        await loadUsers()
+      }
+      setFormError(getErrorMessage(
+        err,
+        uploadingAvatar
+          ? 'Пользователь создан, но не удалось загрузить аватар. Попробуйте сохранить ещё раз.'
+          : modalMode === 'create'
+            ? 'Ошибка создания пользователя'
+            : 'Ошибка обновления пользователя',
+      ))
       console.error(err)
     } finally {
       setSaving(false)
@@ -287,7 +392,31 @@ function UsersPage() {
             <tbody>
               {filteredUsers.map((user) => (
                 <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
-                  <td className="px-4 py-3">{user.full_name}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      {avatarUrls[user.id] ? (
+                        <span
+                          className="shrink-0 overflow-hidden rounded-full"
+                          style={{ width: 40, height: 40, minWidth: 40, maxWidth: 40 }}
+                        >
+                          <img
+                            src={avatarUrls[user.id]}
+                            alt={`Фото ${user.full_name}`}
+                            className="block object-cover"
+                            style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
+                          />
+                        </span>
+                      ) : (
+                        <span
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold text-base-content/70"
+                          aria-hidden="true"
+                        >
+                          {user.full_name.trim().charAt(0).toUpperCase() || '?'}
+                        </span>
+                      )}
+                      <span>{user.full_name}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">{roleLabel[user.role]}</td>
                   <td className="px-4 py-3">{user.phone_number || '—'}</td>
                   <td className="px-4 py-3">{user.email}</td>
@@ -385,6 +514,41 @@ function UsersPage() {
                 <span>Работает</span>
                 </span>
               </label>
+              {modalMode === 'create' && (
+                <label className="flex flex-col gap-2 sm:col-span-2">
+                  <span className="text-sm font-medium">Аватар</span>
+                  <div className="flex flex-col gap-3 rounded-2xl border border-base-200 p-3 sm:flex-row sm:items-center">
+                    {avatarPreviewUrl ? (
+                      <span
+                        className="shrink-0 overflow-hidden rounded-full"
+                        style={{ width: 64, height: 64, minWidth: 64, maxWidth: 64 }}
+                      >
+                        <img
+                          src={avatarPreviewUrl}
+                          alt="Предпросмотр аватара"
+                          className="block object-cover"
+                          style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
+                        />
+                      </span>
+                    ) : (
+                      <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-base-200 text-xl font-semibold text-base-content/60">
+                        {userForm.full_name.trim().charAt(0).toUpperCase() || '?'}
+                      </span>
+                    )}
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        className="file-input w-full"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleAvatarChange}
+                      />
+                      <p className="mt-1 text-xs text-base-content/60">
+                        JPG, PNG или WebP, не более 5 МБ.
+                      </p>
+                    </div>
+                  </div>
+                </label>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <button type="button" className="btn" onClick={closeModal} disabled={saving}>

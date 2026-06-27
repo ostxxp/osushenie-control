@@ -2,6 +2,7 @@ import { useContext } from 'react'
 import { flushSync } from 'react-dom'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { authService, AuthContext } from '@services/auth'
+import logo from '../../logo/logo цветной горизонтальный.png'
 
 function Layout() {
   const authContext = useContext(AuthContext)
@@ -43,8 +44,12 @@ function Layout() {
       {/* Сайдбар - зафиксирован */}
       <aside className="fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r border-slate-300 bg-base-100/95 p-6 shadow-2xl shadow-slate-950/5 backdrop-blur">
         <div className="mb-8">
-          <Link to="/" className="text-2xl font-bold tracking-tight">
-            ОСУШЕНИЕ.РФ
+          <Link to="/" className="block">
+            <img
+              src={logo}
+              alt="ОСУШЕНИЕ.РФ"
+              className="block h-auto w-full max-w-[220px] object-contain"
+            />
           </Link>
         </div>
 
@@ -65,11 +70,21 @@ function Layout() {
           ))}
         </div>
 
-        {/* Кнопка выхода внизу сайдбара */}
         <div className="mt-auto pt-6 border-t border-slate-200">
+          <Link
+            to="/settings"
+            className={[
+              'flex w-full items-center justify-center rounded-2xl px-4 py-3 text-center text-base font-medium transition-all',
+              location.pathname === '/settings'
+                ? 'bg-[#ff4539]/15 text-[#b42318] ring-1 ring-[#ff4539]/25 shadow-sm'
+                : 'text-base-content hover:bg-base-200',
+            ].join(' ')}
+          >
+            Настройки
+          </Link>
           <button
             onClick={handleLogout}
-            className="w-full rounded-2xl px-4 py-3 text-base font-medium text-red-600 transition-all hover:bg-red-50 hover:text-red-700"
+            className="mt-2 w-full rounded-2xl px-4 py-3 text-center text-base font-medium text-red-600 transition-all hover:bg-red-50 hover:text-red-700"
           >
             Выход
           </button>

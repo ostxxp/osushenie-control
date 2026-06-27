@@ -126,8 +126,8 @@ function TaskTreeRow({
   return (
     <>
       <tr className="border-t border-base-200 hover:bg-base-100">
-        <td className="px-4 py-3" style={{ paddingLeft: `${depth * 2 + 1}rem` }}>
-          <div className="flex items-center gap-3">
+        <td className="px-4 py-2.5 align-top" style={{ paddingLeft: `${depth * 2 + 1}rem` }}>
+          <div className="flex min-w-0 items-start gap-3">
             {isMainTask ? (
               hasChildren ? (
                 <button
@@ -136,13 +136,13 @@ function TaskTreeRow({
                     event.stopPropagation()
                     onToggleExpand(task.id)
                   }}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-base-content/70 hover:bg-base-200 hover:text-base-content"
                   aria-label={isExpanded ? 'Свернуть задачу' : 'Развернуть задачу'}
                 >
                   {isExpanded ? '−' : '+'}
                 </button>
               ) : (
-                <span className="inline-block h-6 w-6" />
+                <span className="inline-block h-6 w-6 shrink-0" />
               )
             ) : (
               <TaskStateIcon task={task} />
@@ -152,13 +152,13 @@ function TaskTreeRow({
               type="button"
               disabled={!canToggle && !isMainTask}
               onClick={handleTaskClick}
-              className={`text-left font-medium transition-colors ${taskClickClass} ${isDone ? 'text-base-content' : ''}`}
+              className={`min-w-0 flex-1 break-words text-left font-medium leading-5 transition-colors ${taskClickClass} ${isDone ? 'text-base-content' : ''}`}
             >
               {task.title}
             </button>
           </div>
         </td>
-        <td className="px-4 py-3 text-sm text-base-content/70">
+        <td className="px-4 py-2.5 align-top text-sm text-base-content/70">
           <div className="space-y-1.5">
             <div className="font-medium text-base-content">
               {task.deadline ? formatDateRu(task.deadline) : ''}
@@ -168,7 +168,7 @@ function TaskTreeRow({
             )}
           </div>
         </td>
-        <td className="px-4 py-3 text-sm text-base-content/70">
+        <td className="px-4 py-2.5 align-top text-sm text-base-content/70">
           {isDone ? (
             <div className="space-y-0.5">
               <div className="font-medium text-base-content">{task.completed_by?.full_name || ''}</div>
@@ -180,8 +180,8 @@ function TaskTreeRow({
             ''
           )}
         </td>
-        <td className="px-4 py-3 text-sm text-base-content/70">
-          <div className="flex flex-wrap gap-2">
+        <td className="px-4 py-2.5 align-top text-sm text-base-content/70">
+          <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
             <button type="button" className="btn btn-ghost btn-xs" onClick={() => onEditTask(task)}>
               Редактировать
             </button>
@@ -441,7 +441,13 @@ function ObjectTasksPage() {
 
       <div className="rounded-lg border border-base-200 bg-base-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full min-w-[900px] table-fixed text-left">
+            <colgroup>
+              <col className="w-[42%]" />
+              <col className="w-[14%]" />
+              <col className="w-[20%]" />
+              <col className="w-[24%]" />
+            </colgroup>
             <thead className="bg-base-200">
               <tr>
                 <th className="px-4 py-3">Наименование задачи</th>

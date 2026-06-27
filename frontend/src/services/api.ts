@@ -25,6 +25,10 @@ type ConstructionObjectCreatePayload = {
 
 type ConstructionObjectUpdatePayload = Partial<ConstructionObjectCreatePayload>
 
+type PhotoMetadata = {
+  id: number
+}
+
 export const projectApi = {
   getAll: async (): Promise<Project[]> => {
     const response = await authApi.get('/projects')
@@ -84,6 +88,35 @@ export const userApi = {
   ): Promise<User> => {
     const response = await authApi.patch(`/users/${userId}`, user)
     return response.data
+  },
+}
+
+export const photoApi = {
+  uploadCurrentAvatar: async (file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await authApi.post('/photos/profile/avatar', formData)
+  },
+  deleteCurrentAvatar: async (): Promise<void> => {
+    await authApi.delete('/photos/profile/avatar')
+  },
+  uploadUserAvatar: async (userId: number, file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await authApi.post(`/photos/users/${userId}/avatar`, formData)
+  },
+  getUserAvatar: async (userId: number): Promise<Blob | null> => {
+    try {
+      const metadataResponse = await authApi.get<PhotoMetadata>(`/photos/users/${userId}/avatar`)
+      const fileResponse = await authApi.get<Blob>(`/photos/${metadataResponse.data.id}/file`, {
+        responseType: 'blob',
+      })
+      return fileResponse.data
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 404) return null
+      throw error
+    }
   },
 }
 
