@@ -210,6 +210,11 @@ async def update_object_task(
     update_data = task_data.model_dump(exclude_unset=True)
 
     if task_data.status is not None:
+        if task_data.status == ObjectTaskStatus.DONE:
+            await _set_children_status_in_progress(
+                db,
+                parent_task=object_task,
+            )
         _set_task_status(
             object_task,
             task_data.status,
@@ -276,6 +281,24 @@ async def get_main_task_id(
 
     return current_task.id
 
+async def _set_children_status_in_progress(
+    db: AsyncSession,
+    *,
+    parent_task: ObjectTask
+) -> None:
+    result = await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.parent_id == parent_task.id,
+            ObjectTask.is_active.is_(True),
+        )
+    )
+    children = result.scalars().all()
+
+    for child in children:
+        if child.status == ObjectTaskStatus.NOT_APPLICABLE:
+            continue
+        _set_task_status(child, ObjectTaskStatus.IN_PROGRESS)
 
 def _set_task_status(
     task: ObjectTask,
