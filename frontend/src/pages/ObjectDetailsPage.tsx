@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState, useMemo, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { objectApi } from '@services/api'
+import { objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { calculateLogicalTaskStats, formatApiError, formatDateRu } from '@/utils'
 import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
@@ -39,6 +39,9 @@ function ObjectDetailsPage() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [objectPhotos, setObjectPhotos] = useState<Array<{ id: number; name: string; url: string }>>([])
+  const [photosLoading, setPhotosLoading] = useState(true)
+  const [photosError, setPhotosError] = useState('')
 
   useEffect(() => {
     const fetchData = async () => {
@@ -91,6 +94,50 @@ function ObjectDetailsPage() {
     }
 
     fetchData()
+  }, [id])
+
+  useEffect(() => {
+    if (!id) {
+      setPhotosLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const objectUrls: string[] = []
+
+    const fetchObjectPhotos = async () => {
+      setPhotosLoading(true)
+      setPhotosError('')
+      try {
+        const photos = await photoApi.getObjectPhotos(Number(id))
+        if (cancelled) return
+
+        const displayedPhotos = photos.map((photo) => {
+          const url = URL.createObjectURL(photo.blob)
+          objectUrls.push(url)
+          return { id: photo.id, name: photo.originalFilename, url }
+        })
+
+        if (!cancelled) {
+          setObjectPhotos(displayedPhotos)
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setPhotosError(formatApiError(err, 'Не удалось загрузить фотографии объекта.'))
+        }
+      } finally {
+        if (!cancelled) {
+          setPhotosLoading(false)
+        }
+      }
+    }
+
+    fetchObjectPhotos()
+
+    return () => {
+      cancelled = true
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
   }, [id])
 
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
@@ -517,6 +564,43 @@ function ObjectDetailsPage() {
           </div>
         </Link>
       </div>
+
+      <section className="rounded-[1.75rem] border border-slate-200/70 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-950">Фотографии объекта</h2>
+        {photosLoading ? (
+          <div className="flex min-h-32 items-center justify-center">
+            <span className="loading loading-spinner text-primary" />
+          </div>
+        ) : photosError ? (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {photosError}
+          </div>
+        ) : objectPhotos.length === 0 ? (
+          <div className="mt-4 rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/60">
+            Фотографии объекта пока не добавлены.
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            {objectPhotos.map((photo) => (
+              <a
+                key={photo.id}
+                href={photo.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group block overflow-hidden rounded-2xl border border-base-200 bg-base-100"
+              >
+                <div className="aspect-[4/3] w-full overflow-hidden">
+                  <img
+                    src={photo.url}
+                    alt={photo.name}
+                    className="block h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                  />
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* tasks table intentionally removed */}
     </div>

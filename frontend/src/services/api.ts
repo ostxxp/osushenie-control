@@ -27,6 +27,13 @@ type ConstructionObjectUpdatePayload = Partial<ConstructionObjectCreatePayload>
 
 type PhotoMetadata = {
   id: number
+  original_filename?: string
+}
+
+export type ObjectPhotoFile = {
+  id: number
+  originalFilename: string
+  blob: Blob
 }
 
 export const projectApi = {
@@ -104,6 +111,26 @@ export const photoApi = {
     const formData = new FormData()
     formData.append('file', file)
     await authApi.post(`/photos/users/${userId}/avatar`, formData)
+  },
+  uploadObjectPhoto: async (objectId: number, file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await authApi.post(`/photos/objects/${objectId}`, formData)
+  },
+  getObjectPhotos: async (objectId: number): Promise<ObjectPhotoFile[]> => {
+    const metadataResponse = await authApi.get<PhotoMetadata[]>(`/photos/objects/${objectId}`)
+    return Promise.all(
+      metadataResponse.data.map(async (photo) => {
+        const fileResponse = await authApi.get<Blob>(`/photos/${photo.id}/file`, {
+          responseType: 'blob',
+        })
+        return {
+          id: photo.id,
+          originalFilename: photo.original_filename || `Фото ${photo.id}`,
+          blob: fileResponse.data,
+        }
+      }),
+    )
   },
   getUserAvatar: async (userId: number): Promise<Blob | null> => {
     try {
