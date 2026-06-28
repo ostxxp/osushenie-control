@@ -234,16 +234,31 @@ async def update_object_task(
     for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
-
-    construction_object = await db.get(ConstructionObject, object_task.object_id)
-    object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
     
     if "status" in update_data:
-        notification_message = f'Статус задачи "{object_task.title}" был изменен на "{object_task.status}".'
+        taskTitle = object_task.title if object_task.title is not None else "Задача"
+        mainTask = object_task
+        while mainTask.parent_id is not None:
+            mainTask = await db.get(ObjectTask, mainTask.parent_id)
+            if mainTask is None:
+                break
+        taskTitles = (await db.execute(
+            select(ObjectTask.title)
+            .where(
+                ObjectTask.object_id == object_task.object_id,
+                ObjectTask.id == object_task.id,
+            )
+        )).scalars().all()
+        if taskTitle in taskTitles and object_task.parent_id is not None:
+            parent = await db.get(ObjectTask, object_task.parent_id)
+            taskTitle = f"{parent.title} -> {taskTitle}"
+        taskTitle = f'{mainTask.title} -> {taskTitle}' if mainTask is not None and mainTask.id != object_task.id else taskTitle
+            
+        notification_message = f'Статус задачи "{taskTitle}" был изменен на "{object_task.status}".'
         if task_data.status == ObjectTaskStatus.DONE:
-            notification_message = f'Задача "{object_task.title}" была выполнена.'
+            notification_message = f'Задача "{taskTitle}" была выполнена.'
         elif task_data.status == ObjectTaskStatus.TODO:
-            notification_message = f'Задача "{object_task.title}" была возвращена в статус "К выполнению".'
+            notification_message = f'Задача "{taskTitle}" была возвращена в статус "К выполнению".'
         notification = Notifications(
             user_id=current_user.id,
             object_id=object_task.object_id,
