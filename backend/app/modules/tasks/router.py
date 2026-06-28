@@ -9,6 +9,7 @@ from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
     ObjectTaskCreate,
     ObjectTaskRead,
+    ObjectTaskStatsRead,
     ObjectTaskStatusUpdate,
     ObjectTaskStatusUpdateRead,
     ObjectTaskTreeRead,
@@ -25,6 +26,7 @@ from app.modules.tasks.service import (
     list_main_object_tasks,
     get_main_task_id,
     get_progress,
+    get_task_stats,
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -98,6 +100,20 @@ async def get_object_progress(
     db: AsyncSession = Depends(get_db_session),
 ) -> float:
     return await get_progress(db, object_id=object.id)
+
+
+@router.get(
+    "/{object_id}/tasks/stats",
+    response_model=ObjectTaskStatsRead,
+    summary="Get object task stats",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_object_task_stats(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict[str, int]:
+    return await get_task_stats(db, object_id=object.id)
+
 
 @router.get(
     "/{object_id}/tasks/available",
@@ -272,4 +288,3 @@ async def get_overdue_tasks_count_for_object(
         )
     )
     return tasks.scalar()
-
