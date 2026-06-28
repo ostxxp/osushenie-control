@@ -68,12 +68,15 @@ export type TaskChildrenMode = 'all' | 'single_choice'
 export type NotificationType =
   | 'user_assigned_to_object'
   | 'object_created'
+  | 'task_status_changed'
   | 'user_created'
 
 export interface NotificationLog {
   id: number
   receipt_id: number
   user_id: number
+  actor_user_id: number
+  actor_full_name: string | null
   object_id: number
   message: string
   type: NotificationType

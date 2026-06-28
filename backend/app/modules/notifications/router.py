@@ -30,10 +30,13 @@ router = APIRouter()
 
 def serialize_notification_receipt(receipt: NotificationReceipt) -> dict:
     notification = receipt.notification
+    actor = notification.actor
     return {
         "id": notification.id,
         "receipt_id": receipt.id,
         "user_id": receipt.user_id,
+        "actor_user_id": notification.user_id,
+        "actor_full_name": actor.full_name if actor is not None else None,
         "object_id": notification.object_id,
         "message": notification.message,
         "type": notification.type,
@@ -55,7 +58,9 @@ async def list_notifications(
     query = (
         select(NotificationReceipt)
         .join(NotificationReceipt.notification)
-        .options(selectinload(NotificationReceipt.notification))
+        .options(
+            selectinload(NotificationReceipt.notification).selectinload(Notifications.actor)
+        )
         .where(NotificationReceipt.user_id == user.id)
         .order_by(Notifications.created_at.desc())
     )
@@ -78,7 +83,9 @@ async def list_unread_notifications(
     query = (
         select(NotificationReceipt)
         .join(NotificationReceipt.notification)
-        .options(selectinload(NotificationReceipt.notification))
+        .options(
+            selectinload(NotificationReceipt.notification).selectinload(Notifications.actor)
+        )
         .where(
             NotificationReceipt.user_id == user.id,
             NotificationReceipt.is_read.is_(False),
@@ -121,7 +128,9 @@ async def mark_notification_as_read(
 ):
     query = (
         select(NotificationReceipt)
-        .options(selectinload(NotificationReceipt.notification))
+        .options(
+            selectinload(NotificationReceipt.notification).selectinload(Notifications.actor)
+        )
         .where(
             NotificationReceipt.notification_id == notification_id,
             NotificationReceipt.user_id == user.id
@@ -149,7 +158,9 @@ async def mark_all_notifications_as_read(
 ):
     query = (
         select(NotificationReceipt)
-        .options(selectinload(NotificationReceipt.notification))
+        .options(
+            selectinload(NotificationReceipt.notification).selectinload(Notifications.actor)
+        )
         .where(
             NotificationReceipt.user_id == user.id,
             NotificationReceipt.is_read == False
