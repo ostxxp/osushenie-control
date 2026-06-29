@@ -62,6 +62,7 @@ function App() {
             <Route path="/objects" element={<ObjectsPage />} />
             <Route path="/objects/:id" element={<ObjectDetailsPage />} />
             <Route path="/objects/:id/tasks" element={<ObjectTasksPage />} />
+            <Route path="/objects/:id/tasks/:taskId" element={<ObjectTasksPage />} />
             <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
             <Route
               path="/users"

@@ -28,11 +28,13 @@ type ConstructionObjectUpdatePayload = Partial<ConstructionObjectCreatePayload>
 type PhotoMetadata = {
   id: number
   original_filename?: string
+  uploaded_by_id?: number | null
 }
 
 export type ObjectPhotoFile = {
   id: number
   originalFilename: string
+  uploadedById: number | null
   blob: Blob
 }
 
@@ -127,10 +129,14 @@ export const photoApi = {
         return {
           id: photo.id,
           originalFilename: photo.original_filename || `Фото ${photo.id}`,
+          uploadedById: photo.uploaded_by_id ?? null,
           blob: fileResponse.data,
         }
       }),
     )
+  },
+  deletePhoto: async (photoId: number): Promise<void> => {
+    await authApi.delete(`/photos/${photoId}`)
   },
   getUserAvatar: async (userId: number): Promise<Blob | null> => {
     try {
@@ -217,6 +223,10 @@ export const objectApi = {
   getTasksHeaders: async (objectId: number): Promise<ObjectTask[]> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/headers`)
     return response.data
+  },
+  getAvailableTaskTree: async (objectId: number, taskId: number): Promise<ObjectTaskTree> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/${taskId}/available`)
+    return normalizeTask(response.data, { hideNotApplicable: true })
   },
   getOverdueTasks: async (objectId: number): Promise<ObjectTask[]> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/overdue`)

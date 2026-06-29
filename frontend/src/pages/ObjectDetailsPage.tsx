@@ -1,7 +1,7 @@
-import { useContext, useEffect, useState, useMemo, useRef } from 'react'
+import { useContext, useEffect, useState, useMemo, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { objectApi, photoApi } from '@services/api'
-import { AuthContext } from '@services/auth'
+import { authService, AuthContext } from '@services/auth'
 import { calculateLogicalTaskStats, formatApiError, formatDateRu } from '@/utils'
 import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
 
@@ -39,9 +39,12 @@ function ObjectDetailsPage() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [objectPhotos, setObjectPhotos] = useState<Array<{ id: number; name: string; url: string }>>([])
+  const [objectPhotos, setObjectPhotos] = useState<Array<{ id: number; name: string; uploadedById: number | null; url: string }>>([])
   const [photosLoading, setPhotosLoading] = useState(true)
   const [photosError, setPhotosError] = useState('')
+  const [photosSaving, setPhotosSaving] = useState(false)
+  const [photosVersion, setPhotosVersion] = useState(0)
+  const [photosSuccess, setPhotosSuccess] = useState('')
 
   useEffect(() => {
     const fetchData = async () => {
@@ -107,7 +110,6 @@ function ObjectDetailsPage() {
 
     const fetchObjectPhotos = async () => {
       setPhotosLoading(true)
-      setPhotosError('')
       try {
         const photos = await photoApi.getObjectPhotos(Number(id))
         if (cancelled) return
@@ -115,7 +117,12 @@ function ObjectDetailsPage() {
         const displayedPhotos = photos.map((photo) => {
           const url = URL.createObjectURL(photo.blob)
           objectUrls.push(url)
-          return { id: photo.id, name: photo.originalFilename, url }
+          return {
+            id: photo.id,
+            name: photo.originalFilename,
+            uploadedById: photo.uploadedById,
+            url,
+          }
         })
 
         if (!cancelled) {
@@ -138,7 +145,7 @@ function ObjectDetailsPage() {
       cancelled = true
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [id])
+  }, [id, photosVersion])
 
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -171,6 +178,7 @@ function ObjectDetailsPage() {
 
   const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
   const canEditObject = userRole === 'admin'
+  const currentUser = authService.getCurrentUser()
   const progressLabel =
     progress === 0
       ? 'Ещё не начат'
@@ -272,6 +280,54 @@ function ObjectDetailsPage() {
       console.error(err)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const addObjectPhotos = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!objectItem) return
+
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (files.length === 0) return
+
+    if (files.some((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))) {
+      setPhotosError('Добавляйте фотографии только в формате JPG, PNG или WebP.')
+      return
+    }
+
+    if (files.some((file) => file.size > 5 * 1024 * 1024)) {
+      setPhotosError('Размер каждой фотографии не должен превышать 5 МБ.')
+      return
+    }
+
+    setPhotosSaving(true)
+    setPhotosError('')
+    setPhotosSuccess('')
+    try {
+      await Promise.all(files.map((file) => photoApi.uploadObjectPhoto(objectItem.id, file)))
+      setPhotosSuccess(`Добавлено фотографий: ${files.length}.`)
+    } catch (err: unknown) {
+      setPhotosError(formatApiError(err, 'Не удалось добавить фотографии объекта.'))
+    } finally {
+      setPhotosSaving(false)
+      setPhotosVersion((version) => version + 1)
+    }
+  }
+
+  const deleteObjectPhoto = async (photoId: number) => {
+    if (!window.confirm('Удалить эту фотографию объекта?')) return
+
+    setPhotosSaving(true)
+    setPhotosError('')
+    setPhotosSuccess('')
+    try {
+      await photoApi.deletePhoto(photoId)
+      setPhotosSuccess('Фотография удалена.')
+      setPhotosVersion((version) => version + 1)
+    } catch (err: unknown) {
+      setPhotosError(formatApiError(err, 'Не удалось удалить фотографию объекта.'))
+    } finally {
+      setPhotosSaving(false)
     }
   }
 
@@ -566,14 +622,40 @@ function ObjectDetailsPage() {
       </div>
 
       <section className="rounded-[1.75rem] border border-slate-200/70 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-950">Фотографии объекта</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold text-slate-950">Фотографии объекта</h2>
+          <label
+            className={[
+              'rounded-2xl bg-[#ff4539] px-4 py-2 text-sm font-medium text-white transition',
+              photosSaving
+                ? 'cursor-not-allowed bg-[#ff918a]'
+                : 'cursor-pointer hover:bg-[#cc372e]',
+            ].join(' ')}
+          >
+            {photosSaving ? 'Сохранение...' : 'Добавить фотографии'}
+            <input
+              type="file"
+              className="hidden"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={addObjectPhotos}
+              disabled={photosSaving}
+            />
+          </label>
+        </div>
+        {photosSuccess && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {photosSuccess}
+          </div>
+        )}
+        {photosError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {photosError}
+          </div>
+        )}
         {photosLoading ? (
           <div className="flex min-h-32 items-center justify-center">
             <span className="loading loading-spinner text-primary" />
-          </div>
-        ) : photosError ? (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {photosError}
           </div>
         ) : objectPhotos.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/60">
@@ -582,21 +664,31 @@ function ObjectDetailsPage() {
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {objectPhotos.map((photo) => (
-              <a
+              <div
                 key={photo.id}
-                href={photo.url}
-                target="_blank"
-                rel="noreferrer"
-                className="group block overflow-hidden rounded-2xl border border-base-200 bg-base-100"
+                className="group relative overflow-hidden rounded-2xl border border-base-200 bg-base-100"
               >
-                <div className="aspect-[4/3] w-full overflow-hidden">
-                  <img
-                    src={photo.url}
-                    alt={photo.name}
-                    className="block h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                  />
-                </div>
-              </a>
+                <a href={photo.url} target="_blank" rel="noreferrer" className="block">
+                  <div className="aspect-[4/3] w-full overflow-hidden">
+                    <img
+                      src={photo.url}
+                      alt={photo.name}
+                      className="block h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    />
+                  </div>
+                </a>
+                {(userRole === 'admin' || photo.uploadedById === currentUser?.id) && (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/65 text-lg text-white shadow-sm transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => deleteObjectPhoto(photo.id)}
+                    disabled={photosSaving}
+                    aria-label={`Удалить ${photo.name}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}
