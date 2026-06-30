@@ -26,8 +26,9 @@ function ObjectDetailsPage() {
   const [objectType, setObjectType] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
+  const [activityConfirmationOpen, setActivityConfirmationOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState(false)
   const [formError, setFormError] = useState('')
   const [editForm, setEditForm] = useState({
     name: '',
@@ -262,24 +263,34 @@ function ObjectDetailsPage() {
     }
   }
 
-  const deactivateObject = async () => {
-    if (!objectItem || deleting) return
+  const changeObjectActivity = async () => {
+    if (!objectItem || statusUpdating) return
 
-    const confirmed = window.confirm('Деактивировать объект? Он будет скрыт из активной работы.')
-    if (!confirmed) return
-
-    setDeleting(true)
+    const isActivating = !objectItem.is_active
+    setStatusUpdating(true)
     setFormError('')
 
     try {
-      await objectApi.deactivate(objectItem.id)
-      navigate('/objects')
+      if (isActivating) {
+        const updated = await objectApi.update(objectItem.id, { is_active: true })
+        setObjectItem(updated)
+        setEditForm((current) => ({ ...current, is_active: true }))
+      } else {
+        await objectApi.deactivate(objectItem.id)
+        navigate('/objects')
+      }
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: unknown } })?.response?.data
-      setFormError(formatApiError(detail, 'Не удалось деактивировать объект.'))
+      setFormError(
+        formatApiError(
+          detail,
+          isActivating ? 'Не удалось активировать объект.' : 'Не удалось деактивировать объект.',
+        ),
+      )
       console.error(err)
     } finally {
-      setDeleting(false)
+      setStatusUpdating(false)
+      setActivityConfirmationOpen(false)
     }
   }
 
@@ -384,6 +395,12 @@ function ObjectDetailsPage() {
                 </h1>
               )}
 
+              {!isEditing && !objectItem.is_active && (
+                <span className="badge h-auto shrink-0 border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                  Объект неактивен
+                </span>
+              )}
+
               {canEditObject && !isEditing && (
                 <div ref={actionsMenuRef} className="relative">
                   <button
@@ -412,15 +429,27 @@ function ObjectDetailsPage() {
                       </button>
                       <button
                         type="button"
-                        className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-red-600 transition hover:bg-red-50"
+                        className={`flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm transition ${
+                          objectItem.is_active
+                            ? 'text-red-600 hover:bg-red-50'
+                            : 'text-emerald-700 hover:bg-emerald-50'
+                        }`}
                         onClick={() => {
                           setActionsOpen(false)
-                          void deactivateObject()
+                          setActivityConfirmationOpen(true)
                         }}
-                        disabled={deleting}
+                        disabled={statusUpdating}
                       >
-                        <span className="w-4 text-center" aria-hidden="true">×</span>
-                        {deleting ? 'Деактивация...' : 'Деактивировать'}
+                        <span className="w-4 text-center" aria-hidden="true">
+                          {objectItem.is_active ? '×' : '✓'}
+                        </span>
+                        {statusUpdating
+                          ? objectItem.is_active
+                            ? 'Деактивация...'
+                            : 'Активация...'
+                          : objectItem.is_active
+                            ? 'Деактивировать'
+                            : 'Активировать'}
                       </button>
                     </div>
                   )}
@@ -693,6 +722,72 @@ function ObjectDetailsPage() {
           </div>
         )}
       </section>
+
+      {activityConfirmationOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="activity-confirmation-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]"
+            onClick={() => {
+              if (!statusUpdating) setActivityConfirmationOpen(false)
+            }}
+            aria-label="Закрыть окно подтверждения"
+          />
+          <div className="relative w-full max-w-md rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
+            <div
+              className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${
+                objectItem.is_active
+                  ? 'bg-red-50 text-red-600'
+                  : 'bg-emerald-50 text-emerald-700'
+              }`}
+              aria-hidden="true"
+            >
+              <span className="text-2xl">{objectItem.is_active ? '!' : '✓'}</span>
+            </div>
+            <h2 id="activity-confirmation-title" className="text-xl font-semibold text-slate-950">
+              {objectItem.is_active ? 'Деактивировать объект?' : 'Активировать объект?'}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {objectItem.is_active
+                ? `Объект «${objectItem.name}» станет неактивным и будет исключён из текущей работы.`
+                : `Объект «${objectItem.name}» снова станет активным и вернётся в работу.`}
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setActivityConfirmationOpen(false)}
+                disabled={statusUpdating}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className={`rounded-xl px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  objectItem.is_active
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                onClick={() => void changeObjectActivity()}
+                disabled={statusUpdating}
+              >
+                {statusUpdating
+                  ? objectItem.is_active
+                    ? 'Деактивация...'
+                    : 'Активация...'
+                  : objectItem.is_active
+                    ? 'Деактивировать'
+                    : 'Активировать'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* tasks table intentionally removed */}
     </div>
