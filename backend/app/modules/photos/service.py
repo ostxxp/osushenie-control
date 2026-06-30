@@ -40,7 +40,9 @@ async def create_profile_avatar(
     *,
     file: UploadFile,
     current_user: User,
+    user_id: int | None = None,
 ) -> Photo:
+    avatar_user_id = user_id if user_id is not None else current_user.id
     content, mime_type = await _read_valid_image(file)
     file_path, stored_filename = _save_photo_file(
         content,
@@ -52,7 +54,7 @@ async def create_profile_avatar(
         update(Photo)
         .where(
             Photo.type == PhotoType.PROFILE_AVATAR,
-            Photo.user_id == current_user.id,
+            Photo.user_id == avatar_user_id,
             Photo.is_active.is_(True),
         )
         .values(is_active=False)
@@ -60,7 +62,7 @@ async def create_profile_avatar(
 
     photo = Photo(
         type=PhotoType.PROFILE_AVATAR,
-        user_id=current_user.id,
+        user_id=avatar_user_id,
         uploaded_by_id=current_user.id,
         original_filename=file.filename or stored_filename,
         stored_filename=stored_filename,

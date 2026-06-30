@@ -25,6 +25,19 @@ type ConstructionObjectCreatePayload = {
 
 type ConstructionObjectUpdatePayload = Partial<ConstructionObjectCreatePayload>
 
+type PhotoMetadata = {
+  id: number
+  original_filename?: string
+  uploaded_by_id?: number | null
+}
+
+export type ObjectPhotoFile = {
+  id: number
+  originalFilename: string
+  uploadedById: number | null
+  blob: Blob
+}
+
 export const projectApi = {
   getAll: async (): Promise<Project[]> => {
     const response = await authApi.get('/projects')
@@ -84,6 +97,59 @@ export const userApi = {
   ): Promise<User> => {
     const response = await authApi.patch(`/users/${userId}`, user)
     return response.data
+  },
+}
+
+export const photoApi = {
+  uploadCurrentAvatar: async (file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await authApi.post('/photos/profile/avatar', formData)
+  },
+  deleteCurrentAvatar: async (): Promise<void> => {
+    await authApi.delete('/photos/profile/avatar')
+  },
+  uploadUserAvatar: async (userId: number, file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await authApi.post(`/photos/users/${userId}/avatar`, formData)
+  },
+  uploadObjectPhoto: async (objectId: number, file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await authApi.post(`/photos/objects/${objectId}`, formData)
+  },
+  getObjectPhotos: async (objectId: number): Promise<ObjectPhotoFile[]> => {
+    const metadataResponse = await authApi.get<PhotoMetadata[]>(`/photos/objects/${objectId}`)
+    return Promise.all(
+      metadataResponse.data.map(async (photo) => {
+        const fileResponse = await authApi.get<Blob>(`/photos/${photo.id}/file`, {
+          responseType: 'blob',
+        })
+        return {
+          id: photo.id,
+          originalFilename: photo.original_filename || `Фото ${photo.id}`,
+          uploadedById: photo.uploaded_by_id ?? null,
+          blob: fileResponse.data,
+        }
+      }),
+    )
+  },
+  deletePhoto: async (photoId: number): Promise<void> => {
+    await authApi.delete(`/photos/${photoId}`)
+  },
+  getUserAvatar: async (userId: number): Promise<Blob | null> => {
+    try {
+      const metadataResponse = await authApi.get<PhotoMetadata>(`/photos/users/${userId}/avatar`)
+      const fileResponse = await authApi.get<Blob>(`/photos/${metadataResponse.data.id}/file`, {
+        responseType: 'blob',
+      })
+      return fileResponse.data
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 404) return null
+      throw error
+    }
   },
 }
 
@@ -157,6 +223,10 @@ export const objectApi = {
   getTasksHeaders: async (objectId: number): Promise<ObjectTask[]> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/headers`)
     return response.data
+  },
+  getAvailableTaskTree: async (objectId: number, taskId: number): Promise<ObjectTaskTree> => {
+    const response = await authApi.get(`/objects/${objectId}/tasks/${taskId}/available`)
+    return normalizeTask(response.data, { hideNotApplicable: true })
   },
   getOverdueTasks: async (objectId: number): Promise<ObjectTask[]> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/overdue`)

@@ -41,3 +41,73 @@ select {
 .btn {
   border-radius: 1rem;
 }
+
+.task-tree-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.task-tree-children {
+  position: relative;
+  display: flex;
+  width: max-content;
+  margin: 0;
+  padding: 2rem 0 0;
+  list-style: none;
+}
+
+.task-tree-children::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 2rem;
+  border-left: 1px solid #cbd5e1;
+  content: "";
+}
+
+.task-tree-children > li {
+  position: relative;
+  padding: 2rem 0.75rem 0;
+}
+
+.task-tree-children > li::before,
+.task-tree-children > li::after {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 2rem;
+  border-top: 1px solid #cbd5e1;
+  content: "";
+}
+
+.task-tree-children > li::before {
+  right: 50%;
+}
+
+.task-tree-children > li::after {
+  left: 50%;
+  border-left: 1px solid #cbd5e1;
+}
+
+.task-tree-children > li:first-child::before,
+.task-tree-children > li:last-child::after {
+  border-top: 0;
+}
+
+.task-tree-children > li:last-child::before {
+  border-radius: 0 0.5rem 0 0;
+}
+
+.task-tree-children > li:first-child::after {
+  border-radius: 0.5rem 0 0 0;
+}
+
+.task-tree-children > li:only-child {
+  padding-top: 0;
+}
+
+.task-tree-children > li:only-child::before,
+.task-tree-children > li:only-child::after {
+  display: none;
+}

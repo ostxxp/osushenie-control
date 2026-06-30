@@ -8,6 +8,7 @@ import ObjectTasksPage from '@pages/ObjectTasksPage'
 import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
 import NotificationsPage from '@pages/NotificationsPage'
+import SettingsPage from '@pages/SettingsPage'
 import Layout from './components/Layout'
 import { AUTH_EXPIRED_EVENT, AuthContext, authService } from '@services/auth'
 import type { UserRole } from '@/types'
@@ -61,6 +62,7 @@ function App() {
             <Route path="/objects" element={<ObjectsPage />} />
             <Route path="/objects/:id" element={<ObjectDetailsPage />} />
             <Route path="/objects/:id/tasks" element={<ObjectTasksPage />} />
+            <Route path="/objects/:id/tasks/:taskId" element={<ObjectTasksPage />} />
             <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
             <Route
               path="/users"
@@ -70,6 +72,7 @@ function App() {
               path="/notifications"
               element={userRole === 'admin' || userRole === 'chief_engineer' ? <NotificationsPage /> : <Navigate to="/" replace />}
             />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </Router>
