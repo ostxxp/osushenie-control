@@ -60,20 +60,27 @@ function ObjectEmployeesPage() {
 
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [employees, setEmployees] = useState<User[]>([])
+  const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
   const [assignableUsers, setAssignableUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingAssignableUsers, setLoadingAssignableUsers] = useState(false)
   const [assigningUserId, setAssigningUserId] = useState<number | null>(null)
+  const [responsibilityUpdatingUserId, setResponsibilityUpdatingUserId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [assignError, setAssignError] = useState('')
+  const [employeeActionError, setEmployeeActionError] = useState('')
   const [showAddUser, setShowAddUser] = useState(false)
   const [userSearch, setUserSearch] = useState('')
 
   const loadEmployees = async () => {
     if (!id) return
 
-    const usersData = await objectApi.getAssignedUsers(Number(id))
+    const [usersData, responsibleUsersData] = await Promise.all([
+      objectApi.getAssignedUsers(Number(id)),
+      objectApi.getResponsibleUsers(Number(id)),
+    ])
     setEmployees(usersData)
+    setResponsibleUsers(responsibleUsersData)
   }
 
   useEffect(() => {
@@ -81,12 +88,14 @@ function ObjectEmployeesPage() {
       if (!id) return
 
       try {
-        const [objectData, usersData] = await Promise.all([
+        const [objectData, usersData, responsibleUsersData] = await Promise.all([
           objectApi.getById(Number(id)),
           objectApi.getAssignedUsers(Number(id)),
+          objectApi.getResponsibleUsers(Number(id)),
         ])
         setObjectItem(objectData)
         setEmployees(usersData)
+        setResponsibleUsers(responsibleUsersData)
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Ошибка загрузки сотрудников'))
         console.error(err)
@@ -101,6 +110,11 @@ function ObjectEmployeesPage() {
   const assignedUserIds = useMemo(
     () => new Set(employees.map((employee) => employee.id)),
     [employees],
+  )
+
+  const responsibleUserIds = useMemo(
+    () => new Set(responsibleUsers.map((user) => user.id)),
+    [responsibleUsers],
   )
 
   const availableUsers = useMemo(
@@ -177,12 +191,19 @@ function ObjectEmployeesPage() {
   }
 
   const handleUnsetResponsible = async (userId: number) => {
-    if (!id) return
+    if (!id || responsibilityUpdatingUserId !== null) return
+
+    setResponsibilityUpdatingUserId(userId)
+    setEmployeeActionError('')
     try {
       await objectApi.unassignResponsibleFromObject(Number(id), userId)
+      setResponsibleUsers((currentUsers) => currentUsers.filter((user) => user.id !== userId))
       await refresh()
-    } catch (err) {
+    } catch (err: unknown) {
+      setEmployeeActionError(getErrorMessage(err, 'Не удалось снять ответственность с сотрудника'))
       console.error('Ошибка при снятии ответственности', err)
+    } finally {
+      setResponsibilityUpdatingUserId(null)
     }
   }
 
@@ -269,6 +290,12 @@ function ObjectEmployeesPage() {
             <h2 className="text-lg font-semibold">Список сотрудников</h2>
           </div>
 
+          {employeeActionError && (
+            <div className="mx-4 mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {employeeActionError}
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-base-200">
@@ -297,9 +324,18 @@ function ObjectEmployeesPage() {
                       <td className="px-4 py-3 text-right">
                         {canManageEmployees && employee.role !== 'admin' && (
                           <div className="flex items-center justify-end gap-2">
-                            <button className="btn btn-ghost btn-xs" onClick={() => handleUnsetResponsible(employee.id)}>
-                              Снять ответственность
-                            </button>
+                            {responsibleUserIds.has(employee.id) && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => handleUnsetResponsible(employee.id)}
+                                disabled={responsibilityUpdatingUserId !== null}
+                              >
+                                {responsibilityUpdatingUserId === employee.id
+                                  ? 'Снятие...'
+                                  : 'Снять ответственность'}
+                              </button>
+                            )}
                             <button className="btn btn-ghost btn-xs text-error" onClick={() => handleUnassign(employee.id)}>
                               Удалить
                             </button>
