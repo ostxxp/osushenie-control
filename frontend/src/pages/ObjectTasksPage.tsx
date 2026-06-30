@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { objectApi } from '@services/api'
+import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
 import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu } from '@/utils'
 import type {
   ConstructionObject,
@@ -273,6 +273,7 @@ function ObjectTasksPage() {
     try {
       await objectApi.toggleTaskStatus(Number(id), taskId)
       await loadData()
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
       console.error('Ошибка обновления статуса:', err)
     }
@@ -338,6 +339,7 @@ function ObjectTasksPage() {
 
       closeTaskEditor()
       await loadData()
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err) {
       console.error('Ошибка сохранения задачи:', err)
     } finally {

@@ -210,6 +210,11 @@ async def update_object_task(
     update_data = task_data.model_dump(exclude_unset=True)
 
     if task_data.status is not None:
+        if task_data.status == ObjectTaskStatus.DONE:
+            await _set_children_status_in_progress(
+                db,
+                parent_task=object_task,
+            )
         _set_task_status(
             object_task,
             task_data.status,
@@ -229,16 +234,31 @@ async def update_object_task(
     for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
-
-    construction_object = await db.get(ConstructionObject, object_task.object_id)
-    object_name = construction_object.name if construction_object is not None else str(object_task.object_id)
     
     if "status" in update_data:
-        notification_message = f'Статус задачи "{object_task.title}" был изменен на "{object_task.status}".'
+        taskTitle = object_task.title if object_task.title is not None else "Задача"
+        mainTask = object_task
+        while mainTask.parent_id is not None:
+            mainTask = await db.get(ObjectTask, mainTask.parent_id)
+            if mainTask is None:
+                break
+        taskTitles = (await db.execute(
+            select(ObjectTask.title)
+            .where(
+                ObjectTask.object_id == object_task.object_id,
+                ObjectTask.id == object_task.id,
+            )
+        )).scalars().all()
+        if taskTitle in taskTitles and object_task.parent_id is not None:
+            parent = await db.get(ObjectTask, object_task.parent_id)
+            taskTitle = f"{parent.title} -> {taskTitle}"
+        taskTitle = f'{mainTask.title} -> {taskTitle}' if mainTask is not None and mainTask.id != object_task.id else taskTitle
+            
+        notification_message = f'Статус задачи "{taskTitle}" был изменен на "{object_task.status}".'
         if task_data.status == ObjectTaskStatus.DONE:
-            notification_message = f'Задача "{object_task.title}" была выполнена.'
+            notification_message = f'Задача "{taskTitle}" была выполнена.'
         elif task_data.status == ObjectTaskStatus.TODO:
-            notification_message = f'Задача "{object_task.title}" была возвращена в статус "К выполнению".'
+            notification_message = f'Задача "{taskTitle}" была возвращена в статус "К выполнению".'
         notification = Notifications(
             user_id=current_user.id,
             object_id=object_task.object_id,
@@ -276,6 +296,24 @@ async def get_main_task_id(
 
     return current_task.id
 
+async def _set_children_status_in_progress(
+    db: AsyncSession,
+    *,
+    parent_task: ObjectTask
+) -> None:
+    result = await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.parent_id == parent_task.id,
+            ObjectTask.is_active.is_(True),
+        )
+    )
+    children = result.scalars().all()
+
+    for child in children:
+        if child.status == ObjectTaskStatus.NOT_APPLICABLE:
+            continue
+        _set_task_status(child, ObjectTaskStatus.IN_PROGRESS)
 
 def _set_task_status(
     task: ObjectTask,
@@ -372,7 +410,166 @@ def _group_tasks_by_parent_id(tasks: list[ObjectTask]) -> dict[int | None, list[
     children_by_parent_id: dict[int | None, list[ObjectTask]] = {}
     for task in tasks:
         children_by_parent_id.setdefault(task.parent_id, []).append(task)
+    for children in children_by_parent_id.values():
+        children.sort(key=lambda task: (task.sort_order, task.id))
     return children_by_parent_id
+
+
+def _empty_task_stats() -> dict[str, int]:
+    return {
+        "total": 0,
+        "done": 0,
+        "todo": 0,
+        "in_progress": 0,
+        "overdue": 0,
+    }
+
+
+def _is_task_overdue(task: ObjectTask) -> bool:
+    return (
+        task.deadline is not None
+        and task.deadline < datetime.now(UTC)
+        and task.status != ObjectTaskStatus.DONE
+    )
+
+
+def _add_status_to_stats(
+    stats: dict[str, int],
+    status: ObjectTaskStatus,
+    *,
+    is_overdue: bool = False,
+) -> None:
+    if status == ObjectTaskStatus.DONE or status in BLOCKING_STATUSES:
+        stats["done"] += 1
+    elif status == ObjectTaskStatus.IN_PROGRESS:
+        stats["in_progress"] += 1
+    else:
+        stats["todo"] += 1
+
+    if is_overdue:
+        stats["overdue"] += 1
+
+
+def _add_task_to_stats(stats: dict[str, int], task: ObjectTask) -> None:
+    _add_status_to_stats(
+        stats,
+        task.status,
+        is_overdue=_is_task_overdue(task),
+    )
+
+
+def _get_task_group_status(tasks: list[ObjectTask]) -> ObjectTaskStatus:
+    active_tasks = [
+        task
+        for task in tasks
+        if task.status not in BLOCKING_STATUSES
+    ]
+
+    if any(task.status == ObjectTaskStatus.DONE for task in active_tasks):
+        return ObjectTaskStatus.DONE
+    if any(task.status == ObjectTaskStatus.IN_PROGRESS for task in active_tasks):
+        return ObjectTaskStatus.IN_PROGRESS
+    if not active_tasks:
+        return ObjectTaskStatus.DONE
+    return ObjectTaskStatus.TODO
+
+
+async def get_task_stats(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> dict[str, int]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    stats = _empty_task_stats()
+
+    def count_total_task(task: ObjectTask) -> int:
+        children = children_by_parent_id.get(task.id, [])
+        if task.parent_id is None and children:
+            return count_total_children(task)
+        return 1 + count_total_children(task)
+
+    def count_total_children(parent: ObjectTask) -> int:
+        children = children_by_parent_id.get(parent.id, [])
+        if not children:
+            return 0
+
+        if len(children) == 2:
+            return 1 + sum(count_total_children(child) for child in children)
+
+        return sum(count_total_task(child) for child in children)
+
+    def count_group(tasks: list[ObjectTask]) -> None:
+        group_status = _get_task_group_status(tasks)
+        _add_status_to_stats(
+            stats,
+            group_status,
+            is_overdue=group_status != ObjectTaskStatus.DONE
+            and any(_is_task_overdue(task) for task in tasks),
+        )
+
+    def count_task_as_done(task: ObjectTask) -> None:
+        children = children_by_parent_id.get(task.id, [])
+        if task.parent_id is None and children:
+            count_children_as_done(task)
+            return
+
+        stats["done"] += 1
+        count_children_as_done(task)
+
+    def count_children_as_done(parent: ObjectTask) -> None:
+        children = children_by_parent_id.get(parent.id, [])
+        if not children:
+            return
+
+        if len(children) == 2:
+            stats["done"] += 1
+            for child in children:
+                count_children_as_done(child)
+            return
+
+        for child in children:
+            count_task_as_done(child)
+
+    def count_task(task: ObjectTask) -> None:
+        if task.status in BLOCKING_STATUSES:
+            count_task_as_done(task)
+            return
+
+        children = children_by_parent_id.get(task.id, [])
+        if task.parent_id is None and children:
+            count_children(task)
+            return
+
+        _add_task_to_stats(stats, task)
+        count_children(task)
+
+    def count_children(parent: ObjectTask) -> None:
+        children = children_by_parent_id.get(parent.id, [])
+        if not children:
+            return
+
+        if len(children) == 2:
+            count_group(children)
+            for child in children:
+                if child.status in BLOCKING_STATUSES:
+                    count_children_as_done(child)
+                    continue
+                count_children(child)
+            return
+
+        for child in children:
+            count_task(child)
+
+    stats["total"] = sum(
+        count_total_task(root)
+        for root in children_by_parent_id.get(None, [])
+    )
+
+    for root in children_by_parent_id.get(None, []):
+        count_task(root)
+
+    return stats
 
 
 async def deactivate_object_task(
@@ -470,50 +667,8 @@ async def get_progress(
     *,
     object_id: int,
 ):
-    tasks = await _list_active_object_tasks(db, object_id=object_id)
-    children_by_parent_id = _group_tasks_by_parent_id(tasks)
-    progress_tasks = _list_relevant_progress_tasks(
-        children_by_parent_id.get(None, []),
-        children_by_parent_id=children_by_parent_id,
-    )
-
-    relevant_tasks = [
-        task
-        for task in progress_tasks
-        if task.status not in {
-            ObjectTaskStatus.SKIPPED,
-            ObjectTaskStatus.NOT_APPLICABLE,
-        }
-    ]
-    relevant_total = len(relevant_tasks)
-    if relevant_total == 0:
+    stats = await get_task_stats(db, object_id=object_id)
+    if stats["total"] == 0:
         return 0
 
-    done_count = sum(
-        1
-        for task in relevant_tasks
-        if task.status == ObjectTaskStatus.DONE
-    )
-    return done_count * 100 // relevant_total
-
-
-def _list_relevant_progress_tasks(
-    roots: list[ObjectTask],
-    *,
-    children_by_parent_id: dict[int | None, list[ObjectTask]],
-) -> list[ObjectTask]:
-    result: list[ObjectTask] = []
-    for task in roots:
-        result.append(task)
-        if task.status in {
-            ObjectTaskStatus.SKIPPED,
-            ObjectTaskStatus.NOT_APPLICABLE,
-        }:
-            continue
-        result.extend(
-            _list_relevant_progress_tasks(
-                children_by_parent_id.get(task.id, []),
-                children_by_parent_id=children_by_parent_id,
-            )
-        )
-    return result
+    return stats["done"] * 100 // stats["total"]
