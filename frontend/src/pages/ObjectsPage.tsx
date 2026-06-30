@@ -366,6 +366,7 @@ function ObjectsPage() {
               <tr>
                 <th className="px-4 py-3">Название объекта</th>
                 <th className="px-4 py-3">Адрес</th>
+                <th className="px-4 py-3">Статус</th>
                 <th className="px-4 py-3">Начало работ</th>
                 <th className="px-4 py-3">Сдача по плану</th>
               </tr>
@@ -373,7 +374,7 @@ function ObjectsPage() {
             <tbody>
               {filteredObjects.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
                     Объектов не найдено.
                   </td>
                 </tr>
@@ -386,6 +387,17 @@ function ObjectsPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">{objectItem.address}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`badge border ${
+                          objectItem.is_active
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'badge-ghost'
+                        }`}
+                      >
+                        {objectItem.is_active ? 'Активен' : 'Не активен'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">{formatDateRu(objectItem.start_date)}</td>
                     <td className="px-4 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
                   </tr>

@@ -421,7 +421,13 @@ function UsersPage() {
                   <td className="px-4 py-3">{user.phone_number || '—'}</td>
                   <td className="px-4 py-3">{user.email}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${user.is_active ? 'badge-success' : 'badge-ghost'}`}>
+                    <span
+                      className={`badge border ${
+                        user.is_active
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'badge-ghost'
+                      }`}
+                    >
                       {user.is_active ? 'Работает' : 'Не активен'}
                     </span>
                   </td>
