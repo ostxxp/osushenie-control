@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
-import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu } from '@/utils'
+import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
   ConstructionObject,
   ObjectTask,
@@ -15,6 +15,8 @@ type FlatTaskOption = {
   task: ObjectTaskTree
   depth: number
 }
+
+type TaskStatusFilter = 'all' | 'done' | 'in_progress' | 'todo' | 'overdue'
 
 type TaskFormState = {
   title: string
@@ -146,8 +148,9 @@ function TaskTreeNode({
   return (
     <div className="task-tree-node">
       <article
+        id={`task-${task.id}`}
         className={[
-          'w-72 rounded-2xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md',
+          'w-72 scroll-mt-6 rounded-2xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md target:ring-2 target:ring-rose-400 target:ring-offset-2',
           isOverdue || (isDone && isNegative)
             ? 'border-rose-400'
             : isDone
@@ -232,6 +235,7 @@ function TaskTreeNode({
 
 function ObjectTasksPage() {
   const { id, taskId } = useParams<{ id: string; taskId?: string }>()
+  const location = useLocation()
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
   const [taskHeaders, setTaskHeaders] = useState<ObjectTask[]>([])
@@ -246,6 +250,7 @@ function ObjectTasksPage() {
   const [taskEditorMode, setTaskEditorMode] = useState<'create' | 'edit'>('create')
   const [taskForm, setTaskForm] = useState<TaskFormState>(emptyTaskForm())
   const [savingTask, setSavingTask] = useState(false)
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>('all')
 
   const flatTaskOptions = useMemo(() => flattenTaskTree(allTasks), [allTasks])
   const overdueTaskIds = useMemo(() => new Set(overdueTasks.map((task) => task.id)), [overdueTasks])
@@ -288,6 +293,7 @@ function ObjectTasksPage() {
 
   useEffect(() => {
     setExpandedTaskIds([])
+    setTaskStatusFilter('all')
     loadData().then((loadedTasks) => {
       setExpandedTaskIds(loadedTasks.map((task) => task.id))
     })
@@ -391,6 +397,71 @@ function ObjectTasksPage() {
     ? overdueTasks.filter((task) => sectionTaskIds.has(task.id))
     : overdueTasks
   const displayedOverdueCount = taskId ? displayedOverdueTasks.length : overdueCount
+  const taskSectionIds = useMemo(() => {
+    const sectionIds = new Map<number, number>()
+
+    const registerTasks = (items: ObjectTaskTree[], sectionId?: number) => {
+      items.forEach((item) => {
+        const rootId = sectionId ?? item.id
+        sectionIds.set(item.id, rootId)
+        registerTasks(item.children, rootId)
+      })
+    }
+
+    registerTasks(allTasks)
+    return sectionIds
+  }, [allTasks])
+
+  const taskMatchesFilter = (task: ObjectTaskTree): boolean => {
+    if (taskStatusFilter === 'all') return true
+    if (taskStatusFilter === 'overdue') return overdueTaskIds.has(task.id)
+    if (taskStatusFilter === 'todo') {
+      return task.status !== 'done' && task.status !== 'in_progress'
+    }
+    return task.status === taskStatusFilter
+  }
+
+  const filterTaskTree = (task: ObjectTaskTree): ObjectTaskTree | null => {
+    if (taskStatusFilter === 'all') return task
+
+    const children = task.children
+      .map(filterTaskTree)
+      .filter((child): child is ObjectTaskTree => child !== null)
+
+    if (!taskMatchesFilter(task) && children.length === 0) return null
+    return { ...task, children }
+  }
+
+  const filteredTasks = useMemo(
+    () => tasks.map(filterTaskTree).filter((task): task is ObjectTaskTree => task !== null),
+    [overdueTaskIds, taskStatusFilter, tasks],
+  )
+
+  const filteredTaskHeaders = useMemo(() => {
+    if (taskStatusFilter === 'all') return taskHeaders
+
+    const visibleHeaderIds = new Set(
+      allTasks
+        .filter((task) => filterTaskTree(task) !== null)
+        .map((task) => task.id),
+    )
+    return taskHeaders.filter((header) => visibleHeaderIds.has(header.id))
+  }, [allTasks, overdueTaskIds, taskHeaders, taskStatusFilter])
+
+  useEffect(() => {
+    if (!location.hash || tasks.length === 0) return
+
+    const elementId = decodeURIComponent(location.hash.slice(1))
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById(elementId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center',
+      })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [expandedTaskIds, location.hash, tasks])
 
   if (loading) {
     return (
@@ -438,30 +509,65 @@ function ObjectTasksPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+          <button
+            type="button"
+            className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-[#ff4539]/40 ${
+              taskStatusFilter === 'all' ? 'border-[#ff4539] ring-2 ring-[#ff4539]/15' : 'border-base-200'
+            }`}
+            onClick={() => setTaskStatusFilter('all')}
+            aria-pressed={taskStatusFilter === 'all'}
+          >
             <div className="text-xs uppercase tracking-wide text-base-content/60">Всего</div>
             <div className="font-semibold text-lg">{stats.total}</div>
-          </div>
+          </button>
 
-          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+          <button
+            type="button"
+            className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-emerald-400 ${
+              taskStatusFilter === 'done' ? 'border-emerald-500 ring-2 ring-emerald-500/15' : 'border-base-200'
+            }`}
+            onClick={() => setTaskStatusFilter('done')}
+            aria-pressed={taskStatusFilter === 'done'}
+          >
             <div className="text-xs uppercase tracking-wide text-base-content/60">Готово</div>
             <div className="font-semibold text-lg">{stats.done}</div>
-          </div>
+          </button>
 
-          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+          <button
+            type="button"
+            className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-blue-400 ${
+              taskStatusFilter === 'in_progress' ? 'border-blue-500 ring-2 ring-blue-500/15' : 'border-base-200'
+            }`}
+            onClick={() => setTaskStatusFilter('in_progress')}
+            aria-pressed={taskStatusFilter === 'in_progress'}
+          >
             <div className="text-xs uppercase tracking-wide text-base-content/60">В работе</div>
             <div className="font-semibold text-lg">{stats.inProgress}</div>
-          </div>
+          </button>
 
-          <div className="rounded-2xl border border-base-200 bg-base-100 px-3 py-2 text-center shadow-sm">
+          <button
+            type="button"
+            className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-amber-400 ${
+              taskStatusFilter === 'todo' ? 'border-amber-500 ring-2 ring-amber-500/15' : 'border-base-200'
+            }`}
+            onClick={() => setTaskStatusFilter('todo')}
+            aria-pressed={taskStatusFilter === 'todo'}
+          >
             <div className="text-xs uppercase tracking-wide text-base-content/60">К выполнению</div>
             <div className="font-semibold text-lg">{stats.todo}</div>
-          </div>
+          </button>
 
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-center shadow-sm">
+          <button
+            type="button"
+            className={`rounded-2xl border bg-rose-50 px-3 py-2 text-center shadow-sm transition hover:border-rose-500 ${
+              taskStatusFilter === 'overdue' ? 'border-rose-500 ring-2 ring-rose-500/15' : 'border-rose-200'
+            }`}
+            onClick={() => setTaskStatusFilter('overdue')}
+            aria-pressed={taskStatusFilter === 'overdue'}
+          >
             <div className="text-xs uppercase tracking-wide text-rose-700">Просрочено</div>
             <div className="font-semibold text-lg text-rose-700">{displayedOverdueCount}</div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -470,29 +576,56 @@ function ObjectTasksPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm uppercase tracking-wide text-rose-700">Просроченные задачи</div>
-              <div className="text-lg font-semibold">Нужно закрыть {displayedOverdueCount} задач</div>
+              <div className="text-lg font-semibold">Нужно закрыть {formatTaskCountAccusative(displayedOverdueCount)}</div>
             </div>
             <div className="badge badge-error badge-lg">{displayedOverdueCount}</div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            {displayedOverdueTasks.slice(0, 8).map((task) => (
-              <span key={task.id} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-rose-900 shadow-sm">
-                {task.title}
-              </span>
-            ))}
+            {displayedOverdueTasks.slice(0, 8).map((task) => {
+              const sectionId = taskSectionIds.get(task.id)
+              const destination = sectionId
+                ? `/objects/${objectItem.id}/tasks/${sectionId}#task-${task.id}`
+                : `/objects/${objectItem.id}/tasks`
+
+              return (
+                <Link
+                  key={task.id}
+                  to={destination}
+                  className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-rose-900 shadow-sm transition hover:bg-rose-100"
+                  onClick={() => {
+                    if (sectionId && String(sectionId) === taskId) {
+                      setExpandedTaskIds((current) =>
+                        current.includes(sectionId) ? current : [...current, sectionId],
+                      )
+                      window.requestAnimationFrame(() => {
+                        document.getElementById(`task-${task.id}`)?.scrollIntoView({
+                          behavior: 'smooth',
+                          block: 'center',
+                          inline: 'center',
+                        })
+                      })
+                    }
+                  }}
+                >
+                  {task.title}
+                </Link>
+              )
+            })}
           </div>
         </div>
       )}
 
       {!taskId ? (
-        taskHeaders.length === 0 ? (
+        filteredTaskHeaders.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
-            Разделы задач пока не добавлены.
+            {taskStatusFilter === 'all'
+              ? 'Разделы задач пока не добавлены.'
+              : 'Разделы с выбранным статусом не найдены.'}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {taskHeaders.map((header) => (
+            {filteredTaskHeaders.map((header) => (
               <Link
                 key={header.id}
                 to={`/objects/${objectItem.id}/tasks/${header.id}`}
@@ -523,13 +656,13 @@ function ObjectTasksPage() {
             ))}
           </div>
         )
-      ) : tasks.length === 0 ? (
+      ) : filteredTasks.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
-          Задачи раздела не найдены.
+          Задачи с выбранным статусом не найдены.
         </div>
       ) : (
         <div className="space-y-4">
-          {tasks.map((task) => (
+          {filteredTasks.map((task) => (
             <section
               key={task.id}
               className="overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-sm"

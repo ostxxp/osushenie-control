@@ -2,7 +2,7 @@ import { useContext, useEffect, useState, useMemo, useRef, type ChangeEvent } fr
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
-import { calculateLogicalTaskStats, formatApiError, formatDateRu } from '@/utils'
+import { calculateLogicalTaskStats, formatApiError, formatDateRu, formatTaskCount } from '@/utils'
 import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
@@ -566,8 +566,8 @@ function ObjectDetailsPage() {
                   Задачи
                 </div>
               </div>
-              <div className="text-3xl font-bold">{stats.total}</div>
-              <div className="text-sm text-base-content/70">всего задач</div>
+              <div className="text-3xl font-bold">{formatTaskCount(stats.total)}</div>
+              <div className="text-sm text-base-content/70">всего</div>
             </div>
 
             <div className="space-y-2">

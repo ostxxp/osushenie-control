@@ -142,3 +142,30 @@ export const formatDateTimeRu = (value: string | Date | null | undefined): strin
     timeZone: 'UTC',
   }).format(date)
 }
+
+export const formatTaskCount = (count: number): string => {
+  const absoluteCount = Math.abs(count)
+  const lastTwoDigits = absoluteCount % 100
+  const lastDigit = absoluteCount % 10
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+    return `${count} задач`
+  }
+
+  if (lastDigit === 1) {
+    return `${count} задача`
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return `${count} задачи`
+  }
+
+  return `${count} задач`
+}
+
+export const formatTaskCountAccusative = (count: number): string => {
+  const formatted = formatTaskCount(count)
+  return Math.abs(count) % 10 === 1 && Math.abs(count) % 100 !== 11
+    ? `${count} задачу`
+    : formatted
+}
