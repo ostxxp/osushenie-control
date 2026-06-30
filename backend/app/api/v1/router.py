@@ -7,6 +7,7 @@ from app.modules.objects.router import router as objects_router
 from app.modules.tasks.router import router as object_tasks_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.photos.router import router as photos_router
+from app.modules.ai.router import router as ai_router
 
 api_router = APIRouter()
 
@@ -50,4 +51,10 @@ api_router.include_router(
     photos_router,
     prefix="/photos",
     tags=["Photos"],
+)
+
+api_router.include_router(
+    ai_router,
+    prefix="/ai",
+    tags=["AI Assistant"],
 )

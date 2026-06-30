@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
     UPLOAD_DIR: str = "uploads"
     MAX_PHOTO_SIZE_BYTES: int = 5 * 1024 * 1024
+    AI_API_URL: str | None = None
+    AI_API_KEY: str | None = None
+    AI_MODEL: str = "gpt-4o-mini"
+    AI_REQUEST_TIMEOUT_SECONDS: int = 60
     
     POSTGRES_DB: str = "osushenie_control"
     POSTGRES_USER: str = "osushenie_app"
