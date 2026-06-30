@@ -122,6 +122,15 @@ export interface ObjectTaskStatusUpdateResponse extends ObjectTask {
   main_task_id: number
 }
 
+export interface AIChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AIChatResponse {
+  answer: string
+}
+
 // Auth
 export interface LoginRequest {
   username: string

@@ -27,6 +27,12 @@ function Layout() {
       isActive: location.pathname === '/notifications',
       hidden: userRole !== 'admin' && userRole !== 'chief_engineer',
     },
+    {
+      to: '/ai',
+      label: 'AI-бот',
+      isActive: location.pathname === '/ai',
+      hidden: userRole !== 'admin',
+    },
   ].filter((item) => !item.hidden)
 
   const handleLogout = async () => {
