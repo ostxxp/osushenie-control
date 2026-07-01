@@ -46,6 +46,7 @@ function ObjectDetailsPage() {
   const [photosSaving, setPhotosSaving] = useState(false)
   const [photosVersion, setPhotosVersion] = useState(0)
   const [photosSuccess, setPhotosSuccess] = useState('')
+  const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -176,6 +177,46 @@ function ObjectDetailsPage() {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [actionsOpen])
+
+  useEffect(() => {
+    if (activePhotoIndex === null) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActivePhotoIndex(null)
+      }
+
+      if (event.key === 'ArrowLeft') {
+        setActivePhotoIndex((current) => {
+          if (current === null) return null
+          return (current - 1 + objectPhotos.length) % objectPhotos.length
+        })
+      }
+
+      if (event.key === 'ArrowRight') {
+        setActivePhotoIndex((current) => {
+          if (current === null) return null
+          return (current + 1) % objectPhotos.length
+        })
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activePhotoIndex, objectPhotos.length])
+
+  useEffect(() => {
+    if (activePhotoIndex !== null && activePhotoIndex >= objectPhotos.length) {
+      setActivePhotoIndex(objectPhotos.length > 0 ? objectPhotos.length - 1 : null)
+    }
+  }, [activePhotoIndex, objectPhotos.length])
 
   const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
   const canEditObject = userRole === 'admin'
@@ -691,25 +732,42 @@ function ObjectDetailsPage() {
             Фотографии объекта пока не добавлены.
           </div>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            {objectPhotos.map((photo) => (
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            {objectPhotos.map((photo, photoIndex) => (
               <div
                 key={photo.id}
-                className="group relative overflow-hidden rounded-2xl border border-base-200 bg-base-100"
+                className={`group relative overflow-hidden rounded-2xl bg-slate-100 shadow-sm ${
+                  photoIndex === 0 && objectPhotos.length > 2
+                    ? 'col-span-2 row-span-2'
+                    : ''
+                }`}
               >
-                <a href={photo.url} target="_blank" rel="noreferrer" className="block">
+                <button
+                  type="button"
+                  className="relative block h-full w-full cursor-zoom-in overflow-hidden text-left"
+                  onClick={() => setActivePhotoIndex(photoIndex)}
+                  aria-label={`Открыть фотографию ${photo.name}`}
+                >
                   <div className="aspect-[4/3] w-full overflow-hidden">
                     <img
                       src={photo.url}
                       alt={photo.name}
-                      className="block h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      className="block h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.04]"
                     />
                   </div>
-                </a>
+                  <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/45 via-transparent to-transparent opacity-0 transition duration-300 group-hover:opacity-100" />
+                  <span className="pointer-events-none absolute bottom-3 left-3 flex translate-y-1 items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-900 opacity-0 shadow-lg backdrop-blur transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                      <path d="m16.5 16.5 4 4M11 8v6M8 11h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                    Смотреть
+                  </span>
+                </button>
                 {(userRole === 'admin' || photo.uploadedById === currentUser?.id) && (
                   <button
                     type="button"
-                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/65 text-lg text-white shadow-sm transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-slate-950/65 text-lg text-white opacity-0 shadow-sm backdrop-blur transition hover:bg-red-600 group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => deleteObjectPhoto(photo.id)}
                     disabled={photosSaving}
                     aria-label={`Удалить ${photo.name}`}
@@ -722,6 +780,109 @@ function ObjectDetailsPage() {
           </div>
         )}
       </section>
+
+      {activePhotoIndex !== null && objectPhotos[activePhotoIndex] && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col bg-slate-950/95 text-white backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Просмотр фотографий объекта"
+        >
+          <div className="relative z-10 flex min-h-16 items-center justify-between gap-4 border-b border-white/10 px-4 sm:px-6">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-white/90">
+                {objectPhotos[activePhotoIndex].name}
+              </div>
+              <div className="mt-0.5 text-xs tabular-nums text-white/50">
+                {activePhotoIndex + 1} из {objectPhotos.length}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <a
+                href={objectPhotos[activePhotoIndex].url}
+                download={objectPhotos[activePhotoIndex].name}
+                className="flex h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 text-sm font-medium text-white transition hover:bg-white/20"
+                aria-label="Скачать фотографию"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="hidden sm:inline">Скачать</span>
+              </a>
+              <button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-2xl text-white transition hover:bg-white/20"
+                onClick={() => setActivePhotoIndex(null)}
+                aria-label="Закрыть просмотр"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="relative flex min-h-0 flex-1 items-center justify-center px-3 py-4 sm:px-20"
+            onClick={() => setActivePhotoIndex(null)}
+          >
+            <img
+              src={objectPhotos[activePhotoIndex].url}
+              alt={objectPhotos[activePhotoIndex].name}
+              className="max-h-full max-w-full select-none object-contain drop-shadow-[0_24px_48px_rgba(0,0,0,0.45)]"
+              onClick={(event) => event.stopPropagation()}
+            />
+
+            {objectPhotos.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="absolute left-3 flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-black/35 text-3xl text-white shadow-xl backdrop-blur transition hover:scale-105 hover:bg-white/20 sm:left-6"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setActivePhotoIndex((activePhotoIndex - 1 + objectPhotos.length) % objectPhotos.length)
+                  }}
+                  aria-label="Предыдущая фотография"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="absolute right-3 flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-black/35 text-3xl text-white shadow-xl backdrop-blur transition hover:scale-105 hover:bg-white/20 sm:right-6"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setActivePhotoIndex((activePhotoIndex + 1) % objectPhotos.length)
+                  }}
+                  aria-label="Следующая фотография"
+                >
+                  ›
+                </button>
+              </>
+            )}
+          </div>
+
+          {objectPhotos.length > 1 && (
+            <div className="border-t border-white/10 bg-black/20 px-4 py-3">
+              <div className="mx-auto flex max-w-4xl gap-2 overflow-x-auto pb-1">
+                {objectPhotos.map((photo, photoIndex) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    className={`h-14 w-[4.5rem] shrink-0 overflow-hidden rounded-lg border-2 transition sm:h-16 sm:w-20 ${
+                      photoIndex === activePhotoIndex
+                        ? 'border-white opacity-100'
+                        : 'border-transparent opacity-45 hover:opacity-85'
+                    }`}
+                    onClick={() => setActivePhotoIndex(photoIndex)}
+                    aria-label={`Открыть фотографию ${photoIndex + 1}`}
+                    aria-current={photoIndex === activePhotoIndex}
+                  >
+                    <img src={photo.url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {activityConfirmationOpen && (
         <div
