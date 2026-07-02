@@ -156,10 +156,10 @@ function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-semibold">Настройки</h1>
+      <h1 className="text-2xl font-semibold sm:text-3xl">Настройки</h1>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-[2rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+        <section className="rounded-[2rem] border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
           <h2 className="text-xl font-semibold">Аватар</h2>
           <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
             {avatarLoading ? (
@@ -217,7 +217,7 @@ function SettingsPage() {
           {avatarSuccess && <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{avatarSuccess}</div>}
         </section>
 
-        <section className="rounded-[2rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+        <section className="rounded-[2rem] border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
           <h2 className="text-xl font-semibold">Смена пароля</h2>
           <div className="mt-5 space-y-4">
             <label className="flex flex-col gap-2">

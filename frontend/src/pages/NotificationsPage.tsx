@@ -334,7 +334,7 @@ function NotificationsPage() {
   if (!canViewNotifications) {
     return (
       <div className="rounded-[2rem] border border-base-200 bg-base-100 p-8 shadow-sm">
-        <h1 className="text-3xl font-semibold">История действий</h1>
+        <h1 className="text-2xl font-semibold sm:text-3xl">История действий</h1>
         <p className="mt-3 text-base-content/70">
           Эта страница доступна только администратору и инженеру.
         </p>

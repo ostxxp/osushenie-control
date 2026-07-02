@@ -13,11 +13,13 @@
 
 html {
   min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
   min-height: 100%;
   margin: 0;
+  overflow-x: hidden;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background-color: var(--color-base-200);
   color: var(--color-base-content);
@@ -36,6 +38,12 @@ select {
 
 #root {
   min-height: 100%;
+  min-width: 0;
+}
+
+img,
+svg {
+  max-width: 100%;
 }
 
 .btn {
@@ -110,4 +118,35 @@ select {
 .task-tree-children > li:only-child::before,
 .task-tree-children > li:only-child::after {
   display: none;
+}
+
+@media (max-width: 639px) {
+  .task-tree-node {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .task-tree-node > article {
+    width: 100%;
+  }
+
+  .task-tree-children {
+    width: 100%;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem 0 0 1rem;
+    border-left: 1px solid #cbd5e1;
+  }
+
+  .task-tree-children::before,
+  .task-tree-children > li::before,
+  .task-tree-children > li::after {
+    display: none;
+  }
+
+  .task-tree-children > li,
+  .task-tree-children > li:only-child {
+    width: 100%;
+    padding: 0;
+  }
 }

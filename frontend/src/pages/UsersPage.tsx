@@ -28,9 +28,9 @@ const roleLabel: Record<UserRole, string> = {
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-3xl bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-base-100 p-4 shadow-lg sm:rounded-3xl sm:p-6">{children}</div>
     </div>
   )
 }
@@ -327,7 +327,7 @@ function UsersPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold">Пользователи</h1>
+        <h1 className="text-2xl font-semibold sm:text-3xl">Пользователи</h1>
       </div>
 
       <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
@@ -378,7 +378,7 @@ function UsersPage() {
         </div>
 
         <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
-          <table className="min-w-full text-left">
+          <table className="min-w-[860px] text-left">
             <thead className="bg-base-200">
               <tr>
                 <th className="px-4 py-3">Имя</th>

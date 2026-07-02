@@ -65,9 +65,9 @@ const flattenTaskTree = (tasks: ObjectTaskTree[], depth = 0): FlatTaskOption[] =
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <button type="button" className="absolute inset-0 bg-black/50" onClick={onClose} aria-label="Закрыть окно" />
-      <div className="relative z-10 w-full max-w-xl rounded-3xl border border-base-200 bg-base-100 shadow-2xl">
+      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-base-200 bg-base-100 shadow-2xl sm:rounded-3xl">
         {children}
       </div>
     </div>
@@ -491,7 +491,7 @@ function ObjectTasksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 rounded-3xl border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <Link
             to={taskId ? `/objects/${objectItem.id}/tasks` : `/objects/${objectItem.id}`}
@@ -501,7 +501,7 @@ function ObjectTasksPage() {
             {taskId ? 'К разделам задач' : 'К объекту'}
           </Link>
           <div>
-            <h1 className="text-3xl font-semibold mt-1">{objectItem.name}</h1>
+            <h1 className="mt-1 break-words text-2xl font-semibold sm:text-3xl">{objectItem.name}</h1>
             {taskId && tasks[0] && (
               <p className="mt-1 text-base text-base-content/65">{tasks[0].title}</p>
             )}
@@ -667,8 +667,8 @@ function ObjectTasksPage() {
               key={task.id}
               className="overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-sm"
             >
-              <div className="overflow-x-auto p-6">
-                <div className="flex min-w-max justify-center px-4 pb-2">
+              <div className="overflow-x-auto p-3 sm:p-6">
+                <div className="flex min-w-0 justify-center pb-2 sm:min-w-max sm:px-4">
                   <TaskTreeNode
                     task={task}
                     onToggleTask={handleToggleTask}
@@ -687,10 +687,10 @@ function ObjectTasksPage() {
 
       {taskEditorOpen && (
         <ModalBackdrop onClose={closeTaskEditor}>
-          <div className="overflow-hidden rounded-3xl">
-            <div className="border-b border-base-200 bg-base-200/40 px-6 py-5">
+          <div className="overflow-hidden rounded-2xl sm:rounded-3xl">
+            <div className="border-b border-base-200 bg-base-200/40 px-4 py-4 sm:px-6 sm:py-5">
               <div>
-                <h2 className="text-2xl font-semibold leading-tight">
+                <h2 className="text-xl font-semibold leading-tight sm:text-2xl">
                   {taskEditorMode === 'create' ? 'Добавить задачу' : 'Изменить задачу'}
                 </h2>
                 {taskEditorMode === 'create' && taskEditorTarget && (
@@ -701,7 +701,7 @@ function ObjectTasksPage() {
               </div>
             </div>
 
-            <div className="space-y-5 p-6">
+            <div className="space-y-5 p-4 sm:p-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <label className="space-y-3 md:col-span-2">
                   <span className="text-sm font-medium">Название задачи</span>

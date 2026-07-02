@@ -433,7 +433,7 @@ function ObjectDetailsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[1.75rem] border border-slate-200/70 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+      <div className="rounded-[1.75rem] border border-slate-200/70 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-5">
         <div className="grid gap-6 lg:grid-cols-[1fr_220px] lg:items-stretch">
           <div className="min-w-0">
             <button
@@ -453,7 +453,7 @@ function ObjectDetailsPage() {
                   aria-label="Название объекта"
                 />
               ) : (
-                <h1 className="min-w-0 truncate text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
+                <h1 className="min-w-0 break-words text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
                   {objectItem.name}
                 </h1>
               )}
@@ -739,12 +739,12 @@ function ObjectDetailsPage() {
         </Link>
       </div>
 
-      <section className="rounded-[1.75rem] border border-slate-200/70 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className="rounded-[1.75rem] border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <h2 className="text-xl font-semibold text-slate-950">Фотографии объекта</h2>
           <label
             className={[
-              'rounded-2xl bg-[#ff4539] px-4 py-2 text-sm font-medium text-white transition',
+              'rounded-2xl bg-[#ff4539] px-4 py-2 text-center text-sm font-medium text-white transition',
               photosSaving
                 ? 'cursor-not-allowed bg-[#ff918a]'
                 : 'cursor-pointer hover:bg-[#cc372e]',
@@ -786,7 +786,7 @@ function ObjectDetailsPage() {
                 key={photo.id}
                 className={`group relative overflow-hidden rounded-2xl bg-slate-100 shadow-sm ${
                   photoIndex === 0 && objectPhotos.length > 2
-                    ? 'col-span-2 row-span-2'
+                    ? 'sm:col-span-2 sm:row-span-2'
                     : ''
                 }`}
               >

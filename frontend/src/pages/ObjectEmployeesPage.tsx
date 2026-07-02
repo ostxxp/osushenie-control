@@ -31,9 +31,9 @@ const formatEmployeeCount = (count: number): string => {
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-[1.75rem] bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-base-100 p-4 shadow-lg sm:rounded-[1.75rem] sm:p-6">{children}</div>
     </div>
   )
 }
@@ -243,7 +243,7 @@ function ObjectEmployeesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-4">
             <Link
@@ -253,7 +253,7 @@ function ObjectEmployeesPage() {
               <span aria-hidden="true">←</span>
               К объекту
             </Link>
-            <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
+            <h1 className="break-words text-2xl font-semibold sm:text-3xl">{objectItem.name}</h1>
             <div className="inline-flex flex-wrap items-center gap-3 rounded-2xl border border-base-200 bg-base-200/40 px-4 py-3">
               <div>
                 <div className="text-xs uppercase tracking-wide text-base-content/50">Пользователи на объекте</div>
@@ -275,7 +275,7 @@ function ObjectEmployeesPage() {
           {canManageEmployees && (
             <button
               type="button"
-              className="bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
+              className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
               onClick={openAddUserModal}
             >
               Добавить сотрудника
@@ -297,7 +297,7 @@ function ObjectEmployeesPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="min-w-[820px] text-left">
               <thead className="bg-base-200">
                 <tr>
                   <th className="px-4 py-3">Сотрудник</th>
