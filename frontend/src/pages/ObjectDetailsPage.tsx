@@ -37,6 +37,7 @@ function ObjectDetailsPage() {
     is_active: true,
     start_date: '',
     end_date: '',
+    responsible_user_id: '',
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -65,6 +66,7 @@ function ObjectDetailsPage() {
           is_active: objData.is_active,
           start_date: toDateInputValue(objData.start_date),
           end_date: toDateInputValue(objData.end_date),
+          responsible_user_id: '',
         })
         setTasks(tasksData)
         try {
@@ -242,6 +244,7 @@ function ObjectDetailsPage() {
       is_active: objectItem.is_active,
       start_date: toDateInputValue(objectItem.start_date),
       end_date: toDateInputValue(objectItem.end_date),
+      responsible_user_id: responsibleUsers[0]?.id.toString() || '',
     })
     setFormError('')
   }
@@ -285,6 +288,20 @@ function ObjectDetailsPage() {
         end_date: editForm.end_date || null,
       })
 
+      const selectedResponsibleId = editForm.responsible_user_id
+        ? Number(editForm.responsible_user_id)
+        : null
+      const currentResponsibleIds = new Set(responsibleUsers.map((user) => user.id))
+
+      if (selectedResponsibleId !== null && !currentResponsibleIds.has(selectedResponsibleId)) {
+        await objectApi.assignResponsibleToObject(objectItem.id, selectedResponsibleId)
+      }
+
+      const responsibilityRemovals = responsibleUsers
+        .filter((user) => user.id !== selectedResponsibleId)
+        .map((user) => objectApi.unassignResponsibleFromObject(objectItem.id, user.id))
+      await Promise.all(responsibilityRemovals)
+
       const nextObjectType = editForm.object_type.trim()
       if (nextObjectType) {
         localStorage.setItem(objectTypeStorageKey(objectItem.id), nextObjectType)
@@ -294,6 +311,11 @@ function ObjectDetailsPage() {
 
       setObjectItem(updated)
       setObjectType(nextObjectType)
+      setResponsibleUsers(
+        selectedResponsibleId === null
+          ? []
+          : employees.filter((user) => user.id === selectedResponsibleId),
+      )
       setIsEditing(false)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: unknown } })?.response?.data
@@ -523,6 +545,32 @@ function ObjectDetailsPage() {
                       onChange={(e) => updateEditForm('object_type', e.target.value)}
                       placeholder="Например: квартира, дом, офис"
                     />
+                  </label>
+                  <label className="flex flex-col gap-2 md:col-span-2">
+                    <span className="text-xs uppercase tracking-wide text-base-content/50">Ответственный</span>
+                    <select
+                      className="select w-full"
+                      value={editForm.responsible_user_id}
+                      onChange={(e) => updateEditForm('responsible_user_id', e.target.value)}
+                    >
+                      <option value="">Не назначен</option>
+                      {employees
+                        .filter(
+                          (user) =>
+                            user.is_active || responsibleUsers.some((responsible) => responsible.id === user.id),
+                        )
+                        .map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.full_name} — {user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}
+                            {!user.is_active ? ' (неактивен)' : ''}
+                          </option>
+                        ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <span className="text-xs text-amber-700">
+                        Сначала добавьте сотрудника на объект в разделе «Пользователи».
+                      </span>
+                    )}
                   </label>
                   <label className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Начало работ</span>
