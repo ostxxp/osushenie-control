@@ -444,7 +444,7 @@ function ObjectDetailsPage() {
               К списку объектов
             </button>
 
-            <div className="mb-5 flex min-w-0 items-center gap-2">
+            <div className="mb-5 flex min-w-0 flex-wrap items-start gap-2">
               {isEditing ? (
                 <input
                   className="input min-h-0 w-full max-w-2xl rounded-xl border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-950"
@@ -453,19 +453,19 @@ function ObjectDetailsPage() {
                   aria-label="Название объекта"
                 />
               ) : (
-                <h1 className="min-w-0 break-words text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
+                <h1 className="min-w-0 flex-1 break-words text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
                   {objectItem.name}
                 </h1>
               )}
 
               {!isEditing && !objectItem.is_active && (
-                <span className="badge h-auto shrink-0 border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                <span className="badge order-3 h-auto max-w-full border border-amber-200 bg-amber-50 px-3 py-1 text-center text-amber-700 sm:order-none sm:shrink-0">
                   Объект неактивен
                 </span>
               )}
 
               {canEditObject && !isEditing && (
-                <div ref={actionsMenuRef} className="relative">
+                <div ref={actionsMenuRef} className="relative ml-auto shrink-0">
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm min-h-0 h-9 w-9 rounded-xl border border-slate-200 bg-white p-0 text-slate-700 shadow-sm hover:bg-slate-50"
@@ -478,7 +478,7 @@ function ObjectDetailsPage() {
                     </svg>
                   </button>
                   {actionsOpen && (
-                    <div className="absolute left-0 z-20 mt-2 w-44 rounded-xl border border-slate-100 bg-white p-2 shadow-[0_14px_32px_rgba(15,23,42,0.14)]">
+                    <div className="absolute right-0 z-20 mt-2 w-48 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-100 bg-white p-2 shadow-[0_14px_32px_rgba(15,23,42,0.14)] sm:left-0 sm:right-auto">
                       <button
                         type="button"
                         className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-slate-800 transition hover:bg-slate-50"
@@ -934,7 +934,7 @@ function ObjectDetailsPage() {
 
       {activityConfirmationOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="activity-confirmation-title"
@@ -947,7 +947,7 @@ function ObjectDetailsPage() {
             }}
             aria-label="Закрыть окно подтверждения"
           />
-          <div className="relative w-full max-w-md rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
+          <div className="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_70px_rgba(15,23,42,0.24)] sm:rounded-[1.75rem] sm:p-6">
             <div
               className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${
                 objectItem.is_active
@@ -958,7 +958,7 @@ function ObjectDetailsPage() {
             >
               <span className="text-2xl">{objectItem.is_active ? '!' : '✓'}</span>
             </div>
-            <h2 id="activity-confirmation-title" className="text-xl font-semibold text-slate-950">
+            <h2 id="activity-confirmation-title" className="break-words text-lg font-semibold text-slate-950 sm:text-xl">
               {objectItem.is_active ? 'Деактивировать объект?' : 'Активировать объект?'}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -966,10 +966,10 @@ function ObjectDetailsPage() {
                 ? `Объект «${objectItem.name}» станет неактивным и будет исключён из текущей работы.`
                 : `Объект «${objectItem.name}» снова станет активным и вернётся в работу.`}
             </p>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 type="button"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={() => setActivityConfirmationOpen(false)}
                 disabled={statusUpdating}
               >
@@ -977,7 +977,7 @@ function ObjectDetailsPage() {
               </button>
               <button
                 type="button"
-                className={`rounded-xl px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                className={`w-full whitespace-normal rounded-xl px-4 py-2 text-center text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
                   objectItem.is_active
                     ? 'bg-red-600 hover:bg-red-700'
                     : 'bg-emerald-600 hover:bg-emerald-700'
