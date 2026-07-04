@@ -1,8 +1,8 @@
-import { useContext, useEffect, useState, useMemo, useRef } from 'react'
+import { useContext, useEffect, useState, useMemo, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { objectApi } from '@services/api'
-import { AuthContext } from '@services/auth'
-import { calculateLogicalTaskStats, formatApiError, formatDateRu } from '@/utils'
+import { objectApi, photoApi } from '@services/api'
+import { authService, AuthContext } from '@services/auth'
+import { calculateLogicalTaskStats, formatApiError, formatDateRu, formatTaskCount } from '@/utils'
 import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
@@ -26,8 +26,9 @@ function ObjectDetailsPage() {
   const [objectType, setObjectType] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
+  const [activityConfirmationOpen, setActivityConfirmationOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState(false)
   const [formError, setFormError] = useState('')
   const [editForm, setEditForm] = useState({
     name: '',
@@ -36,9 +37,17 @@ function ObjectDetailsPage() {
     is_active: true,
     start_date: '',
     end_date: '',
+    responsible_user_id: '',
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [objectPhotos, setObjectPhotos] = useState<Array<{ id: number; name: string; uploadedById: number | null; url: string }>>([])
+  const [photosLoading, setPhotosLoading] = useState(true)
+  const [photosError, setPhotosError] = useState('')
+  const [photosSaving, setPhotosSaving] = useState(false)
+  const [photosVersion, setPhotosVersion] = useState(0)
+  const [photosSuccess, setPhotosSuccess] = useState('')
+  const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -57,6 +66,7 @@ function ObjectDetailsPage() {
           is_active: objData.is_active,
           start_date: toDateInputValue(objData.start_date),
           end_date: toDateInputValue(objData.end_date),
+          responsible_user_id: '',
         })
         setTasks(tasksData)
         try {
@@ -93,6 +103,54 @@ function ObjectDetailsPage() {
     fetchData()
   }, [id])
 
+  useEffect(() => {
+    if (!id) {
+      setPhotosLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const objectUrls: string[] = []
+
+    const fetchObjectPhotos = async () => {
+      setPhotosLoading(true)
+      try {
+        const photos = await photoApi.getObjectPhotos(Number(id))
+        if (cancelled) return
+
+        const displayedPhotos = photos.map((photo) => {
+          const url = URL.createObjectURL(photo.blob)
+          objectUrls.push(url)
+          return {
+            id: photo.id,
+            name: photo.originalFilename,
+            uploadedById: photo.uploadedById,
+            url,
+          }
+        })
+
+        if (!cancelled) {
+          setObjectPhotos(displayedPhotos)
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setPhotosError(formatApiError(err, 'Не удалось загрузить фотографии объекта.'))
+        }
+      } finally {
+        if (!cancelled) {
+          setPhotosLoading(false)
+        }
+      }
+    }
+
+    fetchObjectPhotos()
+
+    return () => {
+      cancelled = true
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [id, photosVersion])
+
   const actionsMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -122,8 +180,49 @@ function ObjectDetailsPage() {
     }
   }, [actionsOpen])
 
+  useEffect(() => {
+    if (activePhotoIndex === null) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActivePhotoIndex(null)
+      }
+
+      if (event.key === 'ArrowLeft') {
+        setActivePhotoIndex((current) => {
+          if (current === null) return null
+          return (current - 1 + objectPhotos.length) % objectPhotos.length
+        })
+      }
+
+      if (event.key === 'ArrowRight') {
+        setActivePhotoIndex((current) => {
+          if (current === null) return null
+          return (current + 1) % objectPhotos.length
+        })
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activePhotoIndex, objectPhotos.length])
+
+  useEffect(() => {
+    if (activePhotoIndex !== null && activePhotoIndex >= objectPhotos.length) {
+      setActivePhotoIndex(objectPhotos.length > 0 ? objectPhotos.length - 1 : null)
+    }
+  }, [activePhotoIndex, objectPhotos.length])
+
   const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
   const canEditObject = userRole === 'admin'
+  const currentUser = authService.getCurrentUser()
   const progressLabel =
     progress === 0
       ? 'Ещё не начат'
@@ -145,6 +244,7 @@ function ObjectDetailsPage() {
       is_active: objectItem.is_active,
       start_date: toDateInputValue(objectItem.start_date),
       end_date: toDateInputValue(objectItem.end_date),
+      responsible_user_id: responsibleUsers[0]?.id.toString() || '',
     })
     setFormError('')
   }
@@ -188,6 +288,20 @@ function ObjectDetailsPage() {
         end_date: editForm.end_date || null,
       })
 
+      const selectedResponsibleId = editForm.responsible_user_id
+        ? Number(editForm.responsible_user_id)
+        : null
+      const currentResponsibleIds = new Set(responsibleUsers.map((user) => user.id))
+
+      if (selectedResponsibleId !== null && !currentResponsibleIds.has(selectedResponsibleId)) {
+        await objectApi.assignResponsibleToObject(objectItem.id, selectedResponsibleId)
+      }
+
+      const responsibilityRemovals = responsibleUsers
+        .filter((user) => user.id !== selectedResponsibleId)
+        .map((user) => objectApi.unassignResponsibleFromObject(objectItem.id, user.id))
+      await Promise.all(responsibilityRemovals)
+
       const nextObjectType = editForm.object_type.trim()
       if (nextObjectType) {
         localStorage.setItem(objectTypeStorageKey(objectItem.id), nextObjectType)
@@ -197,6 +311,11 @@ function ObjectDetailsPage() {
 
       setObjectItem(updated)
       setObjectType(nextObjectType)
+      setResponsibleUsers(
+        selectedResponsibleId === null
+          ? []
+          : employees.filter((user) => user.id === selectedResponsibleId),
+      )
       setIsEditing(false)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: unknown } })?.response?.data
@@ -207,24 +326,82 @@ function ObjectDetailsPage() {
     }
   }
 
-  const deactivateObject = async () => {
-    if (!objectItem || deleting) return
+  const changeObjectActivity = async () => {
+    if (!objectItem || statusUpdating) return
 
-    const confirmed = window.confirm('Деактивировать объект? Он будет скрыт из активной работы.')
-    if (!confirmed) return
-
-    setDeleting(true)
+    const isActivating = !objectItem.is_active
+    setStatusUpdating(true)
     setFormError('')
 
     try {
-      await objectApi.deactivate(objectItem.id)
-      navigate('/objects')
+      if (isActivating) {
+        const updated = await objectApi.update(objectItem.id, { is_active: true })
+        setObjectItem(updated)
+        setEditForm((current) => ({ ...current, is_active: true }))
+      } else {
+        await objectApi.deactivate(objectItem.id)
+        navigate('/objects')
+      }
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: unknown } })?.response?.data
-      setFormError(formatApiError(detail, 'Не удалось деактивировать объект.'))
+      setFormError(
+        formatApiError(
+          detail,
+          isActivating ? 'Не удалось активировать объект.' : 'Не удалось деактивировать объект.',
+        ),
+      )
       console.error(err)
     } finally {
-      setDeleting(false)
+      setStatusUpdating(false)
+      setActivityConfirmationOpen(false)
+    }
+  }
+
+  const addObjectPhotos = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!objectItem) return
+
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (files.length === 0) return
+
+    if (files.some((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))) {
+      setPhotosError('Добавляйте фотографии только в формате JPG, PNG или WebP.')
+      return
+    }
+
+    if (files.some((file) => file.size > 5 * 1024 * 1024)) {
+      setPhotosError('Размер каждой фотографии не должен превышать 5 МБ.')
+      return
+    }
+
+    setPhotosSaving(true)
+    setPhotosError('')
+    setPhotosSuccess('')
+    try {
+      await Promise.all(files.map((file) => photoApi.uploadObjectPhoto(objectItem.id, file)))
+      setPhotosSuccess(`Добавлено фотографий: ${files.length}.`)
+    } catch (err: unknown) {
+      setPhotosError(formatApiError(err, 'Не удалось добавить фотографии объекта.'))
+    } finally {
+      setPhotosSaving(false)
+      setPhotosVersion((version) => version + 1)
+    }
+  }
+
+  const deleteObjectPhoto = async (photoId: number) => {
+    if (!window.confirm('Удалить эту фотографию объекта?')) return
+
+    setPhotosSaving(true)
+    setPhotosError('')
+    setPhotosSuccess('')
+    try {
+      await photoApi.deletePhoto(photoId)
+      setPhotosSuccess('Фотография удалена.')
+      setPhotosVersion((version) => version + 1)
+    } catch (err: unknown) {
+      setPhotosError(formatApiError(err, 'Не удалось удалить фотографию объекта.'))
+    } finally {
+      setPhotosSaving(false)
     }
   }
 
@@ -256,7 +433,7 @@ function ObjectDetailsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[1.75rem] border border-slate-200/70 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+      <div className="rounded-[1.75rem] border border-slate-200/70 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-5">
         <div className="grid gap-6 lg:grid-cols-[1fr_220px] lg:items-stretch">
           <div className="min-w-0">
             <button
@@ -276,9 +453,15 @@ function ObjectDetailsPage() {
                   aria-label="Название объекта"
                 />
               ) : (
-                <h1 className="min-w-0 truncate text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
+                <h1 className="min-w-0 break-words text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
                   {objectItem.name}
                 </h1>
+              )}
+
+              {!isEditing && !objectItem.is_active && (
+                <span className="badge h-auto shrink-0 border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                  Объект неактивен
+                </span>
               )}
 
               {canEditObject && !isEditing && (
@@ -309,15 +492,27 @@ function ObjectDetailsPage() {
                       </button>
                       <button
                         type="button"
-                        className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-red-600 transition hover:bg-red-50"
+                        className={`flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm transition ${
+                          objectItem.is_active
+                            ? 'text-red-600 hover:bg-red-50'
+                            : 'text-emerald-700 hover:bg-emerald-50'
+                        }`}
                         onClick={() => {
                           setActionsOpen(false)
-                          void deactivateObject()
+                          setActivityConfirmationOpen(true)
                         }}
-                        disabled={deleting}
+                        disabled={statusUpdating}
                       >
-                        <span className="w-4 text-center" aria-hidden="true">×</span>
-                        {deleting ? 'Деактивация...' : 'Деактивировать'}
+                        <span className="w-4 text-center" aria-hidden="true">
+                          {objectItem.is_active ? '×' : '✓'}
+                        </span>
+                        {statusUpdating
+                          ? objectItem.is_active
+                            ? 'Деактивация...'
+                            : 'Активация...'
+                          : objectItem.is_active
+                            ? 'Деактивировать'
+                            : 'Активировать'}
                       </button>
                     </div>
                   )}
@@ -350,6 +545,32 @@ function ObjectDetailsPage() {
                       onChange={(e) => updateEditForm('object_type', e.target.value)}
                       placeholder="Например: квартира, дом, офис"
                     />
+                  </label>
+                  <label className="flex flex-col gap-2 md:col-span-2">
+                    <span className="text-xs uppercase tracking-wide text-base-content/50">Ответственный</span>
+                    <select
+                      className="select w-full"
+                      value={editForm.responsible_user_id}
+                      onChange={(e) => updateEditForm('responsible_user_id', e.target.value)}
+                    >
+                      <option value="">Не назначен</option>
+                      {employees
+                        .filter(
+                          (user) =>
+                            user.is_active || responsibleUsers.some((responsible) => responsible.id === user.id),
+                        )
+                        .map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.full_name} — {user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}
+                            {!user.is_active ? ' (неактивен)' : ''}
+                          </option>
+                        ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <span className="text-xs text-amber-700">
+                        Сначала добавьте сотрудника на объект в разделе «Пользователи».
+                      </span>
+                    )}
                   </label>
                   <label className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Начало работ</span>
@@ -463,8 +684,8 @@ function ObjectDetailsPage() {
                   Задачи
                 </div>
               </div>
-              <div className="text-3xl font-bold">{stats.total}</div>
-              <div className="text-sm text-base-content/70">всего задач</div>
+              <div className="text-3xl font-bold">{formatTaskCount(stats.total)}</div>
+              <div className="text-sm text-base-content/70">всего</div>
             </div>
 
             <div className="space-y-2">
@@ -517,6 +738,265 @@ function ObjectDetailsPage() {
           </div>
         </Link>
       </div>
+
+      <section className="rounded-[1.75rem] border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <h2 className="text-xl font-semibold text-slate-950">Фотографии объекта</h2>
+          <label
+            className={[
+              'rounded-2xl bg-[#ff4539] px-4 py-2 text-center text-sm font-medium text-white transition',
+              photosSaving
+                ? 'cursor-not-allowed bg-[#ff918a]'
+                : 'cursor-pointer hover:bg-[#cc372e]',
+            ].join(' ')}
+          >
+            {photosSaving ? 'Сохранение...' : 'Добавить фотографии'}
+            <input
+              type="file"
+              className="hidden"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={addObjectPhotos}
+              disabled={photosSaving}
+            />
+          </label>
+        </div>
+        {photosSuccess && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {photosSuccess}
+          </div>
+        )}
+        {photosError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {photosError}
+          </div>
+        )}
+        {photosLoading ? (
+          <div className="flex min-h-32 items-center justify-center">
+            <span className="loading loading-spinner text-primary" />
+          </div>
+        ) : objectPhotos.length === 0 ? (
+          <div className="mt-4 rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/60">
+            Фотографии объекта пока не добавлены.
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            {objectPhotos.map((photo, photoIndex) => (
+              <div
+                key={photo.id}
+                className={`group relative overflow-hidden rounded-2xl bg-slate-100 shadow-sm ${
+                  photoIndex === 0 && objectPhotos.length > 2
+                    ? 'sm:col-span-2 sm:row-span-2'
+                    : ''
+                }`}
+              >
+                <button
+                  type="button"
+                  className="relative block h-full w-full cursor-zoom-in overflow-hidden text-left"
+                  onClick={() => setActivePhotoIndex(photoIndex)}
+                  aria-label={`Открыть фотографию ${photo.name}`}
+                >
+                  <div className="aspect-[4/3] w-full overflow-hidden">
+                    <img
+                      src={photo.url}
+                      alt={photo.name}
+                      className="block h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.04]"
+                    />
+                  </div>
+                  <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/45 via-transparent to-transparent opacity-0 transition duration-300 group-hover:opacity-100" />
+                  <span className="pointer-events-none absolute bottom-3 left-3 flex translate-y-1 items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-900 opacity-0 shadow-lg backdrop-blur transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                      <path d="m16.5 16.5 4 4M11 8v6M8 11h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                    Смотреть
+                  </span>
+                </button>
+                {(userRole === 'admin' || photo.uploadedById === currentUser?.id) && (
+                  <button
+                    type="button"
+                    className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-slate-950/65 text-lg text-white opacity-0 shadow-sm backdrop-blur transition hover:bg-red-600 group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => deleteObjectPhoto(photo.id)}
+                    disabled={photosSaving}
+                    aria-label={`Удалить ${photo.name}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {activePhotoIndex !== null && objectPhotos[activePhotoIndex] && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col bg-slate-950/95 text-white backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Просмотр фотографий объекта"
+        >
+          <div className="relative z-10 flex min-h-16 items-center justify-between gap-4 border-b border-white/10 px-4 sm:px-6">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-white/90">
+                {objectPhotos[activePhotoIndex].name}
+              </div>
+              <div className="mt-0.5 text-xs tabular-nums text-white/50">
+                {activePhotoIndex + 1} из {objectPhotos.length}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <a
+                href={objectPhotos[activePhotoIndex].url}
+                download={objectPhotos[activePhotoIndex].name}
+                className="flex h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 text-sm font-medium text-white transition hover:bg-white/20"
+                aria-label="Скачать фотографию"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="hidden sm:inline">Скачать</span>
+              </a>
+              <button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-2xl text-white transition hover:bg-white/20"
+                onClick={() => setActivePhotoIndex(null)}
+                aria-label="Закрыть просмотр"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="relative flex min-h-0 flex-1 items-center justify-center px-3 py-4 sm:px-20"
+            onClick={() => setActivePhotoIndex(null)}
+          >
+            <img
+              src={objectPhotos[activePhotoIndex].url}
+              alt={objectPhotos[activePhotoIndex].name}
+              className="max-h-full max-w-full select-none object-contain drop-shadow-[0_24px_48px_rgba(0,0,0,0.45)]"
+              onClick={(event) => event.stopPropagation()}
+            />
+
+            {objectPhotos.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="absolute left-3 flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-black/35 text-3xl text-white shadow-xl backdrop-blur transition hover:scale-105 hover:bg-white/20 sm:left-6"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setActivePhotoIndex((activePhotoIndex - 1 + objectPhotos.length) % objectPhotos.length)
+                  }}
+                  aria-label="Предыдущая фотография"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="absolute right-3 flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-black/35 text-3xl text-white shadow-xl backdrop-blur transition hover:scale-105 hover:bg-white/20 sm:right-6"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setActivePhotoIndex((activePhotoIndex + 1) % objectPhotos.length)
+                  }}
+                  aria-label="Следующая фотография"
+                >
+                  ›
+                </button>
+              </>
+            )}
+          </div>
+
+          {objectPhotos.length > 1 && (
+            <div className="border-t border-white/10 bg-black/20 px-4 py-3">
+              <div className="mx-auto flex max-w-4xl gap-2 overflow-x-auto pb-1">
+                {objectPhotos.map((photo, photoIndex) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    className={`h-14 w-[4.5rem] shrink-0 overflow-hidden rounded-lg border-2 transition sm:h-16 sm:w-20 ${
+                      photoIndex === activePhotoIndex
+                        ? 'border-white opacity-100'
+                        : 'border-transparent opacity-45 hover:opacity-85'
+                    }`}
+                    onClick={() => setActivePhotoIndex(photoIndex)}
+                    aria-label={`Открыть фотографию ${photoIndex + 1}`}
+                    aria-current={photoIndex === activePhotoIndex}
+                  >
+                    <img src={photo.url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activityConfirmationOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="activity-confirmation-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]"
+            onClick={() => {
+              if (!statusUpdating) setActivityConfirmationOpen(false)
+            }}
+            aria-label="Закрыть окно подтверждения"
+          />
+          <div className="relative w-full max-w-md rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
+            <div
+              className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${
+                objectItem.is_active
+                  ? 'bg-red-50 text-red-600'
+                  : 'bg-emerald-50 text-emerald-700'
+              }`}
+              aria-hidden="true"
+            >
+              <span className="text-2xl">{objectItem.is_active ? '!' : '✓'}</span>
+            </div>
+            <h2 id="activity-confirmation-title" className="text-xl font-semibold text-slate-950">
+              {objectItem.is_active ? 'Деактивировать объект?' : 'Активировать объект?'}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {objectItem.is_active
+                ? `Объект «${objectItem.name}» станет неактивным и будет исключён из текущей работы.`
+                : `Объект «${objectItem.name}» снова станет активным и вернётся в работу.`}
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setActivityConfirmationOpen(false)}
+                disabled={statusUpdating}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className={`rounded-xl px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  objectItem.is_active
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                onClick={() => void changeObjectActivity()}
+                disabled={statusUpdating}
+              >
+                {statusUpdating
+                  ? objectItem.is_active
+                    ? 'Деактивация...'
+                    : 'Активация...'
+                  : objectItem.is_active
+                    ? 'Деактивировать'
+                    : 'Активировать'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* tasks table intentionally removed */}
     </div>

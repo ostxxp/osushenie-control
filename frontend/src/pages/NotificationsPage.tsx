@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi } from '@services/api'
+import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
 import type { NotificationLog } from '@/types'
@@ -33,10 +33,10 @@ const formatDateTime = (value: string | null): string => {
 }
 
 const formatDateInputLabel = (value: string): string => {
-  if (!value) return 'дата события'
+  if (!value) return 'Дата события'
 
   const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return 'дата события'
+  if (Number.isNaN(date.getTime())) return 'Дата события'
 
   return new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
@@ -106,6 +106,7 @@ function NotificationsPage() {
   const [dateSearch, setDateSearch] = useState('')
   const [eventSearch, setEventSearch] = useState('')
   const [objectNames, setObjectNames] = useState<Record<number, string>>({})
+  const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>({})
   const datePickerRef = useRef<HTMLInputElement>(null)
 
   const canViewNotifications = userRole === 'admin' || userRole === 'chief_engineer'
@@ -133,6 +134,52 @@ function NotificationsPage() {
 
     return actorOptions.filter((actor) => actor.name.toLowerCase().includes(query))
   }, [actorOptions, actorSearch])
+
+  useEffect(() => {
+    if (actorOptions.length === 0) {
+      setActorAvatarUrls({})
+      return
+    }
+
+    let cancelled = false
+    const createdUrls: string[] = []
+
+    const loadActorAvatars = async () => {
+      const entries = await Promise.all(
+        actorOptions.map(async (actor): Promise<[number, string] | null> => {
+          try {
+            const avatar = await photoApi.getUserAvatar(actor.id)
+            if (!avatar) return null
+
+            const url = URL.createObjectURL(avatar)
+            if (cancelled) {
+              URL.revokeObjectURL(url)
+              return null
+            }
+
+            createdUrls.push(url)
+            return [actor.id, url]
+          } catch (error) {
+            console.warn(`Не удалось загрузить аватар пользователя ${actor.id}`, error)
+            return null
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setActorAvatarUrls(
+          Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)),
+        )
+      }
+    }
+
+    loadActorAvatars()
+
+    return () => {
+      cancelled = true
+      createdUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [actorOptions])
 
   const objectOptions = useMemo(() => {
     const uniqueObjects = new Map<number, string>()
@@ -287,7 +334,7 @@ function NotificationsPage() {
   if (!canViewNotifications) {
     return (
       <div className="rounded-[2rem] border border-base-200 bg-base-100 p-8 shadow-sm">
-        <h1 className="text-3xl font-semibold">История действий</h1>
+        <h1 className="text-2xl font-semibold sm:text-3xl">История действий</h1>
         <p className="mt-3 text-base-content/70">
           Эта страница доступна только администратору и инженеру.
         </p>
@@ -428,8 +475,8 @@ function NotificationsPage() {
                 event.stopPropagation()
                 openDatePicker()
               }}
-              placeholder="дата события"
-              aria-label="дата события"
+              placeholder="Дата события"
+              aria-label="Дата события"
               inputMode="numeric"
               maxLength={10}
             />
@@ -460,7 +507,7 @@ function NotificationsPage() {
                 setDateSearch(formatDateInputLabel(nextDate))
               }}
               tabIndex={-1}
-              aria-label="дата события"
+              aria-label="Дата события"
             />
           </div>
 
@@ -483,7 +530,7 @@ function NotificationsPage() {
 
           <button
             type="button"
-            className="w-full rounded-lg bg-[#00858d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#006f76] disabled:cursor-not-allowed disabled:bg-[#8ac8cc] lg:w-auto"
+            className="w-full rounded-2xl bg-[#ff4539] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a] lg:w-auto"
             onClick={clearFilters}
             disabled={!hasActiveFilters}
           >
@@ -508,9 +555,33 @@ function NotificationsPage() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="space-y-3">
                     <p className="text-base leading-7 text-base-content">{notification.message}</p>
-                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-base-content/60">
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-base-content/60">
                       <span>Создано: {formatDateTime(notification.created_at)}</span>
-                      <span>Действие сделал: {notification.actor_full_name || `#${notification.actor_user_id}`}</span>
+                      <span className="inline-flex items-center gap-2">
+                        <span>Действие сделал:</span>
+                        {actorAvatarUrls[notification.actor_user_id] ? (
+                          <span
+                            className="shrink-0 overflow-hidden rounded-full"
+                            style={{ width: 20, height: 20, minWidth: 20, maxWidth: 20 }}
+                          >
+                            <img
+                              src={actorAvatarUrls[notification.actor_user_id]}
+                              alt=""
+                              className="block object-cover"
+                              style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
+                            />
+                          </span>
+                        ) : (
+                          <span
+                            className="flex shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/60"
+                            style={{ width: 20, height: 20, minWidth: 20, maxWidth: 20 }}
+                            aria-hidden="true"
+                          >
+                            {(notification.actor_full_name || `#${notification.actor_user_id}`).trim().charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <span>{notification.actor_full_name || `#${notification.actor_user_id}`}</span>
+                      </span>
                       <span>
                         Объект:{' '}
                         <Link to={`/objects/${notification.object_id}`} className="font-medium text-primary hover:underline">

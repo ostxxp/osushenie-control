@@ -74,6 +74,35 @@ async def test_user_can_upload_replace_get_and_delete_profile_avatar(
     assert deleted_avatar_response.status_code == 404
 
 
+async def test_admin_can_upload_another_users_profile_avatar(
+    client: AsyncClient,
+    create_test_user,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    admin = await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    target_user = await create_test_user(email="foreman@example.com", role=UserRole.FOREMAN)
+    admin_token = await login(client, email=admin.email)
+    foreman_token = await login(client, email=target_user.email)
+
+    upload_response = await client.post(
+        f"/api/v1/photos/users/{target_user.id}/avatar",
+        headers=auth_headers(admin_token),
+        files={"file": ("avatar.png", b"target-avatar", "image/png")},
+    )
+    forbidden_response = await client.post(
+        f"/api/v1/photos/users/{admin.id}/avatar",
+        headers=auth_headers(foreman_token),
+        files={"file": ("avatar.png", b"forbidden-avatar", "image/png")},
+    )
+
+    assert upload_response.status_code == 201
+    assert upload_response.json()["user_id"] == target_user.id
+    assert upload_response.json()["uploaded_by_id"] == admin.id
+    assert forbidden_response.status_code == 403
+
+
 async def test_assigned_user_can_upload_list_and_get_object_photo(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],

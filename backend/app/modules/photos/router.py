@@ -19,7 +19,7 @@ from app.modules.photos.service import (
     list_object_photos,
     serialize_photo,
 )
-from app.modules.users.dependencies import get_current_auth_user, get_user_or_404
+from app.modules.users.dependencies import get_current_auth_user, get_user_or_404, require_admin
 from app.modules.users.models import User
 
 
@@ -83,6 +83,28 @@ async def get_user_profile_avatar(
             detail="Profile avatar not found.",
         )
 
+    return serialize_photo(photo)
+
+
+@router.post(
+    "/users/{user_id}/avatar",
+    response_model=PhotoRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload user's profile avatar",
+    dependencies=[Depends(require_admin)],
+)
+async def upload_user_profile_avatar(
+    file: UploadFile = File(...),
+    user: User = Depends(get_user_or_404),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+) -> dict:
+    photo = await create_profile_avatar(
+        db,
+        file=file,
+        current_user=current_user,
+        user_id=user.id,
+    )
     return serialize_photo(photo)
 
 

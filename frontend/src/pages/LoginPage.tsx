@@ -35,12 +35,12 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
   }
 
   return (
-    <div className="min-h-screen flex">
-      <div className="flex-[0_0_35%] items-start justify-center bg-white px-12 pt-20">
+    <div className="flex min-h-screen bg-white">
+      <div className="flex w-full items-start justify-center bg-white px-5 pb-10 pt-10 sm:px-10 sm:pt-16 lg:flex-[0_0_42%] lg:px-12 lg:pt-20 xl:flex-[0_0_35%]">
         <div className="w-full max-w-md">
           <div className="space-y-6">
             <div className="space-y-1 mb-12">
-              <h1 className="text-3xl font-bold text-gray-900">ОСУШЕНИЕ.РФ</h1>
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">ОСУШЕНИЕ.РФ</h1>
               <p className="text-gray-500 text-sm">Система управления строительными проектами</p>
             </div>
 
@@ -95,7 +95,7 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
         </div>
       </div>
 
-      <div className="flex-1 bg-gray-100">
+      <div className="hidden flex-1 bg-gray-100 lg:block">
       </div>
 
     </div>

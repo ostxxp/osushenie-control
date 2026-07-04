@@ -1,6 +1,6 @@
-import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { objectApi, userApi } from '@services/api'
+import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
 import type { ConstructionObject, User } from '@/types'
 import { AuthContext } from '@services/auth'
@@ -9,9 +9,9 @@ const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl overflow-y-auto rounded-2xl bg-base-100 p-4 shadow-lg sm:max-h-[90vh] sm:rounded-3xl sm:p-6">{children}</div>
     </div>
   )
 }
@@ -81,6 +81,8 @@ function ObjectsPage() {
   const [responsibleDropdownOpen, setResponsibleDropdownOpen] = useState(false)
   const [workerSearch, setWorkerSearch] = useState('')
   const [workerDropdownOpen, setWorkerDropdownOpen] = useState(false)
+  const [objectPhotoFiles, setObjectPhotoFiles] = useState<File[]>([])
+  const [objectPhotoPreviewUrls, setObjectPhotoPreviewUrls] = useState<string[]>([])
 
   const filteredObjects = useMemo(
     () =>
@@ -126,6 +128,15 @@ function ObjectsPage() {
     fetchUsers()
   }, [userRole])
 
+  useEffect(() => {
+    const urls = objectPhotoFiles.map((file) => URL.createObjectURL(file))
+    setObjectPhotoPreviewUrls(urls)
+
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [objectPhotoFiles])
+
   const toggleWorker = (userId: number) => {
     setSelectedWorkerIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
@@ -162,6 +173,36 @@ function ObjectsPage() {
 
   const handleChange = (field: string, value: string | boolean) => {
     setNewObject((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleObjectPhotosChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    const invalidType = files.find((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
+    const oversizedFile = files.find((file) => file.size > 5 * 1024 * 1024)
+
+    if (invalidType) {
+      setFormError('Добавляйте фотографии только в формате JPG, PNG или WebP.')
+      event.target.value = ''
+      return
+    }
+
+    if (oversizedFile) {
+      setFormError('Размер каждой фотографии не должен превышать 5 МБ.')
+      event.target.value = ''
+      return
+    }
+
+    setFormError('')
+    setObjectPhotoFiles((currentFiles) => {
+      const existingKeys = new Set(
+        currentFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+      )
+      const newFiles = files.filter(
+        (file) => !existingKeys.has(`${file.name}:${file.size}:${file.lastModified}`),
+      )
+      return [...currentFiles, ...newFiles]
+    })
+    event.target.value = ''
   }
 
   const handleCreate = async () => {
@@ -205,6 +246,12 @@ function ObjectsPage() {
           workerIdsToAssign.map((userId) => objectApi.assignUserToObject(created.id, userId)),
         )
       }
+
+      if (objectPhotoFiles.length > 0) {
+        await Promise.all(
+          objectPhotoFiles.map((file) => photoApi.uploadObjectPhoto(created.id, file)),
+        )
+      }
       // Refresh list from server to ensure consistent shape
       try {
         const data = await objectApi.getAll()
@@ -217,6 +264,7 @@ function ObjectsPage() {
       setSelectedWorkerIds([])
       setResponsibleUserId('')
       setResponsibleSearch('')
+      setObjectPhotoFiles([])
       setNewObject({
         name: '',
         object_type: '',
@@ -253,7 +301,7 @@ function ObjectsPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold">Объекты строительства</h1>
+        <h1 className="text-2xl font-semibold sm:text-3xl">Объекты строительства</h1>
       </div>
 
       <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
@@ -302,6 +350,7 @@ function ObjectsPage() {
                   setSelectedWorkerIds([])
                   setResponsibleUserId('')
                   setResponsibleSearch('')
+                  setObjectPhotoFiles([])
                   setShowCreateObject(true)
                 }}
               >
@@ -312,11 +361,12 @@ function ObjectsPage() {
         </div>
 
         <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
-          <table className="min-w-full text-left">
+          <table className="min-w-[760px] text-left">
             <thead className="bg-base-200">
               <tr>
                 <th className="px-4 py-3">Название объекта</th>
                 <th className="px-4 py-3">Адрес</th>
+                <th className="px-4 py-3">Статус</th>
                 <th className="px-4 py-3">Начало работ</th>
                 <th className="px-4 py-3">Сдача по плану</th>
               </tr>
@@ -324,7 +374,7 @@ function ObjectsPage() {
             <tbody>
               {filteredObjects.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
                     Объектов не найдено.
                   </td>
                 </tr>
@@ -337,6 +387,17 @@ function ObjectsPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">{objectItem.address}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`badge border ${
+                          objectItem.is_active
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'badge-ghost'
+                        }`}
+                      >
+                        {objectItem.is_active ? 'Активен' : 'Не активен'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">{formatDateRu(objectItem.start_date)}</td>
                     <td className="px-4 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
                   </tr>
@@ -354,6 +415,7 @@ function ObjectsPage() {
             setSelectedWorkerIds([])
             setResponsibleUserId('')
             setResponsibleSearch('')
+            setObjectPhotoFiles([])
           }}
         >
           <div className="space-y-2">
@@ -426,6 +488,54 @@ function ObjectsPage() {
                       onChange={(e) => handleChange('end_date', e.target.value)}
                     />
                   </label>
+
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <span className="text-sm font-medium">Фотографии объекта</span>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="cursor-pointer rounded-2xl border border-base-300 bg-base-100 px-4 py-2 text-sm font-medium transition hover:border-[#ff4539]/40 hover:bg-[#ff4539]/5">
+                        Добавить фотографии
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                          onChange={handleObjectPhotosChange}
+                        />
+                      </label>
+                      {objectPhotoFiles.length > 0 && (
+                        <span className="text-sm text-base-content/60">
+                          Выбрано: {objectPhotoFiles.length}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-base-content/60">
+                      Можно выбрать несколько файлов за раз и затем добавить ещё. JPG, PNG или WebP до 5 МБ каждый.
+                    </p>
+                    {objectPhotoPreviewUrls.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {objectPhotoPreviewUrls.map((url, index) => (
+                          <div
+                            key={`${objectPhotoFiles[index].name}-${objectPhotoFiles[index].lastModified}`}
+                            className="group relative aspect-square overflow-hidden rounded-xl border border-base-200 bg-base-100"
+                          >
+                            <img
+                              src={url}
+                              alt={`Фото объекта ${index + 1}`}
+                              className="block h-full w-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-sm text-white transition hover:bg-black"
+                              onClick={() => setObjectPhotoFiles((files) => files.filter((_, fileIndex) => fileIndex !== index))}
+                              aria-label={`Удалить фото ${index + 1}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </section>
 
@@ -560,6 +670,7 @@ function ObjectsPage() {
                   setSelectedWorkerIds([])
                   setResponsibleUserId('')
                   setResponsibleSearch('')
+                  setObjectPhotoFiles([])
                   setNewObject({
                     name: '',
                     object_type: '',
