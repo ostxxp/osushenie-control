@@ -453,19 +453,19 @@ function ObjectDetailsPage() {
                   aria-label="Название объекта"
                 />
               ) : (
-                <h1 className="min-w-0 flex-1 break-words text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
+                <h1 className="min-w-0 break-words text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">
                   {objectItem.name}
                 </h1>
               )}
 
               {!isEditing && !objectItem.is_active && (
-                <span className="badge order-3 h-auto max-w-full border border-amber-200 bg-amber-50 px-3 py-1 text-center text-amber-700 sm:order-none sm:shrink-0">
+                <span className="badge order-2 h-auto max-w-full border border-amber-200 bg-amber-50 px-3 py-1 text-center text-amber-700 sm:shrink-0">
                   Объект неактивен
                 </span>
               )}
 
               {canEditObject && !isEditing && (
-                <div ref={actionsMenuRef} className="relative ml-auto shrink-0">
+                <div ref={actionsMenuRef} className="relative order-1 shrink-0">
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm min-h-0 h-9 w-9 rounded-xl border border-slate-200 bg-white p-0 text-slate-700 shadow-sm hover:bg-slate-50"

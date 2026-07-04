@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { objectApi, userApi } from '@services/api'
+import { objectApi, photoApi, userApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import type { ConstructionObject, User, UserRole } from '@/types'
 
@@ -60,6 +60,7 @@ function ObjectEmployeesPage() {
 
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [employees, setEmployees] = useState<User[]>([])
+  const [avatarUrls, setAvatarUrls] = useState<Record<number, string>>({})
   const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
   const [assignableUsers, setAssignableUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,6 +107,50 @@ function ObjectEmployeesPage() {
 
     fetchData()
   }, [id])
+
+  useEffect(() => {
+    if (employees.length === 0) {
+      setAvatarUrls({})
+      return
+    }
+
+    let cancelled = false
+    const createdUrls: string[] = []
+
+    const loadAvatars = async () => {
+      const entries = await Promise.all(
+        employees.map(async (employee): Promise<[number, string] | null> => {
+          try {
+            const avatar = await photoApi.getUserAvatar(employee.id)
+            if (!avatar) return null
+
+            const url = URL.createObjectURL(avatar)
+            if (cancelled) {
+              URL.revokeObjectURL(url)
+              return null
+            }
+
+            createdUrls.push(url)
+            return [employee.id, url]
+          } catch (avatarError) {
+            console.warn(`Не удалось загрузить фото пользователя ${employee.id}`, avatarError)
+            return null
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setAvatarUrls(Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)))
+      }
+    }
+
+    loadAvatars()
+
+    return () => {
+      cancelled = true
+      createdUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [employees])
 
   const assignedUserIds = useMemo(
     () => new Set(employees.map((employee) => employee.id)),
@@ -262,12 +307,14 @@ function ObjectEmployeesPage() {
                   <span className="pb-0.5 text-sm text-base-content/60">{formatEmployeeCount(stats.total)}</span>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
-                  Инженеры: {stats.engineers}
+              <div className="grid min-w-40 gap-1.5">
+                <span className="flex items-center justify-between gap-4 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
+                  <span>Инженеры</span>
+                  <span className="tabular-nums">{stats.engineers}</span>
                 </span>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
-                  Прорабы: {stats.foremen}
+                <span className="flex items-center justify-between gap-4 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                  <span>Прорабы</span>
+                  <span className="tabular-nums">{stats.foremen}</span>
                 </span>
               </div>
             </div>
@@ -297,33 +344,74 @@ function ObjectEmployeesPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="min-w-[820px] text-left">
+            <table className="w-full min-w-[1050px] table-fixed text-left">
+              <colgroup>
+                <col className="w-[24%]" />
+                <col className="w-[14%]" />
+                <col className="w-[17%]" />
+                <col className="w-[23%]" />
+                <col className="w-[22%]" />
+              </colgroup>
               <thead className="bg-base-200">
                 <tr>
-                  <th className="px-4 py-3">Сотрудник</th>
-                  <th className="px-4 py-3">Должность</th>
-                  <th className="px-4 py-3">Телефон</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3 text-right">Действия</th>
+                  <th className="px-5 py-3 align-middle">Сотрудник</th>
+                  <th className="px-5 py-3 align-middle">Должность</th>
+                  <th className="px-5 py-3 align-middle">Телефон</th>
+                  <th className="px-5 py-3 align-middle">Email</th>
+                  <th className="px-5 py-3 text-right align-middle">Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
+                    <td colSpan={5} className="px-5 py-6 text-center text-base-content/70">
                       Сотрудники не найдены.
                     </td>
                   </tr>
                 ) : (
                   employees.map((employee) => (
-                    <tr key={employee.id} className="border-t border-base-200 hover:bg-base-100">
-                      <td className="px-4 py-3 font-medium">{employee.full_name}</td>
-                      <td className="px-4 py-3">{roleLabel[employee.role]}</td>
-                      <td className="px-4 py-3 text-base-content/70">{employee.phone_number || '—'}</td>
-                      <td className="px-4 py-3 text-base-content/70">{employee.email}</td>
-                      <td className="px-4 py-3 text-right">
+                    <tr key={employee.id} className="border-t border-base-200 align-middle hover:bg-base-100">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          {avatarUrls[employee.id] ? (
+                            <span className="size-10 shrink-0 overflow-hidden rounded-full">
+                              <img
+                                src={avatarUrls[employee.id]}
+                                alt={`Фото ${employee.full_name}`}
+                                className="size-full object-cover"
+                              />
+                            </span>
+                          ) : (
+                            <span
+                              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold text-base-content/70"
+                              aria-hidden="true"
+                            >
+                              {employee.full_name.trim().charAt(0).toUpperCase() || '?'}
+                            </span>
+                          )}
+                          <div className="flex min-w-0 flex-col items-start gap-0.5">
+                            <span className="flex items-center gap-1.5 font-medium">
+                              <span className="break-words">{employee.full_name}</span>
+                              {responsibleUserIds.has(employee.id) && (
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                  className="size-4 shrink-0 text-red-500"
+                                  aria-label="Ответственный"
+                                >
+                                  <path d="m3.2 7.4 4.4 3.4L12 4l4.4 6.8 4.4-3.4-1.9 10.2H5.1L3.2 7.4Zm2.3 12h13v1.8h-13v-1.8Z" />
+                                </svg>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">{roleLabel[employee.role]}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-base-content/70">{employee.phone_number || '—'}</td>
+                      <td className="break-words px-5 py-3 text-base-content/70">{employee.email}</td>
+                      <td className="px-5 py-3 text-right">
                         {canManageEmployees && employee.role !== 'admin' && (
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                             {responsibleUserIds.has(employee.id) && (
                               <button
                                 type="button"

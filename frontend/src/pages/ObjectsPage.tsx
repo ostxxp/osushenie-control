@@ -361,33 +361,40 @@ function ObjectsPage() {
         </div>
 
         <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
-          <table className="min-w-[760px] text-left">
+          <table className="w-full min-w-[900px] table-fixed text-left">
+            <colgroup>
+              <col className="w-[25%]" />
+              <col className="w-[30%]" />
+              <col className="w-[13%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <thead className="bg-base-200">
               <tr>
-                <th className="px-4 py-3">Название объекта</th>
-                <th className="px-4 py-3">Адрес</th>
-                <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3">Начало работ</th>
-                <th className="px-4 py-3">Сдача по плану</th>
+                <th className="px-5 py-3">Название объекта</th>
+                <th className="px-5 py-3">Адрес</th>
+                <th className="px-5 py-3">Статус</th>
+                <th className="px-5 py-3">Начало работ</th>
+                <th className="px-5 py-3">Сдача по плану</th>
               </tr>
             </thead>
             <tbody>
               {filteredObjects.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={5} className="px-5 py-6 text-center text-base-content/70">
                     Объектов не найдено.
                   </td>
                 </tr>
               ) : (
                 filteredObjects.map((objectItem) => (
-                  <tr key={objectItem.id} className="border-t border-base-200 hover:bg-base-200">
-                    <td className="px-4 py-3 font-medium">
+                  <tr key={objectItem.id} className="border-t border-base-200 align-middle hover:bg-base-200">
+                    <td className="break-words px-5 py-3 font-medium">
                       <Link to={`/objects/${objectItem.id}`} className="text-primary hover:underline">
                         {objectItem.name}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">{objectItem.address}</td>
-                    <td className="px-4 py-3">
+                    <td className="break-words px-5 py-3">{objectItem.address}</td>
+                    <td className="px-5 py-3">
                       <span
                         className={`badge border ${
                           objectItem.is_active
@@ -398,8 +405,8 @@ function ObjectsPage() {
                         {objectItem.is_active ? 'Активен' : 'Не активен'}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{formatDateRu(objectItem.start_date)}</td>
-                    <td className="px-4 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
+                    <td className="whitespace-nowrap px-5 py-3">{formatDateRu(objectItem.start_date)}</td>
+                    <td className="whitespace-nowrap px-5 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
                   </tr>
                 ))
               )}

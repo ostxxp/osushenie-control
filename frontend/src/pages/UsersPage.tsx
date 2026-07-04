@@ -377,22 +377,30 @@ function UsersPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
-          <table className="min-w-[860px] text-left">
+        <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
+          <table className="w-full table-fixed text-left">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[13%]" />
+              <col className="w-[15%]" />
+              <col className="w-[20%]" />
+              <col className="w-[13%]" />
+              <col className="w-[17%]" />
+            </colgroup>
             <thead className="bg-base-200">
               <tr>
-                <th className="px-4 py-3">Имя</th>
-                <th className="px-4 py-3">Должность</th>
-                <th className="px-4 py-3">Телефон</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3 text-right">Действие</th>
+                <th className="px-3 py-3 2xl:px-5">Имя</th>
+                <th className="px-3 py-3 2xl:px-5">Должность</th>
+                <th className="px-3 py-3 2xl:px-5">Телефон</th>
+                <th className="px-3 py-3 2xl:px-5">Email</th>
+                <th className="px-3 py-3 2xl:px-5">Статус</th>
+                <th className="px-3 py-3 text-right 2xl:px-5">Действие</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
-                  <td className="px-4 py-3">
+                <tr key={user.id} className="border-t border-base-200 align-middle hover:bg-base-200">
+                  <td className="px-3 py-3 2xl:px-5">
                     <div className="flex items-center gap-3">
                       {avatarUrls[user.id] ? (
                         <span
@@ -414,13 +422,13 @@ function UsersPage() {
                           {user.full_name.trim().charAt(0).toUpperCase() || '?'}
                         </span>
                       )}
-                      <span>{user.full_name}</span>
+                      <span className="min-w-0 break-words">{user.full_name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">{roleLabel[user.role]}</td>
-                  <td className="px-4 py-3">{user.phone_number || '—'}</td>
-                  <td className="px-4 py-3">{user.email}</td>
-                  <td className="px-4 py-3">
+                  <td className="break-words px-3 py-3 2xl:px-5">{roleLabel[user.role]}</td>
+                  <td className="break-words px-3 py-3 2xl:px-5">{user.phone_number || '—'}</td>
+                  <td className="break-words px-3 py-3 2xl:px-5">{user.email}</td>
+                  <td className="px-3 py-3 2xl:px-5">
                     <span
                       className={`badge border ${
                         user.is_active
@@ -431,7 +439,7 @@ function UsersPage() {
                       {user.is_active ? 'Работает' : 'Не активен'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-3 text-right 2xl:px-5">
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => openEditModal(user)}>
                       Редактировать
                     </button>
@@ -440,7 +448,7 @@ function UsersPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={6} className="px-3 py-6 text-center text-base-content/70 2xl:px-5">
                     Пользователей не найдено.
                   </td>
                 </tr>
