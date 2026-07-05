@@ -185,7 +185,7 @@ function SettingsPage() {
             <div className="flex-1 space-y-3">
               <input
                 type="file"
-                className="file-input w-full"
+                className="file-input w-full focus:border-[#ff4539] focus:outline-none"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={handleAvatarChange}
                 disabled={avatarSaving}
@@ -224,7 +224,7 @@ function SettingsPage() {
               <span className="text-sm font-medium">Новый пароль</span>
               <input
                 type="password"
-                className="input w-full"
+                className="input w-full focus:border-[#ff4539] focus:outline-none"
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 placeholder="Минимум 8 символов"
@@ -235,7 +235,7 @@ function SettingsPage() {
               <span className="text-sm font-medium">Повторите новый пароль</span>
               <input
                 type="password"
-                className="input w-full"
+                className="input w-full focus:border-[#ff4539] focus:outline-none"
                 value={passwordConfirmation}
                 onChange={(event) => setPasswordConfirmation(event.target.value)}
                 placeholder="Введите пароль ещё раз"
