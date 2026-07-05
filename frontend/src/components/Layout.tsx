@@ -123,10 +123,10 @@ function Layout() {
               key={item.to}
               to={item.to}
               className={[
-                'flex items-center justify-between rounded-2xl px-4 py-3 text-base font-medium transition-all',
+                'flex items-center justify-between rounded-2xl border px-4 py-3 text-base font-medium transition-all',
                 item.isActive
-                  ? 'bg-[#ff4539]/15 text-[#b42318] ring-1 ring-[#ff4539]/25 shadow-sm'
-                  : 'text-base-content hover:bg-base-200 hover:text-base-content',
+                  ? 'border-[#ff4539]/25 bg-[#ff4539]/15 text-[#b42318] shadow-sm'
+                  : 'border-transparent text-base-content hover:bg-base-200 hover:text-base-content',
               ].join(' ')}
             >
               <span>{item.label}</span>
@@ -138,10 +138,10 @@ function Layout() {
           <Link
             to="/settings"
             className={[
-              'flex w-full items-center justify-center rounded-2xl px-4 py-3 text-center text-base font-medium transition-all',
+              'flex w-full items-center justify-center rounded-2xl border px-4 py-3 text-center text-base font-medium transition-all',
               location.pathname === '/settings'
-                ? 'bg-[#ff4539]/15 text-[#b42318] ring-1 ring-[#ff4539]/25 shadow-sm'
-                : 'text-base-content hover:bg-base-200',
+                ? 'border-[#ff4539]/25 bg-[#ff4539]/15 text-[#b42318] shadow-sm'
+                : 'border-transparent text-base-content hover:bg-base-200',
             ].join(' ')}
           >
             Настройки

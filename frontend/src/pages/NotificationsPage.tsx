@@ -1,5 +1,6 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { DatePickerInput } from '@/components'
 import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
@@ -32,64 +33,6 @@ const formatDateTime = (value: string | null): string => {
   }).format(date)
 }
 
-const formatDateInputLabel = (value: string): string => {
-  if (!value) return 'Дата события'
-
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return 'Дата события'
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date)
-}
-
-const normalizeDateParts = (year: number, month: number, day: number): string => {
-  const date = new Date(year, month - 1, day)
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return ''
-  }
-
-  return [
-    String(year).padStart(4, '0'),
-    String(month).padStart(2, '0'),
-    String(day).padStart(2, '0'),
-  ].join('-')
-}
-
-const parseDateFilterInput = (value: string): string => {
-  const trimmed = value.trim()
-
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
-  if (isoMatch) {
-    return normalizeDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))
-  }
-
-  const ruMatch = trimmed.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/)
-  if (ruMatch) {
-    return normalizeDateParts(Number(ruMatch[3]), Number(ruMatch[2]), Number(ruMatch[1]))
-  }
-
-  return ''
-}
-
-const formatDateTextInput = (value: string): string => {
-  const digits = value.replace(/\D/g, '').slice(0, 8)
-  const parts = [
-    digits.slice(0, 2),
-    digits.slice(2, 4),
-    digits.slice(4, 8),
-  ].filter(Boolean)
-
-  return parts.join('.')
-}
-
 function NotificationsPage() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
@@ -107,7 +50,6 @@ function NotificationsPage() {
   const [eventSearch, setEventSearch] = useState('')
   const [objectNames, setObjectNames] = useState<Record<number, string>>({})
   const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>({})
-  const datePickerRef = useRef<HTMLInputElement>(null)
 
   const canViewNotifications = userRole === 'admin' || userRole === 'chief_engineer'
 
@@ -262,17 +204,6 @@ function NotificationsPage() {
     setEventSearch('')
   }
 
-  const openDatePicker = () => {
-    const picker = datePickerRef.current
-    if (!picker) return
-
-    if (picker.showPicker) {
-      picker.showPicker()
-    } else {
-      picker.click()
-    }
-  }
-
   const fetchNotifications = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!canViewNotifications) return
 
@@ -372,7 +303,7 @@ function NotificationsPage() {
           <div className="relative">
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
+              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={actorSearch}
               onChange={(event) => {
                 setActorSearch(event.target.value)
@@ -418,7 +349,7 @@ function NotificationsPage() {
           <div className="relative">
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
+              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={objectSearch}
               onChange={(event) => {
                 setObjectSearch(event.target.value)
@@ -461,55 +392,16 @@ function NotificationsPage() {
             )}
           </div>
 
-          <div className="relative" onClick={openDatePicker}>
-            <input
-              type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-10 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
-              value={dateSearch}
-              onChange={(event) => {
-                const nextValue = formatDateTextInput(event.target.value)
-                setDateSearch(nextValue)
-                setDateFilter(parseDateFilterInput(nextValue))
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                openDatePicker()
-              }}
-              placeholder="Дата события"
-              aria-label="Дата события"
-              inputMode="numeric"
-              maxLength={10}
-            />
-            <button
-              type="button"
-              className="absolute inset-y-0 right-0 flex items-center rounded-r-lg px-3 text-base-content/50 transition hover:text-base-content"
-              onClick={(event) => {
-                event.stopPropagation()
-                openDatePicker()
-              }}
-              aria-label="Открыть календарь"
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M8 2V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M16 2V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M3.5 9.09H20.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M18 4H6C4.62 4 3.5 5.12 3.5 6.5V18C3.5 19.38 4.62 20.5 6 20.5H18C19.38 20.5 20.5 19.38 20.5 18V6.5C20.5 5.12 19.38 4 18 4Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <input
-              ref={datePickerRef}
-              type="date"
-              className="pointer-events-none absolute bottom-0 right-0 h-px w-px opacity-0"
-              value={dateFilter}
-              onChange={(event) => {
-                const nextDate = event.target.value
-                setDateFilter(nextDate)
-                setDateSearch(formatDateInputLabel(nextDate))
-              }}
-              tabIndex={-1}
-              aria-label="Дата события"
-            />
-          </div>
+          <DatePickerInput
+            value={dateFilter}
+            inputValue={dateSearch}
+            onChange={(value, inputValue) => {
+              setDateFilter(value)
+              setDateSearch(inputValue)
+            }}
+            placeholder="Дата события"
+            ariaLabel="Дата события"
+          />
 
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-base-content/50">
@@ -520,7 +412,7 @@ function NotificationsPage() {
             </span>
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
+              className="input min-h-0 w-full rounded-lg border-base-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={eventSearch}
               onChange={(event) => setEventSearch(event.target.value)}
               placeholder="Поиск по событиям"

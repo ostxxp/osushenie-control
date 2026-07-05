@@ -469,7 +469,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Ф.И.О. *</span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="Иванов Иван Иванович"
                   value={userForm.full_name}
                   onChange={(e) => handleChange('full_name', e.target.value)}
@@ -478,7 +478,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Email *</span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="user@example.com"
                   value={userForm.email}
                   onChange={(e) => handleChange('email', e.target.value)}
@@ -487,7 +487,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Телефон</span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="+7 999 123-45-67"
                   value={userForm.phone_number}
                   onChange={(e) => handleChange('phone_number', e.target.value)}
@@ -498,7 +498,7 @@ function UsersPage() {
                   {modalMode === 'create' ? 'Пароль *' : 'Новый пароль'}
                 </span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder={modalMode === 'create' ? 'Минимум 8 символов' : 'Оставьте пустым, если не меняете'}
                   type="password"
                   value={userForm.password}
@@ -508,7 +508,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Должность</span>
                 <select
-                  className="select w-full"
+                  className="select w-full focus:border-[#ff4539] focus:outline-none"
                   value={userForm.role}
                   onChange={(e) => handleChange('role', e.target.value as UserRole)}
                 >
@@ -521,7 +521,7 @@ function UsersPage() {
                 <span className="flex items-center gap-2 rounded-lg border border-base-200 px-3 py-2">
                 <input
                   type="checkbox"
-                  className="checkbox checkbox-primary"
+                  className="checkbox checkbox-error focus:outline-none focus:ring-2 focus:ring-[#ff4539]/20"
                   checked={userForm.is_active}
                   onChange={(e) => handleChange('is_active', e.target.checked)}
                 />
@@ -552,7 +552,7 @@ function UsersPage() {
                     <div className="flex-1">
                       <input
                         type="file"
-                        className="file-input w-full"
+                        className="file-input w-full focus:border-[#ff4539] focus:outline-none"
                         accept="image/jpeg,image/png,image/webp"
                         onChange={handleAvatarChange}
                       />
