@@ -89,15 +89,17 @@ function UsersPage() {
 
   const filteredUsers = useMemo(
     () =>
-      users.filter((user) => {
-        const query = search.toLowerCase()
-        return (
-          user.full_name.toLowerCase().includes(query) ||
-          user.email.toLowerCase().includes(query) ||
-          (user.phone_number ?? '').toLowerCase().includes(query) ||
-          roleLabel[user.role].toLowerCase().includes(query)
-        )
-      }),
+      users
+        .filter((user) => {
+          const query = search.toLowerCase()
+          return (
+            user.full_name.toLowerCase().includes(query) ||
+            user.email.toLowerCase().includes(query) ||
+            (user.phone_number ?? '').toLowerCase().includes(query) ||
+            roleLabel[user.role].toLowerCase().includes(query)
+          )
+        })
+        .sort((first, second) => second.id - first.id),
     [search, users],
   )
 

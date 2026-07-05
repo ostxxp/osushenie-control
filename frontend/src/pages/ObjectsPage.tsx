@@ -99,14 +99,16 @@ function ObjectsPage() {
 
   const filteredObjects = useMemo(
     () =>
-      objects.filter((objectItem) => {
-        const query = search.toLowerCase()
-        return (
-          objectItem.name.toLowerCase().includes(query) ||
-          objectItem.address.toLowerCase().includes(query) ||
-          (objectItem.is_active ? 'активен' : 'неактивен').includes(query)
-        )
-      }),
+      objects
+        .filter((objectItem) => {
+          const query = search.toLowerCase()
+          return (
+            objectItem.name.toLowerCase().includes(query) ||
+            objectItem.address.toLowerCase().includes(query) ||
+            (objectItem.is_active ? 'активен' : 'неактивен').includes(query)
+          )
+        })
+        .sort((first, second) => second.id - first.id),
     [search, objects],
   )
 
