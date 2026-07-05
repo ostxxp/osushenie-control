@@ -71,7 +71,9 @@ function ObjectEmployeesPage() {
   const [assignError, setAssignError] = useState('')
   const [employeeActionError, setEmployeeActionError] = useState('')
   const [showAddUser, setShowAddUser] = useState(false)
+  const [showAddResponsible, setShowAddResponsible] = useState(false)
   const [userSearch, setUserSearch] = useState('')
+  const [responsibleSearch, setResponsibleSearch] = useState('')
 
   const loadEmployees = async () => {
     if (!id) return
@@ -161,6 +163,21 @@ function ObjectEmployeesPage() {
     () => new Set(responsibleUsers.map((user) => user.id)),
     [responsibleUsers],
   )
+
+  const availableResponsibleUsers = useMemo(() => {
+    const query = responsibleSearch.trim().toLowerCase()
+
+    return employees.filter((user) => (
+      user.is_active
+      && user.role !== 'admin'
+      && !responsibleUserIds.has(user.id)
+      && (
+        user.full_name.toLowerCase().includes(query)
+        || user.email.toLowerCase().includes(query)
+        || (user.phone_number ?? '').toLowerCase().includes(query)
+      )
+    ))
+  }, [employees, responsibleSearch, responsibleUserIds])
 
   const availableUsers = useMemo(
     () =>
@@ -252,6 +269,29 @@ function ObjectEmployeesPage() {
     }
   }
 
+  const handleSetResponsible = async (userId: number) => {
+    if (!id || responsibilityUpdatingUserId !== null) return
+    if (responsibleUsers.length > 0) {
+      setEmployeeActionError('У объекта уже назначен ответственный.')
+      setShowAddResponsible(false)
+      return
+    }
+
+    setResponsibilityUpdatingUserId(userId)
+    setEmployeeActionError('')
+    try {
+      await objectApi.assignResponsibleToObject(Number(id), userId)
+      await refresh()
+      setShowAddResponsible(false)
+      setResponsibleSearch('')
+    } catch (err: unknown) {
+      setEmployeeActionError(getErrorMessage(err, 'Не удалось назначить ответственного'))
+      console.error('Ошибка при назначении ответственного', err)
+    } finally {
+      setResponsibilityUpdatingUserId(null)
+    }
+  }
+
   const stats = useMemo(() => {
     return {
       total: employees.length,
@@ -320,13 +360,28 @@ function ObjectEmployeesPage() {
             </div>
           </div>
           {canManageEmployees && (
-            <button
-              type="button"
-              className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
-              onClick={openAddUserModal}
-            >
-              Добавить сотрудника
-            </button>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <button
+                type="button"
+                className="w-full rounded-2xl border border-[#ff4539]/40 bg-white px-4 py-2 font-medium text-[#b42318] transition-colors hover:bg-[#ff4539]/5 focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto"
+                onClick={() => {
+                  setEmployeeActionError('')
+                  setResponsibleSearch('')
+                  setShowAddResponsible(true)
+                }}
+                disabled={responsibleUsers.length > 0}
+                title={responsibleUsers.length > 0 ? 'У объекта уже назначен ответственный' : undefined}
+              >
+                {responsibleUsers.length > 0 ? 'Ответственный назначен' : 'Добавить ответственного'}
+              </button>
+              <button
+                type="button"
+                className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
+                onClick={openAddUserModal}
+              >
+                Добавить сотрудника
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -438,6 +493,77 @@ function ObjectEmployeesPage() {
           </div>
         </div>
       </div>
+
+      {showAddResponsible && (
+        <ModalBackdrop
+          onClose={() => {
+            setShowAddResponsible(false)
+            setResponsibleSearch('')
+          }}
+        >
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold">Добавить ответственного</h2>
+              <p className="text-sm text-base-content/70">
+                Выберите ответственного из сотрудников, уже добавленных на объект.
+              </p>
+            </div>
+            {employeeActionError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {employeeActionError}
+              </div>
+            )}
+            <input
+              className="input w-full focus:border-[#ff4539] focus:outline-none"
+              placeholder="Поиск по имени, email или телефону..."
+              value={responsibleSearch}
+              onChange={(event) => setResponsibleSearch(event.target.value)}
+            />
+            <div className="max-h-80 overflow-y-auto rounded-[1.75rem] border border-base-200">
+              {availableResponsibleUsers.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-base-content/70">
+                  Нет доступных сотрудников для назначения.
+                </div>
+              ) : (
+                availableResponsibleUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center justify-between gap-4 border-b border-base-200 px-4 py-3 last:border-b-0"
+                  >
+                    <div>
+                      <div className="font-medium">{user.full_name}</div>
+                      <div className="text-sm text-base-content/70">
+                        {roleLabel[user.role]} · {user.email}
+                        {user.phone_number ? ` · ${user.phone_number}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-xl bg-[#ff4539] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a]"
+                      disabled={responsibilityUpdatingUserId !== null}
+                      onClick={() => handleSetResponsible(user.id)}
+                    >
+                      {responsibilityUpdatingUserId === user.id ? 'Назначение...' : 'Назначить'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowAddResponsible(false)
+                  setResponsibleSearch('')
+                }}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
 
       {showAddUser && (
         <ModalBackdrop
