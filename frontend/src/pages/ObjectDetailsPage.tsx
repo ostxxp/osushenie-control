@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState, useMemo, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
+import { DatePickerInput, formatDateInputValue } from '@/components'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
 import { calculateLogicalTaskStats, formatApiError, formatDateRu, formatTaskCount } from '@/utils'
@@ -39,6 +40,8 @@ function ObjectDetailsPage() {
     end_date: '',
     responsible_user_id: '',
   })
+  const [editStartDateInput, setEditStartDateInput] = useState('')
+  const [editEndDateInput, setEditEndDateInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [objectPhotos, setObjectPhotos] = useState<Array<{ id: number; name: string; uploadedById: number | null; url: string }>>([])
@@ -68,6 +71,8 @@ function ObjectDetailsPage() {
           end_date: toDateInputValue(objData.end_date),
           responsible_user_id: '',
         })
+        setEditStartDateInput(formatDateInputValue(toDateInputValue(objData.start_date)))
+        setEditEndDateInput(formatDateInputValue(toDateInputValue(objData.end_date)))
         setTasks(tasksData)
         try {
           const [progressValue, overdueValue] = await Promise.all([
@@ -246,6 +251,8 @@ function ObjectDetailsPage() {
       end_date: toDateInputValue(objectItem.end_date),
       responsible_user_id: responsibleUsers[0]?.id.toString() || '',
     })
+    setEditStartDateInput(formatDateInputValue(toDateInputValue(objectItem.start_date)))
+    setEditEndDateInput(formatDateInputValue(toDateInputValue(objectItem.end_date)))
     setFormError('')
   }
 
@@ -532,7 +539,7 @@ function ObjectDetailsPage() {
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Адрес</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       value={editForm.address}
                       onChange={(e) => updateEditForm('address', e.target.value)}
                     />
@@ -540,7 +547,7 @@ function ObjectDetailsPage() {
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Тип объекта</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       value={editForm.object_type}
                       onChange={(e) => updateEditForm('object_type', e.target.value)}
                       placeholder="Например: квартира, дом, офис"
@@ -549,7 +556,7 @@ function ObjectDetailsPage() {
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Ответственный</span>
                     <select
-                      className="select w-full"
+                      className="select w-full focus:border-[#ff4539] focus:outline-none"
                       value={editForm.responsible_user_id}
                       onChange={(e) => updateEditForm('responsible_user_id', e.target.value)}
                     >
@@ -572,36 +579,51 @@ function ObjectDetailsPage() {
                       </span>
                     )}
                   </label>
-                  <label className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Начало работ</span>
-                    <input
-                      type="date"
-                      className="input w-full"
+                    <DatePickerInput
                       value={editForm.start_date}
-                      onChange={(e) => {
-                        const nextStartDate = e.target.value
+                      inputValue={editStartDateInput}
+                      placeholder="Дата начала"
+                      ariaLabel="Дата начала работ"
+                      onChange={(nextStartDate, inputValue) => {
+                        setEditStartDateInput(inputValue)
                         setEditForm((prev) => ({
                           ...prev,
                           start_date: nextStartDate,
-                          end_date: prev.end_date && prev.end_date < nextStartDate ? nextStartDate : prev.end_date,
+                          end_date: nextStartDate && prev.end_date && prev.end_date < nextStartDate
+                            ? nextStartDate
+                            : prev.end_date,
                         }))
+
+                        if (
+                          nextStartDate
+                          && editForm.end_date
+                          && editForm.end_date < nextStartDate
+                        ) {
+                          setEditEndDateInput(formatDateInputValue(nextStartDate))
+                        }
                       }}
                     />
-                  </label>
-                  <label className="flex flex-col gap-2">
+                  </div>
+                  <div className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Сдача объекта</span>
-                    <input
-                      type="date"
-                      className="input w-full"
+                    <DatePickerInput
                       value={editForm.end_date}
+                      inputValue={editEndDateInput}
                       min={editForm.start_date}
-                      onChange={(e) => updateEditForm('end_date', e.target.value)}
+                      placeholder="Дата сдачи"
+                      ariaLabel="Дата сдачи объекта"
+                      onChange={(value, inputValue) => {
+                        updateEditForm('end_date', value)
+                        setEditEndDateInput(inputValue)
+                      }}
                     />
-                  </label>
-                  <label className="flex items-center gap-3 rounded-2xl border border-base-200 bg-base-50 px-4 py-3 md:col-span-2">
+                  </div>
+                  <label className="flex items-center gap-3 py-1 md:col-span-2">
                     <input
                       type="checkbox"
-                      className="toggle toggle-primary"
+                      className="toggle toggle-error focus:outline-none focus:ring-2 focus:ring-[#ff4539]/20"
                       checked={editForm.is_active}
                       onChange={(e) => updateEditForm('is_active', e.target.checked)}
                     />
@@ -654,21 +676,21 @@ function ObjectDetailsPage() {
             )}
           </div>
 
-          <div className="flex min-h-[132px] flex-col items-center justify-center rounded-2xl border border-slate-200/70 bg-slate-50/40 px-6 py-5">
+          <div className="flex min-h-[132px] flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
               Прогресс
             </div>
-            <div className="text-5xl font-bold tabular-nums leading-none text-primary">
+            <div className="text-5xl font-bold tabular-nums leading-none text-slate-900">
               {progress}%
             </div>
-            <div className="mt-4 h-px w-full bg-white shadow-[0_1px_0_rgba(15,23,42,0.06)]" />
-            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-4 h-px w-full bg-slate-100" />
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
+                className="h-full rounded-full bg-[#ff4539] transition-all duration-700 ease-out"
                 style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
               />
             </div>
-            <div className="mt-3 text-xs font-medium text-slate-400">
+            <div className="mt-3 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
               {progressLabel}
             </div>
           </div>
@@ -676,7 +698,7 @@ function ObjectDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Link to={`/objects/${id}/tasks`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <Link to={`/objects/${id}/tasks`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
             <div>
               <div className="flex items-center justify-between gap-4 mb-2">
@@ -708,7 +730,7 @@ function ObjectDetailsPage() {
           </div>
         </Link>
 
-        <Link to={`/objects/${id}/employees`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <Link to={`/objects/${id}/employees`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-lg font-semibold mb-2 inline-flex">
