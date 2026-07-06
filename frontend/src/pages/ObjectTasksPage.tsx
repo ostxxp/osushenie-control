@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
+import { DatePickerInput, formatDateInputValue } from '@/components'
 import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
   ConstructionObject,
@@ -25,6 +26,7 @@ type TaskFormState = {
   childrenMode: TaskChildrenMode
   status: ObjectTaskStatus
   deadline: string
+  deadlineInput: string
 }
 
 const emptyTaskForm = (): TaskFormState => ({
@@ -34,7 +36,10 @@ const emptyTaskForm = (): TaskFormState => ({
   childrenMode: 'all',
   status: 'todo',
   deadline: '',
+  deadlineInput: '',
 })
+
+const taskEditorFieldClass = 'w-full focus:border-[#ff4539] focus:outline-none'
 
 const toDateInputValue = (value: string | null | undefined): string => {
   if (!value) {
@@ -65,9 +70,9 @@ const flattenTaskTree = (tasks: ObjectTaskTree[], depth = 0): FlatTaskOption[] =
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 pt-10 sm:p-4 sm:pt-14">
       <button type="button" className="absolute inset-0 bg-black/50" onClick={onClose} aria-label="Закрыть окно" />
-      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-base-200 bg-base-100 shadow-2xl sm:rounded-3xl">
+      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-[44rem] overflow-visible rounded-2xl border border-base-200 bg-base-100 shadow-2xl sm:rounded-3xl">
         {children}
       </div>
     </div>
@@ -336,6 +341,8 @@ function ObjectTasksPage() {
   }
 
   const openEditTask = (task: ObjectTaskTree) => {
+    const deadline = toDateInputValue(task.deadline)
+
     setTaskEditorMode('edit')
     setTaskEditorTarget(task)
     setTaskForm({
@@ -344,7 +351,8 @@ function ObjectTasksPage() {
       sortOrder: String(task.sort_order),
       childrenMode: task.children_mode,
       status: task.status,
-      deadline: toDateInputValue(task.deadline),
+      deadline,
+      deadlineInput: formatDateInputValue(deadline),
     })
     setTaskEditorOpen(true)
   }
@@ -695,8 +703,8 @@ function ObjectTasksPage() {
 
       {taskEditorOpen && (
         <ModalBackdrop onClose={closeTaskEditor}>
-          <div className="overflow-hidden rounded-2xl sm:rounded-3xl">
-            <div className="border-b border-base-200 bg-base-200/40 px-4 py-4 sm:px-6 sm:py-5">
+          <div className="rounded-2xl sm:rounded-3xl">
+            <div className="rounded-t-2xl border-b border-base-200 bg-base-200/40 px-4 py-3 sm:rounded-t-3xl sm:px-6">
               <div>
                 <h2 className="text-xl font-semibold leading-tight sm:text-2xl">
                   {taskEditorMode === 'create' ? 'Добавить задачу' : 'Изменить задачу'}
@@ -709,12 +717,12 @@ function ObjectTasksPage() {
               </div>
             </div>
 
-            <div className="space-y-5 p-4 sm:p-6">
+            <div className="space-y-5 p-4 pt-3 sm:p-6 sm:pt-3">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <label className="space-y-3 md:col-span-2">
+                <label className="space-y-3">
                   <span className="text-sm font-medium">Название задачи</span>
                   <input
-                    className="input w-full"
+                    className={`input ${taskEditorFieldClass}`}
                     value={taskForm.title}
                     onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
                     placeholder="Введите название задачи"
@@ -725,7 +733,7 @@ function ObjectTasksPage() {
                   <label className="space-y-3">
                     <span className="text-sm font-medium">Родительская задача</span>
                     <select
-                      className="select w-full"
+                      className={`select ${taskEditorFieldClass}`}
                       value={taskForm.parentId}
                       onChange={(event) => setTaskForm((prev) => ({ ...prev, parentId: event.target.value }))}
                     >
@@ -739,13 +747,16 @@ function ObjectTasksPage() {
                   </label>
                 ) : null}
 
-                <label className={`space-y-3 ${taskEditorMode === 'create' && !taskEditorTarget ? '' : 'md:col-span-2 md:max-w-64'}`}>
+                <label className="space-y-3">
                   <span className="text-sm font-medium">Дедлайн</span>
-                  <input
-                    className="input w-full"
+                  <DatePickerInput
                     value={taskForm.deadline}
-                    onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
-                    type="date"
+                    inputValue={taskForm.deadlineInput}
+                    placeholder="Дата дедлайна"
+                    ariaLabel="Дедлайн задачи"
+                    onChange={(deadline, deadlineInput) => (
+                      setTaskForm((prev) => ({ ...prev, deadline, deadlineInput }))
+                    )}
                   />
                 </label>
               </div>
