@@ -169,9 +169,17 @@ function TaskTreeNode({
               {isExpanded ? '−' : '+'}
             </button>
           ) : (
-            <span className="shrink-0 pt-0.5">
+            <button
+              type="button"
+              disabled={!canToggle}
+              onClick={() => onToggleTask(task.id)}
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-opacity ${
+                canToggle ? 'cursor-pointer hover:opacity-75' : 'cursor-not-allowed opacity-60'
+              }`}
+              aria-label={isDone ? 'Отменить выполнение задачи' : 'Выполнить задачу'}
+            >
               <TaskStateIcon task={task} />
-            </span>
+            </button>
           )}
 
           <button
