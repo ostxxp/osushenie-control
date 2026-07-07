@@ -399,13 +399,13 @@ function ObjectEmployeesPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1050px] table-fixed text-left">
+            <table className={`w-full table-fixed text-left ${canManageEmployees ? 'min-w-[1050px]' : 'min-w-[820px]'}`}>
               <colgroup>
-                <col className="w-[24%]" />
-                <col className="w-[14%]" />
-                <col className="w-[17%]" />
-                <col className="w-[23%]" />
-                <col className="w-[22%]" />
+                <col className={canManageEmployees ? 'w-[24%]' : 'w-[32%]'} />
+                <col className={canManageEmployees ? 'w-[14%]' : 'w-[18%]'} />
+                <col className={canManageEmployees ? 'w-[17%]' : 'w-[22%]'} />
+                <col className={canManageEmployees ? 'w-[23%]' : 'w-[28%]'} />
+                {canManageEmployees && <col className="w-[22%]" />}
               </colgroup>
               <thead className="bg-base-200">
                 <tr>
@@ -413,13 +413,15 @@ function ObjectEmployeesPage() {
                   <th className="px-5 py-3 align-middle">Должность</th>
                   <th className="px-5 py-3 align-middle">Телефон</th>
                   <th className="px-5 py-3 align-middle">Email</th>
-                  <th className="px-5 py-3 text-right align-middle">Действия</th>
+                  {canManageEmployees && (
+                    <th className="px-5 py-3 text-right align-middle">Действия</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-6 text-center text-base-content/70">
+                    <td colSpan={canManageEmployees ? 5 : 4} className="px-5 py-6 text-center text-base-content/70">
                       Сотрудники не найдены.
                     </td>
                   </tr>
@@ -464,27 +466,29 @@ function ObjectEmployeesPage() {
                       <td className="px-5 py-3">{roleLabel[employee.role]}</td>
                       <td className="whitespace-nowrap px-5 py-3 text-base-content/70">{employee.phone_number || '—'}</td>
                       <td className="break-words px-5 py-3 text-base-content/70">{employee.email}</td>
-                      <td className="px-5 py-3 text-right">
-                        {canManageEmployees && employee.role !== 'admin' && (
-                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                            {responsibleUserIds.has(employee.id) && (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onClick={() => handleUnsetResponsible(employee.id)}
-                                disabled={responsibilityUpdatingUserId !== null}
-                              >
-                                {responsibilityUpdatingUserId === employee.id
-                                  ? 'Снятие...'
-                                  : 'Снять ответственность'}
+                      {canManageEmployees && (
+                        <td className="px-5 py-3 text-right">
+                          {employee.role !== 'admin' && (
+                            <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                              {responsibleUserIds.has(employee.id) && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-xs"
+                                  onClick={() => handleUnsetResponsible(employee.id)}
+                                  disabled={responsibilityUpdatingUserId !== null}
+                                >
+                                  {responsibilityUpdatingUserId === employee.id
+                                    ? 'Снятие...'
+                                    : 'Снять ответственность'}
+                                </button>
+                              )}
+                              <button className="btn btn-ghost btn-xs text-error" onClick={() => handleUnassign(employee.id)}>
+                                Удалить
                               </button>
-                            )}
-                            <button className="btn btn-ghost btn-xs text-error" onClick={() => handleUnassign(employee.id)}>
-                              Удалить
-                            </button>
-                          </div>
-                        )}
-                      </td>
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
