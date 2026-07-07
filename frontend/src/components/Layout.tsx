@@ -2,7 +2,7 @@ import { useContext, useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { authService, AuthContext } from '@services/auth'
-import logo from '../../logo/logo цветной горизонтальный.png'
+import logo from '../../photos/logo цветной горизонтальный.png'
 
 function Layout() {
   const authContext = useContext(AuthContext)
