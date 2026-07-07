@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue } from '@/components'
 import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
@@ -18,6 +18,11 @@ type FlatTaskOption = {
 }
 
 type TaskStatusFilter = 'all' | 'done' | 'in_progress' | 'todo' | 'overdue'
+
+const taskStatusFilters: TaskStatusFilter[] = ['all', 'done', 'in_progress', 'todo', 'overdue']
+
+const parseTaskStatusFilter = (value: string | null): TaskStatusFilter =>
+  taskStatusFilters.includes(value as TaskStatusFilter) ? value as TaskStatusFilter : 'all'
 
 type TaskFormState = {
   title: string
@@ -249,6 +254,7 @@ function TaskTreeNode({
 function ObjectTasksPage() {
   const { id, taskId } = useParams<{ id: string; taskId?: string }>()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
   const [taskHeaders, setTaskHeaders] = useState<ObjectTask[]>([])
@@ -263,7 +269,9 @@ function ObjectTasksPage() {
   const [taskEditorMode, setTaskEditorMode] = useState<'create' | 'edit'>('create')
   const [taskForm, setTaskForm] = useState<TaskFormState>(emptyTaskForm())
   const [savingTask, setSavingTask] = useState(false)
-  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>('all')
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>(() =>
+    parseTaskStatusFilter(searchParams.get('status')),
+  )
 
   const flatTaskOptions = useMemo(() => flattenTaskTree(allTasks), [allTasks])
   const overdueTaskIds = useMemo(() => new Set(overdueTasks.map((task) => task.id)), [overdueTasks])
@@ -306,11 +314,27 @@ function ObjectTasksPage() {
 
   useEffect(() => {
     setExpandedTaskIds([])
-    setTaskStatusFilter('all')
     loadData().then((loadedTasks) => {
       setExpandedTaskIds(loadedTasks.map((task) => task.id))
     })
   }, [id, taskId])
+
+  useEffect(() => {
+    setTaskStatusFilter(parseTaskStatusFilter(searchParams.get('status')))
+  }, [searchParams])
+
+  const updateTaskStatusFilter = (filter: TaskStatusFilter) => {
+    setTaskStatusFilter(filter)
+
+    const nextSearchParams = new URLSearchParams(searchParams)
+    if (filter === 'all') {
+      nextSearchParams.delete('status')
+    } else {
+      nextSearchParams.set('status', filter)
+    }
+
+    setSearchParams(nextSearchParams)
+  }
 
   const toggleExpand = (taskId: number) => {
     setExpandedTaskIds((prev) =>
@@ -530,7 +554,7 @@ function ObjectTasksPage() {
             className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-[#ff4539]/40 ${
               taskStatusFilter === 'all' ? 'border-[#ff4539] ring-2 ring-[#ff4539]/15' : 'border-base-200'
             }`}
-            onClick={() => setTaskStatusFilter('all')}
+            onClick={() => updateTaskStatusFilter('all')}
             aria-pressed={taskStatusFilter === 'all'}
           >
             <div className="text-xs uppercase tracking-wide text-base-content/60">Всего</div>
@@ -542,7 +566,7 @@ function ObjectTasksPage() {
             className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-emerald-400 ${
               taskStatusFilter === 'done' ? 'border-emerald-500 ring-2 ring-emerald-500/15' : 'border-base-200'
             }`}
-            onClick={() => setTaskStatusFilter('done')}
+            onClick={() => updateTaskStatusFilter('done')}
             aria-pressed={taskStatusFilter === 'done'}
           >
             <div className="text-xs uppercase tracking-wide text-base-content/60">Готово</div>
@@ -554,7 +578,7 @@ function ObjectTasksPage() {
             className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-blue-400 ${
               taskStatusFilter === 'in_progress' ? 'border-blue-500 ring-2 ring-blue-500/15' : 'border-base-200'
             }`}
-            onClick={() => setTaskStatusFilter('in_progress')}
+            onClick={() => updateTaskStatusFilter('in_progress')}
             aria-pressed={taskStatusFilter === 'in_progress'}
           >
             <div className="text-xs uppercase tracking-wide text-base-content/60">В работе</div>
@@ -566,7 +590,7 @@ function ObjectTasksPage() {
             className={`rounded-2xl border bg-base-100 px-3 py-2 text-center shadow-sm transition hover:border-amber-400 ${
               taskStatusFilter === 'todo' ? 'border-amber-500 ring-2 ring-amber-500/15' : 'border-base-200'
             }`}
-            onClick={() => setTaskStatusFilter('todo')}
+            onClick={() => updateTaskStatusFilter('todo')}
             aria-pressed={taskStatusFilter === 'todo'}
           >
             <div className="text-xs uppercase tracking-wide text-base-content/60">К выполнению</div>
@@ -578,7 +602,7 @@ function ObjectTasksPage() {
             className={`rounded-2xl border bg-rose-50 px-3 py-2 text-center shadow-sm transition hover:border-rose-500 ${
               taskStatusFilter === 'overdue' ? 'border-rose-500 ring-2 ring-rose-500/15' : 'border-rose-200'
             }`}
-            onClick={() => setTaskStatusFilter('overdue')}
+            onClick={() => updateTaskStatusFilter('overdue')}
             aria-pressed={taskStatusFilter === 'overdue'}
           >
             <div className="text-xs uppercase tracking-wide text-rose-700">Просрочено</div>

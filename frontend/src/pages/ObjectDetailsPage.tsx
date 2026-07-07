@@ -698,9 +698,13 @@ function ObjectDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Link to={`/objects/${id}/tasks`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
+        <div className="rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
             <div>
+              <Link
+                to={`/objects/${id}/tasks`}
+                className="block rounded-2xl transition hover:text-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30"
+              >
               <div className="flex items-center justify-between gap-4 mb-2">
                 <div className="text-lg font-semibold mb-2 inline-flex">
                   Задачи
@@ -708,27 +712,45 @@ function ObjectDetailsPage() {
               </div>
               <div className="text-3xl font-bold">{formatTaskCount(stats.total)}</div>
               <div className="text-sm text-base-content/70">всего</div>
+              </Link>
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center gap-3">
+              <Link
+                to={`/objects/${id}/tasks?status=done`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              >
                 <div className="w-3 h-3 rounded-full bg-green-500"></div>
                 <span className="text-sm text-base-content/80 min-w-[100px]">Завершено</span>
                 <span className="font-semibold tabular-nums">{stats.done}</span>
-              </div>
-              <div className="flex items-center gap-3">
+              </Link>
+              <Link
+                to={`/objects/${id}/tasks?status=in_progress`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                <span className="text-sm text-base-content/80 min-w-[100px]">В работе</span>
+                <span className="font-semibold tabular-nums">{stats.inProgress}</span>
+              </Link>
+              <Link
+                to={`/objects/${id}/tasks?status=todo`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              >
                 <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                 <span className="text-sm text-base-content/80 min-w-[100px]">К выполнению</span>
                 <span className="font-semibold tabular-nums">{stats.todo}</span>
-              </div>
-              <div className="flex items-center gap-3">
+              </Link>
+              <Link
+                to={`/objects/${id}/tasks?status=overdue`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+              >
                 <div className="w-3 h-3 rounded-full bg-red-500"></div>
                 <span className="text-sm text-base-content/80 min-w-[100px]">Просрочено</span>
                 <span className="font-semibold tabular-nums">{overdueCount}</span>
-              </div>
+              </Link>
             </div>
           </div>
-        </Link>
+        </div>
 
         <Link to={`/objects/${id}/employees`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
           <div className="flex items-start justify-between">
