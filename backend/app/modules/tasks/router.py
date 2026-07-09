@@ -249,6 +249,43 @@ async def delete_task_for_object(
     response.status_code = status.HTTP_204_NO_CONTENT
 
 @router.get(
+    "/{object_id}/tasks/done",
+    response_model=list[ObjectTaskRead],
+    summary="Get done tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_done_tasks(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ObjectTask]:
+    return await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.object_id == object.id,
+            ObjectTask.is_done == True
+        )
+    )
+
+@router.get(
+    "/{object_id}/tasks/todo",
+    response_model=list[ObjectTaskRead],
+    summary="Get todo tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_todo_tasks(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ObjectTask]:
+    return await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.object_id == object.id,
+            ObjectTask.is_done == False
+        )
+    )
+
+
+@router.get(
     "/{object_id}/tasks/overdue",
     response_model=list[ObjectTaskRead],
     summary="Get overdue tasks for object",
