@@ -275,15 +275,15 @@ function NotificationsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="h-28 animate-pulse rounded-[2rem] bg-base-200" />
-        <div className="space-y-3 rounded-[2rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div className="space-y-3">
+        <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
+        <div className="space-y-2 rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
           <div className="h-5 w-48 animate-pulse rounded bg-base-200" />
           <div className="h-4 w-80 animate-pulse rounded bg-base-200" />
-          <div className="space-y-3 pt-4">
-            <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
-            <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
-            <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
+          <div className="space-y-2 pt-3">
+            <div className="h-16 animate-pulse rounded-xl bg-base-200" />
+            <div className="h-16 animate-pulse rounded-xl bg-base-200" />
+            <div className="h-16 animate-pulse rounded-xl bg-base-200" />
           </div>
         </div>
       </div>
@@ -291,19 +291,19 @@ function NotificationsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[2rem] border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm sm:p-4">
         {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        <div className={`${error ? 'mt-5 ' : ''}grid gap-3 lg:grid-cols-[minmax(170px,1fr)_minmax(170px,1fr)_minmax(170px,0.9fr)_minmax(220px,1.3fr)_auto] lg:items-center`}>
+        <div className={`${error ? 'mt-4 ' : ''}grid gap-2 lg:grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(150px,0.85fr)_minmax(200px,1.2fr)_auto] lg:items-center`}>
           <div className="relative">
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
+              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={actorSearch}
               onChange={(event) => {
                 setActorSearch(event.target.value)
@@ -349,7 +349,7 @@ function NotificationsPage() {
           <div className="relative">
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
+              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={objectSearch}
               onChange={(event) => {
                 setObjectSearch(event.target.value)
@@ -412,7 +412,7 @@ function NotificationsPage() {
             </span>
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
+              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={eventSearch}
               onChange={(event) => setEventSearch(event.target.value)}
               placeholder="Поиск по событиям"
@@ -422,7 +422,7 @@ function NotificationsPage() {
 
           <button
             type="button"
-            className="w-full rounded-2xl bg-[#ff4539] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a] lg:w-auto"
+            className="h-10 w-full rounded-lg bg-[#ff4539] px-4 text-sm font-semibold text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a] lg:w-auto"
             onClick={clearFilters}
             disabled={!hasActiveFilters}
           >
@@ -430,9 +430,9 @@ function NotificationsPage() {
           </button>
         </div>
 
-        <div className="mt-6 space-y-3">
+        <div className="mt-4 space-y-2">
           {visibleNotifications.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-base-300 bg-base-50 p-10 text-center">
+            <div className="rounded-2xl border border-dashed border-base-300 bg-base-50 p-8 text-center">
               <div className="text-lg font-medium">Уведомлений нет</div>
               <div className="mt-1 text-sm text-base-content/60">
                 Здесь будут появляться события по задачам и объектам.
@@ -442,45 +442,39 @@ function NotificationsPage() {
             visibleNotifications.map((notification) => (
               <article
                 key={notification.receipt_id}
-                className="rounded-3xl border border-base-200 bg-base-100 p-5 transition-shadow hover:shadow-md"
+                className="rounded-xl border border-base-200 bg-base-100 px-4 py-3 transition-shadow hover:shadow-sm"
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-3">
-                    <p className="text-base leading-7 text-base-content">{notification.message}</p>
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-base-content/60">
-                      <span>Создано: {formatDateTime(notification.created_at)}</span>
-                      <span className="inline-flex items-center gap-2">
-                        <span>Действие сделал:</span>
-                        {actorAvatarUrls[notification.actor_user_id] ? (
-                          <span
-                            className="shrink-0 overflow-hidden rounded-full"
-                            style={{ width: 20, height: 20, minWidth: 20, maxWidth: 20 }}
-                          >
-                            <img
-                              src={actorAvatarUrls[notification.actor_user_id]}
-                              alt=""
-                              className="block object-cover"
-                              style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
-                            />
-                          </span>
-                        ) : (
-                          <span
-                            className="flex shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/60"
-                            style={{ width: 20, height: 20, minWidth: 20, maxWidth: 20 }}
-                            aria-hidden="true"
-                          >
-                            {(notification.actor_full_name || `#${notification.actor_user_id}`).trim().charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                        <span>{notification.actor_full_name || `#${notification.actor_user_id}`}</span>
-                      </span>
-                      <span>
-                        Объект:{' '}
-                        <Link to={`/objects/${notification.object_id}`} className="font-medium text-primary hover:underline">
-                          {objectNames[notification.object_id] || `#${notification.object_id}`}
-                        </Link>
-                      </span>
-                    </div>
+                <div className="space-y-2">
+                  <p className="text-sm leading-6 text-base-content">{notification.message}</p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-base-content/65">
+                    <Link to={`/objects/${notification.object_id}`} className="font-semibold text-primary hover:underline">
+                      {objectNames[notification.object_id] || `#${notification.object_id}`}
+                    </Link>
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      {actorAvatarUrls[notification.actor_user_id] ? (
+                        <span
+                          className="shrink-0 overflow-hidden rounded-full"
+                          style={{ width: 18, height: 18, minWidth: 18, maxWidth: 18 }}
+                        >
+                          <img
+                            src={actorAvatarUrls[notification.actor_user_id]}
+                            alt=""
+                            className="block object-cover"
+                            style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
+                          />
+                        </span>
+                      ) : (
+                        <span
+                          className="flex shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/60"
+                          style={{ width: 18, height: 18, minWidth: 18, maxWidth: 18 }}
+                          aria-hidden="true"
+                        >
+                          {(notification.actor_full_name || `#${notification.actor_user_id}`).trim().charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="truncate">{notification.actor_full_name || `#${notification.actor_user_id}`}</span>
+                    </span>
+                    <span>{formatDateTime(notification.created_at)}</span>
                   </div>
                 </div>
               </article>

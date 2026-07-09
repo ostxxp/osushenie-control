@@ -151,7 +151,7 @@ function DatePickerInput({
       <input
         type="text"
         className={[
-          'input min-h-0 w-full rounded-lg bg-white pr-10 text-sm text-slate-900 placeholder:text-base-content/50 focus:outline-none',
+          'input h-10 min-h-0 w-full rounded-lg bg-white pr-10 text-sm text-slate-900 placeholder:text-base-content/50 focus:outline-none',
           inputInvalid
             ? 'border-red-400 focus:border-red-500'
             : 'border-base-300 focus:border-[#ff4539]',
