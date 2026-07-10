@@ -45,8 +45,10 @@ function NotificationsPage() {
   const [objectFilter, setObjectFilter] = useState('')
   const [objectSearch, setObjectSearch] = useState('')
   const [objectDropdownOpen, setObjectDropdownOpen] = useState(false)
-  const [dateFilter, setDateFilter] = useState('')
-  const [dateSearch, setDateSearch] = useState('')
+  const [dateFromFilter, setDateFromFilter] = useState('')
+  const [dateFromSearch, setDateFromSearch] = useState('')
+  const [dateToFilter, setDateToFilter] = useState('')
+  const [dateToSearch, setDateToSearch] = useState('')
   const [eventSearch, setEventSearch] = useState('')
   const [objectNames, setObjectNames] = useState<Record<number, string>>({})
   const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>({})
@@ -173,7 +175,17 @@ function NotificationsPage() {
         return false
       }
 
-      if (dateFilter && toDateInputValue(notification.created_at) !== dateFilter) {
+      const notificationDate = toDateInputValue(notification.created_at)
+
+      if (dateFromFilter && !dateToFilter && notificationDate !== dateFromFilter) {
+        return false
+      }
+
+      if (dateFromFilter && (!notificationDate || notificationDate < dateFromFilter)) {
+        return false
+      }
+
+      if (dateToFilter && (!notificationDate || notificationDate > dateToFilter)) {
         return false
       }
 
@@ -188,9 +200,9 @@ function NotificationsPage() {
 
       return searchableText.includes(query)
     })
-  }, [actorFilter, actorSearch, dateFilter, eventSearch, notifications, objectFilter, objectNames, objectSearch])
+  }, [actorFilter, actorSearch, dateFromFilter, dateToFilter, eventSearch, notifications, objectFilter, objectNames, objectSearch])
 
-  const hasActiveFilters = actorSearch.trim() !== '' || actorFilter !== '' || objectSearch.trim() !== '' || objectFilter !== '' || dateSearch.trim() !== '' || dateFilter !== '' || eventSearch.trim() !== ''
+  const hasActiveFilters = actorSearch.trim() !== '' || actorFilter !== '' || objectSearch.trim() !== '' || objectFilter !== '' || dateFromSearch.trim() !== '' || dateFromFilter !== '' || dateToSearch.trim() !== '' || dateToFilter !== '' || eventSearch.trim() !== ''
 
   const clearFilters = () => {
     setActorFilter('')
@@ -199,8 +211,10 @@ function NotificationsPage() {
     setObjectFilter('')
     setObjectSearch('')
     setObjectDropdownOpen(false)
-    setDateFilter('')
-    setDateSearch('')
+    setDateFromFilter('')
+    setDateFromSearch('')
+    setDateToFilter('')
+    setDateToSearch('')
     setEventSearch('')
   }
 
@@ -299,7 +313,7 @@ function NotificationsPage() {
           </div>
         )}
 
-        <div className={`${error ? 'mt-4 ' : ''}grid gap-2 lg:grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(150px,0.85fr)_minmax(200px,1.2fr)_auto] lg:items-center`}>
+        <div className={`${error ? 'mt-4 ' : ''}grid gap-2 lg:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(260px,1.45fr)_minmax(190px,1.15fr)_auto] lg:items-center`}>
           <div className="relative">
             <input
               type="text"
@@ -392,16 +406,30 @@ function NotificationsPage() {
             )}
           </div>
 
-          <DatePickerInput
-            value={dateFilter}
-            inputValue={dateSearch}
-            onChange={(value, inputValue) => {
-              setDateFilter(value)
-              setDateSearch(inputValue)
-            }}
-            placeholder="Дата события"
-            ariaLabel="Дата события"
-          />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <DatePickerInput
+              value={dateFromFilter}
+              inputValue={dateFromSearch}
+              onChange={(value, inputValue) => {
+                setDateFromFilter(value)
+                setDateFromSearch(inputValue)
+              }}
+              max={dateToFilter || undefined}
+              placeholder="Дата"
+              ariaLabel="Дата"
+            />
+            <DatePickerInput
+              value={dateToFilter}
+              inputValue={dateToSearch}
+              onChange={(value, inputValue) => {
+                setDateToFilter(value)
+                setDateToSearch(inputValue)
+              }}
+              min={dateFromFilter || undefined}
+              placeholder="Дата по"
+              ariaLabel="Дата по"
+            />
+          </div>
 
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-base-content/50">
