@@ -23,6 +23,7 @@ from app.modules.tasks.service import (
     update_object_task,
     build_available_task_tree,
     build_available_task_trees,
+    list_logical_todo_object_tasks,
     list_main_object_tasks,
     get_main_task_id,
     get_progress,
@@ -258,13 +259,14 @@ async def get_done_tasks(
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ObjectTask]:
-    return await db.execute(
+    tasks = await db.execute(
         select(ObjectTask)
         .where(
             ObjectTask.object_id == object.id,
-            ObjectTask.is_done == True
+            ObjectTask.status == ObjectTaskStatus.DONE
         )
     )
+    return tasks.scalars().all()
 
 @router.get(
     "/{object_id}/tasks/todo",
@@ -276,13 +278,7 @@ async def get_todo_tasks(
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ObjectTask]:
-    return await db.execute(
-        select(ObjectTask)
-        .where(
-            ObjectTask.object_id == object.id,
-            ObjectTask.is_done == False
-        )
-    )
+    return await list_logical_todo_object_tasks(db, object_id=object.id)
 
 
 @router.get(

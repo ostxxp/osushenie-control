@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.modules.ai.schemas import AIChatMessage
 from app.modules.objects.models import ConstructionObject, ObjectToUser
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
+from app.modules.tasks.service import get_task_stats
 from app.modules.users.models import User
 
 
@@ -122,15 +123,12 @@ async def _build_objects_context(db: AsyncSession) -> str:
 
     for obj in objects:
         tasks = tasks_by_object_id.get(obj.id, [])
-        total_tasks = len(tasks)
-        done_tasks = sum(1 for task in tasks if task.status == ObjectTaskStatus.DONE)
-        in_progress_tasks = sum(1 for task in tasks if task.status == ObjectTaskStatus.IN_PROGRESS)
-        todo_tasks = sum(1 for task in tasks if task.status == ObjectTaskStatus.TODO)
-        blocked_tasks = sum(
-            1
-            for task in tasks
-            if task.status in {ObjectTaskStatus.SKIPPED, ObjectTaskStatus.NOT_APPLICABLE}
-        )
+        task_stats = await get_task_stats(db, object_id=obj.id)
+        total_tasks = task_stats["total"]
+        done_tasks = task_stats["done"]
+        in_progress_tasks = task_stats["in_progress"]
+        todo_tasks = task_stats["todo"]
+        overdue_tasks_count = task_stats["overdue"]
         overdue_tasks = [
             task
             for task in tasks
@@ -176,8 +174,8 @@ async def _build_objects_context(db: AsyncSession) -> str:
                 f"  Сроки: {_format_date(obj.start_date)} — {_format_date(obj.end_date)}",
                 f"  Ответственные: {', '.join(responsible_users) or 'не назначены'}",
                 f"  Участники: {', '.join(assigned_users) or 'не назначены'}",
-                f"  Задачи: всего {total_tasks}, выполнено {done_tasks}, в работе {in_progress_tasks}, просрочено {len(overdue_tasks)}",
-                f"  Прогресс по сырым задачам: {progress}%",
+                f"  Задачи: всего {total_tasks}, выполнено {done_tasks}, к выполнению {todo_tasks}, в работе {in_progress_tasks}, просрочено {overdue_tasks_count}",
+                f"  Прогресс: {progress}%",
                 f"  Кто выполнил задачи на объекте: {completed_by_text}",
                 f"  Просроченные задачи: {overdue_titles}",
             ]
