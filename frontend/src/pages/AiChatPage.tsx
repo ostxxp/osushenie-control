@@ -180,7 +180,7 @@ function AiChatPage() {
               >
                 <div
                   className={[
-                    'max-w-[78%] rounded-3xl px-5 py-4 text-base leading-relaxed',
+                    'max-w-[78%] overflow-hidden break-words rounded-3xl px-5 py-4 text-base leading-relaxed',
                     isUser
                       ? 'bg-[#ff4539] text-white'
                       : 'border border-slate-200 bg-slate-50 text-slate-900',
