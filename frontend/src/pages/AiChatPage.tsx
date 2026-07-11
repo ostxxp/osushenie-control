@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { aiApi } from '@services/api'
 import { formatApiError } from '@/utils'
 import type { AIChatMessage } from '@/types'
@@ -9,7 +10,17 @@ const AI_CHAT_STORAGE_KEY = 'osushenie-ai-chat-messages'
 const initialMessages: AIChatMessage[] = [
   {
     role: 'assistant',
-    content: 'Я AI-ассистент администратора. Могу сделать сводку по объектам, найти риски и просроченные задачи.',
+    content: [
+      '## 👋 Я AI-ассистент администратора',
+      '',
+      'Могу помочь быстро понять, что происходит на объектах:',
+      '',
+      '- 📊 сделать сводку по объектам и задачам;',
+      '- ⚠️ найти риски и проблемные места;',
+      '- ⏰ показать просроченные задачи;',
+      '- 👷 сравнить исполнителей и нагрузку;',
+      '- ✅ подсказать, на что администратору обратить внимание.',
+    ].join('\n'),
   },
 ]
 
@@ -44,145 +55,38 @@ const loadStoredMessages = (): AIChatMessage[] => {
   }
 }
 
-const renderInlineMarkdown = (text: string): ReactNode[] => {
-  return text.split(/(\*\*.*?\*\*)/g).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return (
-        <strong key={`${part}-${index}`} className="font-bold text-slate-950">
-          {part.slice(2, -2)}
-        </strong>
-      )
-    }
-
-    return part
-  })
-}
-
-const isTableLine = (line: string): boolean => {
-  return line.includes('|') && line.split('|').filter((cell) => cell.trim()).length >= 2
-}
-
-const isTableSeparatorLine = (line: string): boolean => {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
-}
-
-const parseTableRow = (line: string): string[] => {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim())
-}
-
-const renderMessageContent = (content: string): ReactNode[] => {
-  const lines = content.split('\n')
-  const elements: ReactNode[] = []
-  let index = 0
-
-  while (index < lines.length) {
-    const line = lines[index]
-    const trimmedLine = line.trim()
-
-    if (!trimmedLine) {
-      elements.push(<div key={`space-${index}`} className="h-3" />)
-      index += 1
-      continue
-    }
-
-    if (isTableLine(line)) {
-      const tableLines: string[] = []
-
-      while (index < lines.length && isTableLine(lines[index])) {
-        if (!isTableSeparatorLine(lines[index])) {
-          tableLines.push(lines[index])
-        }
-        index += 1
-      }
-
-      const [headLine, ...bodyLines] = tableLines
-      const headCells = parseTableRow(headLine)
-
-      elements.push(
-        <div key={`table-${index}`} className="my-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-          <table className="min-w-full border-collapse text-left text-sm">
-            <thead className="bg-slate-100 text-slate-700">
-              <tr>
-                {headCells.map((cell, cellIndex) => (
-                  <th key={`${cell}-${cellIndex}`} className="border-b border-slate-200 px-4 py-3 font-bold">
-                    {renderInlineMarkdown(cell)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bodyLines.map((bodyLine, rowIndex) => (
-                <tr key={`${bodyLine}-${rowIndex}`} className="border-t border-slate-100">
-                  {parseTableRow(bodyLine).map((cell, cellIndex) => (
-                    <td key={`${cell}-${cellIndex}`} className="px-4 py-3 align-top text-slate-800">
-                      {renderInlineMarkdown(cell)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>,
-      )
-      continue
-    }
-
-    if (trimmedLine.startsWith('### ')) {
-      elements.push(
-        <h3 key={`h3-${index}`} className="mt-4 text-xl font-bold text-slate-950 first:mt-0">
-          {renderInlineMarkdown(trimmedLine.slice(4))}
-        </h3>,
-      )
-      index += 1
-      continue
-    }
-
-    if (trimmedLine.startsWith('## ')) {
-      elements.push(
-        <h2 key={`h2-${index}`} className="mt-5 text-2xl font-bold text-slate-950 first:mt-0">
-          {renderInlineMarkdown(trimmedLine.slice(3))}
-        </h2>,
-      )
-      index += 1
-      continue
-    }
-
-    if (trimmedLine.startsWith('# ')) {
-      elements.push(
-        <h2 key={`h1-${index}`} className="mt-5 text-2xl font-bold text-slate-950 first:mt-0">
-          {renderInlineMarkdown(trimmedLine.slice(2))}
-        </h2>,
-      )
-      index += 1
-      continue
-    }
-
-    if (trimmedLine.startsWith('- ')) {
-      elements.push(
-        <div key={`li-${index}`} className="my-2 flex gap-3">
-          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff4539]" />
-          <span>{renderInlineMarkdown(trimmedLine.slice(2))}</span>
-        </div>,
-      )
-      index += 1
-      continue
-    }
-
-    elements.push(
-      <p key={`p-${index}`} className="my-2">
-        {renderInlineMarkdown(trimmedLine)}
-      </p>,
-    )
-    index += 1
-  }
-
-  return elements
-}
+const MarkdownMessage = ({ content }: { content: string }) => (
+  <ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    components={{
+      h1: ({ children }) => <h2 className="mt-5 text-2xl font-bold text-slate-950 first:mt-0">{children}</h2>,
+      h2: ({ children }) => <h2 className="mt-5 text-2xl font-bold text-slate-950 first:mt-0">{children}</h2>,
+      h3: ({ children }) => <h3 className="mt-4 text-xl font-bold text-slate-950 first:mt-0">{children}</h3>,
+      h4: ({ children }) => <h3 className="mt-4 text-xl font-bold text-slate-950 first:mt-0">{children}</h3>,
+      h5: ({ children }) => <h3 className="mt-4 text-xl font-bold text-slate-950 first:mt-0">{children}</h3>,
+      h6: ({ children }) => <h3 className="mt-4 text-xl font-bold text-slate-950 first:mt-0">{children}</h3>,
+      p: ({ children }) => <p className="my-2 break-words">{children}</p>,
+      strong: ({ children }) => <strong className="font-bold text-slate-950">{children}</strong>,
+      ul: ({ children }) => <ul className="my-3 list-disc space-y-2 pl-6">{children}</ul>,
+      ol: ({ children }) => <ol className="my-3 list-decimal space-y-2 pl-6">{children}</ol>,
+      li: ({ children }) => (
+        <li className="pl-1 marker:text-[#ff4539]">
+          {children}
+        </li>
+      ),
+      table: ({ children }) => (
+        <div className="my-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <table className="min-w-full border-collapse text-left text-sm">{children}</table>
+        </div>
+      ),
+      thead: ({ children }) => <thead className="bg-slate-100 text-slate-700">{children}</thead>,
+      th: ({ children }) => <th className="border-b border-slate-200 px-4 py-3 font-bold">{children}</th>,
+      td: ({ children }) => <td className="border-t border-slate-100 px-4 py-3 align-top text-slate-800">{children}</td>,
+    }}
+  >
+    {content}
+  </ReactMarkdown>
+)
 
 function AiChatPage() {
   const [messages, setMessages] = useState<AIChatMessage[]>(loadStoredMessages)
@@ -276,13 +180,13 @@ function AiChatPage() {
               >
                 <div
                   className={[
-                    'max-w-[78%] whitespace-pre-wrap rounded-3xl px-5 py-4 text-base leading-relaxed',
+                    'max-w-[78%] rounded-3xl px-5 py-4 text-base leading-relaxed',
                     isUser
                       ? 'bg-[#ff4539] text-white'
                       : 'border border-slate-200 bg-slate-50 text-slate-900',
                   ].join(' ')}
                 >
-                  {isUser ? message.content : renderMessageContent(message.content)}
+                  {isUser ? message.content : <MarkdownMessage content={message.content} />}
                 </div>
               </div>
             )
