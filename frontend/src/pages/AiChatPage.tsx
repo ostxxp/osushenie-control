@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { aiApi } from '@services/api'
@@ -6,6 +7,13 @@ import { formatApiError } from '@/utils'
 import type { AIChatMessage } from '@/types'
 
 const AI_CHAT_STORAGE_KEY = 'osushenie-ai-chat-messages'
+
+const quickPrompts = [
+  'Что ты умеешь?',
+  'Дай краткую сводку по всем объектам.',
+  'Есть ли риски?',
+  'Кто сделал меньше всего задач?',
+]
 
 const initialMessages: AIChatMessage[] = [
   {
@@ -55,7 +63,7 @@ const loadStoredMessages = (): AIChatMessage[] => {
   }
 }
 
-const MarkdownMessage = ({ content }: { content: string }) => (
+const MarkdownMessage = memo(({ content }: { content: string }) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm]}
     components={{
@@ -86,7 +94,30 @@ const MarkdownMessage = ({ content }: { content: string }) => (
   >
     {content}
   </ReactMarkdown>
-)
+))
+
+MarkdownMessage.displayName = 'MarkdownMessage'
+
+const ChatMessageBubble = memo(({ message }: { message: AIChatMessage }) => {
+  const isUser = message.role === 'user'
+
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={[
+          'max-w-[78%] overflow-hidden break-words rounded-3xl px-5 py-4 text-base leading-relaxed',
+          isUser
+            ? 'bg-[#ff4539] text-white'
+            : 'border border-slate-200 bg-slate-50 text-slate-900',
+        ].join(' ')}
+      >
+        {isUser ? message.content : <MarkdownMessage content={message.content} />}
+      </div>
+    </div>
+  )
+})
+
+ChatMessageBubble.displayName = 'ChatMessageBubble'
 
 function AiChatPage() {
   const [messages, setMessages] = useState<AIChatMessage[]>(loadStoredMessages)
@@ -107,6 +138,8 @@ function AiChatPage() {
     () => messages.filter((message) => message.content.trim() !== ''),
     [messages],
   )
+  const trimmedMessageText = useMemo(() => messageText.trim(), [messageText])
+  const canSendMessage = trimmedMessageText.length > 0 && !loading
 
   const handleClearChat = () => {
     setMessages(initialMessages)
@@ -114,10 +147,8 @@ function AiChatPage() {
     window.localStorage.removeItem(AI_CHAT_STORAGE_KEY)
   }
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    const trimmedMessage = messageText.trim()
+  const sendMessage = async (text: string) => {
+    const trimmedMessage = text.trim()
     if (!trimmedMessage || loading) return
 
     const nextMessages: AIChatMessage[] = [
@@ -150,6 +181,24 @@ function AiChatPage() {
     }
   }
 
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await sendMessage(messageText)
+  }
+
+  const handleQuickPromptClick = async (prompt: string) => {
+    await sendMessage(prompt)
+  }
+
+  const handleMessageKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || !canSendMessage) {
+      return
+    }
+
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
+  }
+
   return (
     <div className="mx-auto flex h-[calc(100vh-3rem)] max-w-5xl flex-col gap-6 overflow-hidden">
       <div className="shrink-0 flex items-start justify-between gap-4">
@@ -162,7 +211,7 @@ function AiChatPage() {
         <button
           type="button"
           onClick={handleClearChat}
-          className="rounded-2xl border border-slate-300 px-5 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-100"
+          className="cursor-pointer rounded-2xl border border-slate-300 px-5 py-3 text-base font-semibold text-slate-700 transition-colors duration-200 hover:bg-slate-100"
         >
           Очистить
         </button>
@@ -170,27 +219,9 @@ function AiChatPage() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
-          {messages.map((message, index) => {
-            const isUser = message.role === 'user'
-
-            return (
-              <div
-                key={`${message.role}-${index}`}
-                className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={[
-                    'max-w-[78%] overflow-hidden break-words rounded-3xl px-5 py-4 text-base leading-relaxed',
-                    isUser
-                      ? 'bg-[#ff4539] text-white'
-                      : 'border border-slate-200 bg-slate-50 text-slate-900',
-                  ].join(' ')}
-                >
-                  {isUser ? message.content : <MarkdownMessage content={message.content} />}
-                </div>
-              </div>
-            )
-          })}
+          {messages.map((message, index) => (
+            <ChatMessageBubble key={`${message.role}-${index}`} message={message} />
+          ))}
 
           {loading && (
             <div className="flex justify-start">
@@ -209,18 +240,39 @@ function AiChatPage() {
         )}
 
         <form onSubmit={handleSubmit} className="border-t border-slate-200 p-4">
+          {!loading && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {quickPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => handleQuickPromptClick(prompt)}
+                  className="cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-[#ff4539]/40 hover:bg-[#ff4539]/10 hover:text-[#ff4539] hover:shadow-sm active:translate-y-0"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex gap-3">
             <textarea
               value={messageText}
               onChange={(event) => setMessageText(event.target.value)}
+              onKeyDown={handleMessageKeyDown}
               rows={2}
               placeholder="Например: дай краткую сводку по всем объектам и покажи риски"
               className="min-h-14 flex-1 resize-none rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-[#ff4539] focus:ring-2 focus:ring-[#ff4539]/20"
             />
             <button
               type="submit"
-              disabled={loading || !messageText.trim()}
-              className="rounded-2xl bg-[#ff4539] px-6 py-3 text-base font-semibold text-white transition hover:bg-[#e63d32] disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={!canSendMessage}
+              className={[
+                'rounded-2xl px-6 py-3 text-base font-semibold text-white shadow-sm transition-[background-color,box-shadow,transform] duration-300 ease-out',
+                canSendMessage
+                  ? 'cursor-pointer bg-[#ff4539] hover:-translate-y-0.5 hover:bg-[#e63d32] hover:shadow-lg hover:shadow-[#ff4539]/25 active:translate-y-0'
+                  : 'cursor-not-allowed bg-slate-300 shadow-none',
+              ].join(' ')}
             >
               Отправить
             </button>
