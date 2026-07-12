@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'r
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue } from '@/components'
-import { calculateLogicalTaskStats, formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
+import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
   ConstructionObject,
   ObjectTask,
   ObjectTaskStatus,
+  ObjectTaskStats,
   ObjectTaskTree,
   ObjectTaskUpsertPayload,
   TaskChildrenMode,
@@ -261,6 +262,7 @@ function ObjectTasksPage() {
   const [allTasks, setAllTasks] = useState<ObjectTaskTree[]>([])
   const [overdueTasks, setOverdueTasks] = useState<ObjectTask[]>([])
   const [overdueCount, setOverdueCount] = useState(0)
+  const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
@@ -283,11 +285,11 @@ function ObjectTasksPage() {
     try {
       const objectId = Number(id)
       const selectedTaskId = taskId ? Number(taskId) : null
-      const [objData, fullTreeData, overdueData, overdueCountValue] = await Promise.all([
+      const [objData, fullTreeData, overdueData, taskStats] = await Promise.all([
         objectApi.getById(objectId),
         objectApi.getFullTasksTree(objectId),
         objectApi.getOverdueTasks(objectId).catch(() => []),
-        objectApi.getOverdueCount(objectId).catch(() => 0),
+        objectApi.getTaskStats(objectId),
       ])
       const headersData = selectedTaskId === null
         ? await objectApi.getTasksHeaders(objectId)
@@ -300,7 +302,8 @@ function ObjectTasksPage() {
       setTaskHeaders(headersData)
       setAllTasks(fullTreeData)
       setOverdueTasks(overdueData)
-      setOverdueCount(overdueCountValue)
+      setStats(taskStats)
+      setOverdueCount(taskStats.overdue)
       setError('')
       return treeData
     } catch (err: unknown) {
@@ -426,10 +429,6 @@ function ObjectTasksPage() {
     }
   }
 
-  const stats = useMemo(
-    () => calculateLogicalTaskStats(taskId ? tasks : allTasks),
-    [allTasks, taskId, tasks],
-  )
   const sectionTaskIds = useMemo(
     () => new Set(flattenTaskTree(tasks).map(({ task }) => task.id)),
     [tasks],

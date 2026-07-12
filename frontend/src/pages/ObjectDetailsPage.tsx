@@ -1,10 +1,10 @@
-import { useContext, useEffect, useState, useMemo, useRef, type ChangeEvent } from 'react'
+import { useContext, useEffect, useState, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { DatePickerInput, formatDateInputValue } from '@/components'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
-import { calculateLogicalTaskStats, formatApiError, formatDateRu, formatTaskCount } from '@/utils'
-import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
+import { formatApiError, formatDateRu, formatTaskCount } from '@/utils'
+import type { ConstructionObject, ObjectTaskStats, User } from '@/types'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
@@ -19,7 +19,7 @@ function ObjectDetailsPage() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
-  const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
+  const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
   const [progress, setProgress] = useState<number>(0)
   const [overdueCount, setOverdueCount] = useState(0)
   const [employees, setEmployees] = useState<User[]>([])
@@ -56,9 +56,9 @@ function ObjectDetailsPage() {
     const fetchData = async () => {
       if (!id) return
       try {
-        const [objData, tasksData] = await Promise.all([
+        const [objData, taskStats] = await Promise.all([
           objectApi.getById(Number(id)),
-          objectApi.getFullTasksTree(Number(id)),
+          objectApi.getTaskStats(Number(id)),
         ])
         setObjectItem(objData)
         setObjectType(localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '')
@@ -73,14 +73,11 @@ function ObjectDetailsPage() {
         })
         setEditStartDateInput(formatDateInputValue(toDateInputValue(objData.start_date)))
         setEditEndDateInput(formatDateInputValue(toDateInputValue(objData.end_date)))
-        setTasks(tasksData)
+        setStats(taskStats)
         try {
-          const [progressValue, overdueValue] = await Promise.all([
-            objectApi.getProgress(Number(id)),
-            objectApi.getOverdueCount(Number(id)),
-          ])
+          const progressValue = await objectApi.getProgress(Number(id))
           setProgress(progressValue)
-          setOverdueCount(overdueValue)
+          setOverdueCount(taskStats.overdue)
         } catch (e) {
           console.warn('Failed to load object progress', e)
           setProgress(0)
@@ -225,7 +222,6 @@ function ObjectDetailsPage() {
     }
   }, [activePhotoIndex, objectPhotos.length])
 
-  const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
   const canEditObject = userRole === 'admin'
   const currentUser = authService.getCurrentUser()
   const progressLabel =

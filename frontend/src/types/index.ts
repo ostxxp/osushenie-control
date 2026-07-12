@@ -122,6 +122,14 @@ export interface ObjectTaskStatusUpdateResponse extends ObjectTask {
   main_task_id: number
 }
 
+export interface ObjectTaskStats {
+  total: number
+  done: number
+  todo: number
+  inProgress: number
+  overdue: number
+}
+
 export interface AIChatMessage {
   role: 'user' | 'assistant'
   content: string

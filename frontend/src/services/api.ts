@@ -8,6 +8,7 @@ import type {
   ObjectTask,
   ObjectTaskStatus,
   ObjectTaskStatusUpdateResponse,
+  ObjectTaskStats,
   ObjectTaskTree,
   ObjectTaskUpsertPayload,
   NotificationLog,
@@ -300,6 +301,22 @@ export const objectApi = {
   getOverdueCount: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/overdue_count`)
     return response.data
+  },
+  getTaskStats: async (objectId: number): Promise<ObjectTaskStats> => {
+    const response = await authApi.get<{
+      total: number
+      done: number
+      todo: number
+      in_progress: number
+      overdue: number
+    }>(`/objects/${objectId}/tasks/stats`)
+    return {
+      total: response.data.total,
+      done: response.data.done,
+      todo: response.data.todo,
+      inProgress: response.data.in_progress,
+      overdue: response.data.overdue,
+    }
   },
   getProgress: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/progress`)
