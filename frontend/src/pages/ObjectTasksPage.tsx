@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue } from '@/components'
@@ -272,6 +272,7 @@ function ObjectTasksPage() {
   const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>(() =>
     parseTaskStatusFilter(searchParams.get('status')),
   )
+  const returnStatusFilter = parseTaskStatusFilter(searchParams.get('returnStatus'))
 
   const flatTaskOptions = useMemo(() => flattenTaskTree(allTasks), [allTasks])
   const overdueTaskIds = useMemo(() => new Set(overdueTasks.map((task) => task.id)), [overdueTasks])
@@ -488,19 +489,22 @@ function ObjectTasksPage() {
     return taskHeaders.filter((header) => visibleHeaderIds.has(header.id))
   }, [allTasks, overdueTaskIds, taskHeaders, taskStatusFilter])
 
-  useEffect(() => {
+  const filteredTaskList = useMemo(() => {
+    const source = taskId ? tasks : allTasks
+    return flattenTaskTree(source)
+      .map(({ task }) => task)
+      .filter(taskMatchesFilter)
+  }, [allTasks, overdueTaskIds, taskId, taskStatusFilter, tasks])
+
+  useLayoutEffect(() => {
     if (!location.hash || tasks.length === 0) return
 
     const elementId = decodeURIComponent(location.hash.slice(1))
-    const frameId = window.requestAnimationFrame(() => {
-      document.getElementById(elementId)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'center',
-      })
+    document.getElementById(elementId)?.scrollIntoView({
+      behavior: 'auto',
+      block: 'center',
+      inline: 'center',
     })
-
-    return () => window.cancelAnimationFrame(frameId)
   }, [expandedTaskIds, location.hash, tasks])
 
   if (loading) {
@@ -534,7 +538,9 @@ function ObjectTasksPage() {
       <div className="flex flex-col gap-4 rounded-3xl border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <Link
-            to={taskId ? `/objects/${objectItem.id}/tasks` : `/objects/${objectItem.id}`}
+            to={taskId
+              ? `/objects/${objectItem.id}/tasks${returnStatusFilter === 'all' ? '' : `?status=${returnStatusFilter}`}`
+              : `/objects/${objectItem.id}`}
             className="inline-flex w-fit items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
           >
             <span aria-hidden="true">←</span>
@@ -656,7 +662,53 @@ function ObjectTasksPage() {
         </div>
       )}
 
-      {!taskId ? (
+      {taskStatusFilter !== 'all' ? (
+        filteredTaskList.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
+            Задачи с выбранным статусом не найдены.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-3xl border border-base-200 bg-base-100 shadow-sm">
+            <ul className="divide-y divide-base-200">
+              {filteredTaskList.map((task) => {
+                const isDone = task.status === 'done'
+                const isOverdue = overdueTaskIds.has(task.id)
+                const sectionId = taskSectionIds.get(task.id)
+                const taskDestination = sectionId
+                  ? `/objects/${objectItem.id}/tasks/${sectionId}?returnStatus=${taskStatusFilter}#task-${task.id}`
+                  : `/objects/${objectItem.id}/tasks`
+
+                return (
+                  <li key={task.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span
+                        className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                        aria-label={isDone ? 'Задача выполнена' : 'Задача не выполнена'}
+                      >
+                        <TaskStateIcon task={task} />
+                      </span>
+                      <Link
+                        to={taskDestination}
+                        className="group min-w-0 flex-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30"
+                      >
+                        <div className="break-words font-medium text-base-content transition-colors group-hover:text-[#ff4539]">{task.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-content/60">
+                          {task.deadline && <span>Дедлайн: {formatDateRu(task.deadline)}</span>}
+                          {isOverdue && <span className="badge badge-error badge-sm">Просрочено</span>}
+                          {task.completed_by?.full_name && <span>Выполнил: {task.completed_by.full_name}</span>}
+                        </div>
+                      </Link>
+                    </div>
+                    <button type="button" className="btn btn-ghost btn-sm self-end sm:self-auto" onClick={() => openEditTask(task)}>
+                      Редактировать
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      ) : !taskId ? (
         filteredTaskHeaders.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
             {taskStatusFilter === 'all'
