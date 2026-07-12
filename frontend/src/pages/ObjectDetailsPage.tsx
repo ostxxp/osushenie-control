@@ -694,13 +694,20 @@ function ObjectDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <div
+          className="cursor-pointer rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm transition hover:border-slate-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30"
+          role="link"
+          tabIndex={0}
+          onClick={() => navigate(`/objects/${id}/tasks`)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              navigate(`/objects/${id}/tasks`)
+            }
+          }}
+        >
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
             <div>
-              <Link
-                to={`/objects/${id}/tasks`}
-                className="block rounded-2xl transition hover:text-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30"
-              >
               <div className="flex items-center justify-between gap-4 mb-2">
                 <div className="text-lg font-semibold mb-2 inline-flex">
                   Задачи
@@ -708,10 +715,9 @@ function ObjectDetailsPage() {
               </div>
               <div className="text-3xl font-bold">{formatTaskCount(stats.total)}</div>
               <div className="text-sm text-base-content/70">всего</div>
-              </Link>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
               <Link
                 to={`/objects/${id}/tasks?status=done`}
                 className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
