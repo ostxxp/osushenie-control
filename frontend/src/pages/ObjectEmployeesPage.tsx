@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { objectApi, photoApi, userApi } from '@services/api'
+import { getStoredAvatarUrl, objectApi, photoApi, userApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import type { ConstructionObject, User, UserRole } from '@/types'
 
@@ -118,6 +118,9 @@ function ObjectEmployeesPage() {
 
     let cancelled = false
     const createdUrls: string[] = []
+    setAvatarUrls(Object.fromEntries(
+      employees.map((employee) => [employee.id, getStoredAvatarUrl(employee.id)]).filter(([, url]) => Boolean(url)),
+    ))
 
     const loadAvatars = async () => {
       const entries = await Promise.all(

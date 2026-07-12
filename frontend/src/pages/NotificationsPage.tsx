@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DatePickerInput } from '@/components'
-import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
+import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
 import type { NotificationLog } from '@/types'
@@ -87,6 +87,9 @@ function NotificationsPage() {
 
     let cancelled = false
     const createdUrls: string[] = []
+    setActorAvatarUrls(Object.fromEntries(
+      actorOptions.map((actor) => [actor.id, getStoredAvatarUrl(actor.id)]).filter(([, url]) => Boolean(url)),
+    ))
 
     const loadActorAvatars = async () => {
       const entries = await Promise.all(

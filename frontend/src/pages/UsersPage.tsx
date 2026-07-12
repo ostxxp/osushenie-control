@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
-import { photoApi, userApi } from '@services/api'
+import { getStoredAvatarUrl, photoApi, userApi } from '@services/api'
 import type { User, UserRole } from '@/types'
 
 type UserFormState = {
@@ -126,6 +126,9 @@ function UsersPage() {
 
     let cancelled = false
     const createdUrls: string[] = []
+    setAvatarUrls(Object.fromEntries(
+      users.map((user) => [user.id, getStoredAvatarUrl(user.id)]).filter(([, url]) => Boolean(url)),
+    ))
 
     const loadAvatars = async () => {
       const entries = await Promise.all(

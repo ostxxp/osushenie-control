@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
-import { photoApi, userApi } from '@services/api'
+import { getStoredAvatarUrl, photoApi, userApi } from '@services/api'
 import { authService } from '@services/auth'
 import { formatApiError } from '@/utils'
 
@@ -8,11 +8,11 @@ const maxAvatarSize = 5 * 1024 * 1024
 
 function SettingsPage() {
   const currentUser = authService.getCurrentUser()
-  const [avatarUrl, setAvatarUrl] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState(() => currentUser ? getStoredAvatarUrl(currentUser.id) : '')
   const [avatarVersion, setAvatarVersion] = useState(0)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('')
-  const [avatarLoading, setAvatarLoading] = useState(true)
+  const [avatarLoading, setAvatarLoading] = useState(() => !avatarUrl)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [avatarError, setAvatarError] = useState('')
   const [avatarSuccess, setAvatarSuccess] = useState('')
@@ -32,7 +32,7 @@ function SettingsPage() {
     let objectUrl = ''
 
     const loadAvatar = async () => {
-      setAvatarLoading(true)
+      setAvatarLoading(!getStoredAvatarUrl(currentUser.id))
       try {
         const avatar = await photoApi.getUserAvatar(currentUser.id)
         if (!avatar || cancelled) return
@@ -48,7 +48,9 @@ function SettingsPage() {
       }
     }
 
-    setAvatarUrl('')
+    const storedAvatar = getStoredAvatarUrl(currentUser.id)
+    setAvatarUrl(storedAvatar)
+    setAvatarLoading(!storedAvatar)
     loadAvatar()
 
     return () => {
