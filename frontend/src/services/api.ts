@@ -11,6 +11,8 @@ import type {
   ObjectTaskTree,
   ObjectTaskUpsertPayload,
   NotificationLog,
+  AIChatMessage,
+  AIChatResponse,
 } from '@/types'
 
 export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
@@ -399,5 +401,18 @@ export const notificationApi = {
   },
   deleteOne: async (notificationId: number): Promise<void> => {
     await authApi.delete(`/notifications/${notificationId}`)
+  },
+}
+
+export const aiApi = {
+  sendMessage: async (
+    message: string,
+    history: AIChatMessage[],
+  ): Promise<AIChatResponse> => {
+    const response = await authApi.post('/ai/chat', {
+      message,
+      history,
+    })
+    return response.data
   },
 }

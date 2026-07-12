@@ -241,14 +241,14 @@ async def test_single_choice_task_marks_only_sibling_choice_not_applicable(
     ] == "done"
     assert next(task for task in updated_tasks if task["title"] == "Continue with RD")[
         "status"
-    ] == "todo"
+    ] == "in_progress"
     assert next(task for task in updated_tasks if task["title"] == "Нет РД")[
         "status"
     ] == "not_applicable"
     assert next(task for task in updated_tasks if task["title"] == "Work by PPR")[
         "status"
     ] == "todo"
-    assert progress_response.json() == 33
+    assert progress_response.json() == 66
     continue_task = next(
         task
         for task in updated_tasks

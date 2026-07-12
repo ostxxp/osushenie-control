@@ -8,6 +8,7 @@ import ObjectTasksPage from '@pages/ObjectTasksPage'
 import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
 import UsersPage from '@pages/UsersPage'
 import NotificationsPage from '@pages/NotificationsPage'
+import AiChatPage from '@pages/AiChatPage'
 import SettingsPage from '@pages/SettingsPage'
 import Layout from './components/Layout'
 import { AUTH_EXPIRED_EVENT, AuthContext, authService } from '@services/auth'
@@ -71,6 +72,10 @@ function App() {
             <Route
               path="/notifications"
               element={userRole === 'admin' || userRole === 'chief_engineer' ? <NotificationsPage /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/ai"
+              element={userRole === 'admin' ? <AiChatPage /> : <Navigate to="/" replace />}
             />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>

@@ -56,3 +56,11 @@ class ObjectTaskTreeRead(ObjectTaskRead):
 
 class ObjectTaskStatusUpdateRead(ObjectTaskRead):
     main_task_id: int
+
+
+class ObjectTaskStatsRead(BaseModel):
+    total: int
+    done: int
+    todo: int
+    in_progress: int
+    overdue: int
