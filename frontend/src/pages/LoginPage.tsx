@@ -2,6 +2,8 @@ import { useState, Dispatch, SetStateAction } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authService } from '@services/auth'
 import type { UserRole } from '@/types'
+import logo from '../../photos/logo цветной горизонтальный.png'
+import heroImage from '../../photos/главная картинка.png'
 
 interface LoginPageProps {
   setIsAuthenticated: (value: boolean) => void
@@ -35,13 +37,18 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
   }
 
   return (
-    <div className="min-h-screen flex">
-      <div className="flex-[0_0_35%] items-start justify-center bg-white px-12 pt-20">
+    <div className="flex min-h-screen bg-white">
+      <div className="flex w-full items-start justify-center bg-white px-5 pb-10 pt-10 sm:px-10 sm:pt-16 lg:flex-[0_0_42%] lg:px-12 lg:pt-20 xl:flex-[0_0_35%]">
         <div className="w-full max-w-md">
           <div className="space-y-6">
             <div className="space-y-1 mb-12">
-              <h1 className="text-3xl font-bold text-gray-900">ОСУШЕНИЕ.РФ</h1>
-              <p className="text-gray-500 text-sm">Система управления строительными проектами</p>
+              <img
+                src={logo}
+                alt="ОСУШЕНИЕ.РФ"
+                className="block h-auto object-contain"
+                style={{ width: 350, maxWidth: '100%' }}
+              />
+              <p className="mt-3 text-gray-500 text-sm">Система управления строительными проектами</p>
             </div>
 
             <div className="space-y-1">
@@ -95,7 +102,12 @@ function LoginPage({ setIsAuthenticated, setUserRole }: LoginPageProps) {
         </div>
       </div>
 
-      <div className="flex-1 bg-gray-100">
+      <div className="hidden flex-1 bg-gray-100 lg:block">
+        <img
+          src={heroImage}
+          alt=""
+          className="h-full w-full object-cover"
+        />
       </div>
 
     </div>

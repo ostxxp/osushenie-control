@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { objectApi, userApi } from '@services/api'
+import { getStoredAvatarUrl, objectApi, photoApi, userApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import type { ConstructionObject, User, UserRole } from '@/types'
 
@@ -31,9 +31,9 @@ const formatEmployeeCount = (count: number): string => {
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl rounded-[1.75rem] bg-base-100 p-6 shadow-lg">{children}</div>
+      <div className="relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-base-100 p-4 shadow-lg sm:rounded-[1.75rem] sm:p-6">{children}</div>
     </div>
   )
 }
@@ -60,20 +60,30 @@ function ObjectEmployeesPage() {
 
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [employees, setEmployees] = useState<User[]>([])
+  const [avatarUrls, setAvatarUrls] = useState<Record<number, string>>({})
+  const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
   const [assignableUsers, setAssignableUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingAssignableUsers, setLoadingAssignableUsers] = useState(false)
   const [assigningUserId, setAssigningUserId] = useState<number | null>(null)
+  const [responsibilityUpdatingUserId, setResponsibilityUpdatingUserId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [assignError, setAssignError] = useState('')
+  const [employeeActionError, setEmployeeActionError] = useState('')
   const [showAddUser, setShowAddUser] = useState(false)
+  const [showAddResponsible, setShowAddResponsible] = useState(false)
   const [userSearch, setUserSearch] = useState('')
+  const [responsibleSearch, setResponsibleSearch] = useState('')
 
   const loadEmployees = async () => {
     if (!id) return
 
-    const usersData = await objectApi.getAssignedUsers(Number(id))
+    const [usersData, responsibleUsersData] = await Promise.all([
+      objectApi.getAssignedUsers(Number(id)),
+      objectApi.getResponsibleUsers(Number(id)),
+    ])
     setEmployees(usersData)
+    setResponsibleUsers(responsibleUsersData)
   }
 
   useEffect(() => {
@@ -81,12 +91,14 @@ function ObjectEmployeesPage() {
       if (!id) return
 
       try {
-        const [objectData, usersData] = await Promise.all([
+        const [objectData, usersData, responsibleUsersData] = await Promise.all([
           objectApi.getById(Number(id)),
           objectApi.getAssignedUsers(Number(id)),
+          objectApi.getResponsibleUsers(Number(id)),
         ])
         setObjectItem(objectData)
         setEmployees(usersData)
+        setResponsibleUsers(responsibleUsersData)
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Ошибка загрузки сотрудников'))
         console.error(err)
@@ -98,10 +110,77 @@ function ObjectEmployeesPage() {
     fetchData()
   }, [id])
 
+  useEffect(() => {
+    if (employees.length === 0) {
+      setAvatarUrls({})
+      return
+    }
+
+    let cancelled = false
+    const createdUrls: string[] = []
+    setAvatarUrls(Object.fromEntries(
+      employees.map((employee) => [employee.id, getStoredAvatarUrl(employee.id)]).filter(([, url]) => Boolean(url)),
+    ))
+
+    const loadAvatars = async () => {
+      const entries = await Promise.all(
+        employees.map(async (employee): Promise<[number, string] | null> => {
+          try {
+            const avatar = await photoApi.getUserAvatar(employee.id)
+            if (!avatar) return null
+
+            const url = URL.createObjectURL(avatar)
+            if (cancelled) {
+              URL.revokeObjectURL(url)
+              return null
+            }
+
+            createdUrls.push(url)
+            return [employee.id, url]
+          } catch (avatarError) {
+            console.warn(`Не удалось загрузить фото пользователя ${employee.id}`, avatarError)
+            return null
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setAvatarUrls(Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)))
+      }
+    }
+
+    loadAvatars()
+
+    return () => {
+      cancelled = true
+      createdUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [employees])
+
   const assignedUserIds = useMemo(
     () => new Set(employees.map((employee) => employee.id)),
     [employees],
   )
+
+  const responsibleUserIds = useMemo(
+    () => new Set(responsibleUsers.map((user) => user.id)),
+    [responsibleUsers],
+  )
+
+  const availableResponsibleUsers = useMemo(() => {
+    const query = responsibleSearch.trim().toLowerCase()
+
+    return employees.filter((user) => (
+      user.is_active
+      && user.role !== 'admin'
+      && !responsibleUserIds.has(user.id)
+      && (
+        user.full_name.toLowerCase().includes(query)
+        || user.email.toLowerCase().includes(query)
+        || (user.phone_number ?? '').toLowerCase().includes(query)
+      )
+    ))
+  }, [employees, responsibleSearch, responsibleUserIds])
 
   const availableUsers = useMemo(
     () =>
@@ -177,12 +256,42 @@ function ObjectEmployeesPage() {
   }
 
   const handleUnsetResponsible = async (userId: number) => {
-    if (!id) return
+    if (!id || responsibilityUpdatingUserId !== null) return
+
+    setResponsibilityUpdatingUserId(userId)
+    setEmployeeActionError('')
     try {
       await objectApi.unassignResponsibleFromObject(Number(id), userId)
+      setResponsibleUsers((currentUsers) => currentUsers.filter((user) => user.id !== userId))
       await refresh()
-    } catch (err) {
+    } catch (err: unknown) {
+      setEmployeeActionError(getErrorMessage(err, 'Не удалось снять ответственность с сотрудника'))
       console.error('Ошибка при снятии ответственности', err)
+    } finally {
+      setResponsibilityUpdatingUserId(null)
+    }
+  }
+
+  const handleSetResponsible = async (userId: number) => {
+    if (!id || responsibilityUpdatingUserId !== null) return
+    if (responsibleUsers.length > 0) {
+      setEmployeeActionError('У объекта уже назначен ответственный.')
+      setShowAddResponsible(false)
+      return
+    }
+
+    setResponsibilityUpdatingUserId(userId)
+    setEmployeeActionError('')
+    try {
+      await objectApi.assignResponsibleToObject(Number(id), userId)
+      await refresh()
+      setShowAddResponsible(false)
+      setResponsibleSearch('')
+    } catch (err: unknown) {
+      setEmployeeActionError(getErrorMessage(err, 'Не удалось назначить ответственного'))
+      console.error('Ошибка при назначении ответственного', err)
+    } finally {
+      setResponsibilityUpdatingUserId(null)
     }
   }
 
@@ -222,7 +331,7 @@ function ObjectEmployeesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-4">
             <Link
@@ -232,7 +341,7 @@ function ObjectEmployeesPage() {
               <span aria-hidden="true">←</span>
               К объекту
             </Link>
-            <h1 className="text-3xl font-semibold">{objectItem.name}</h1>
+            <h1 className="break-words text-2xl font-semibold sm:text-3xl">{objectItem.name}</h1>
             <div className="inline-flex flex-wrap items-center gap-3 rounded-2xl border border-base-200 bg-base-200/40 px-4 py-3">
               <div>
                 <div className="text-xs uppercase tracking-wide text-base-content/50">Пользователи на объекте</div>
@@ -241,24 +350,41 @@ function ObjectEmployeesPage() {
                   <span className="pb-0.5 text-sm text-base-content/60">{formatEmployeeCount(stats.total)}</span>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
-                  Инженеры: {stats.engineers}
+              <div className="grid min-w-40 gap-1.5">
+                <span className="flex items-center justify-between gap-4 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
+                  <span>Инженеры</span>
+                  <span className="tabular-nums">{stats.engineers}</span>
                 </span>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
-                  Прорабы: {stats.foremen}
+                <span className="flex items-center justify-between gap-4 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                  <span>Прорабы</span>
+                  <span className="tabular-nums">{stats.foremen}</span>
                 </span>
               </div>
             </div>
           </div>
           {canManageEmployees && (
-            <button
-              type="button"
-              className="bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer"
-              onClick={openAddUserModal}
-            >
-              Добавить сотрудника
-            </button>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <button
+                type="button"
+                className="w-full rounded-2xl border border-[#ff4539]/40 bg-white px-4 py-2 font-medium text-[#b42318] transition-colors hover:bg-[#ff4539]/5 focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto"
+                onClick={() => {
+                  setEmployeeActionError('')
+                  setResponsibleSearch('')
+                  setShowAddResponsible(true)
+                }}
+                disabled={responsibleUsers.length > 0}
+                title={responsibleUsers.length > 0 ? 'У объекта уже назначен ответственный' : undefined}
+              >
+                {responsibleUsers.length > 0 ? 'Ответственный назначен' : 'Добавить ответственного'}
+              </button>
+              <button
+                type="button"
+                className="w-full bg-[#ff4539] text-white py-2 px-4 rounded-2xl hover:bg-[#cc372e] focus:outline-none focus:ring-2 focus:ring-[#ff4539] focus:ring-offset-2 transition-colors disabled:bg-[##ff918a] disabled:cursor-not-allowed font-medium cursor-pointer sm:w-auto"
+                onClick={openAddUserModal}
+              >
+                Добавить сотрудника
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -269,43 +395,103 @@ function ObjectEmployeesPage() {
             <h2 className="text-lg font-semibold">Список сотрудников</h2>
           </div>
 
+          {employeeActionError && (
+            <div className="mx-4 mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {employeeActionError}
+            </div>
+          )}
+
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className={`w-full table-fixed text-left ${canManageEmployees ? 'min-w-[1050px]' : 'min-w-[820px]'}`}>
+              <colgroup>
+                <col className={canManageEmployees ? 'w-[24%]' : 'w-[32%]'} />
+                <col className={canManageEmployees ? 'w-[14%]' : 'w-[18%]'} />
+                <col className={canManageEmployees ? 'w-[17%]' : 'w-[22%]'} />
+                <col className={canManageEmployees ? 'w-[23%]' : 'w-[28%]'} />
+                {canManageEmployees && <col className="w-[22%]" />}
+              </colgroup>
               <thead className="bg-base-200">
                 <tr>
-                  <th className="px-4 py-3">Сотрудник</th>
-                  <th className="px-4 py-3">Должность</th>
-                  <th className="px-4 py-3">Телефон</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3 text-right">Действия</th>
+                  <th className="px-5 py-3 align-middle">Сотрудник</th>
+                  <th className="px-5 py-3 align-middle">Должность</th>
+                  <th className="px-5 py-3 align-middle">Телефон</th>
+                  <th className="px-5 py-3 align-middle">Email</th>
+                  {canManageEmployees && (
+                    <th className="px-5 py-3 text-right align-middle">Действия</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
+                    <td colSpan={canManageEmployees ? 5 : 4} className="px-5 py-6 text-center text-base-content/70">
                       Сотрудники не найдены.
                     </td>
                   </tr>
                 ) : (
                   employees.map((employee) => (
-                    <tr key={employee.id} className="border-t border-base-200 hover:bg-base-100">
-                      <td className="px-4 py-3 font-medium">{employee.full_name}</td>
-                      <td className="px-4 py-3">{roleLabel[employee.role]}</td>
-                      <td className="px-4 py-3 text-base-content/70">{employee.phone_number || '—'}</td>
-                      <td className="px-4 py-3 text-base-content/70">{employee.email}</td>
-                      <td className="px-4 py-3 text-right">
-                        {canManageEmployees && employee.role !== 'admin' && (
-                          <div className="flex items-center justify-end gap-2">
-                            <button className="btn btn-ghost btn-xs" onClick={() => handleUnsetResponsible(employee.id)}>
-                              Снять ответственность
-                            </button>
-                            <button className="btn btn-ghost btn-xs text-error" onClick={() => handleUnassign(employee.id)}>
-                              Удалить
-                            </button>
+                    <tr key={employee.id} className="border-t border-base-200 align-middle hover:bg-base-100">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          {avatarUrls[employee.id] ? (
+                            <span className="size-10 shrink-0 overflow-hidden rounded-full">
+                              <img
+                                src={avatarUrls[employee.id]}
+                                alt={`Фото ${employee.full_name}`}
+                                className="size-full object-cover"
+                              />
+                            </span>
+                          ) : (
+                            <span
+                              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold text-base-content/70"
+                              aria-hidden="true"
+                            >
+                              {employee.full_name.trim().charAt(0).toUpperCase() || '?'}
+                            </span>
+                          )}
+                          <div className="flex min-w-0 flex-col items-start gap-0.5">
+                            <span className="flex items-center gap-1.5 font-medium">
+                              <span className="break-words">{employee.full_name}</span>
+                              {responsibleUserIds.has(employee.id) && (
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                  className="size-4 shrink-0 text-red-500"
+                                  aria-label="Ответственный"
+                                >
+                                  <path d="m3.2 7.4 4.4 3.4L12 4l4.4 6.8 4.4-3.4-1.9 10.2H5.1L3.2 7.4Zm2.3 12h13v1.8h-13v-1.8Z" />
+                                </svg>
+                              )}
+                            </span>
                           </div>
-                        )}
+                        </div>
                       </td>
+                      <td className="px-5 py-3">{roleLabel[employee.role]}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-base-content/70">{employee.phone_number || '—'}</td>
+                      <td className="break-words px-5 py-3 text-base-content/70">{employee.email}</td>
+                      {canManageEmployees && (
+                        <td className="px-5 py-3 text-right">
+                          {employee.role !== 'admin' && (
+                            <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                              {responsibleUserIds.has(employee.id) && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-xs"
+                                  onClick={() => handleUnsetResponsible(employee.id)}
+                                  disabled={responsibilityUpdatingUserId !== null}
+                                >
+                                  {responsibilityUpdatingUserId === employee.id
+                                    ? 'Снятие...'
+                                    : 'Снять ответственность'}
+                                </button>
+                              )}
+                              <button className="btn btn-ghost btn-xs text-error" onClick={() => handleUnassign(employee.id)}>
+                                Удалить
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -314,6 +500,77 @@ function ObjectEmployeesPage() {
           </div>
         </div>
       </div>
+
+      {showAddResponsible && (
+        <ModalBackdrop
+          onClose={() => {
+            setShowAddResponsible(false)
+            setResponsibleSearch('')
+          }}
+        >
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold">Добавить ответственного</h2>
+              <p className="text-sm text-base-content/70">
+                Выберите ответственного из сотрудников, уже добавленных на объект.
+              </p>
+            </div>
+            {employeeActionError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {employeeActionError}
+              </div>
+            )}
+            <input
+              className="input w-full focus:border-[#ff4539] focus:outline-none"
+              placeholder="Поиск по имени, email или телефону..."
+              value={responsibleSearch}
+              onChange={(event) => setResponsibleSearch(event.target.value)}
+            />
+            <div className="max-h-80 overflow-y-auto rounded-[1.75rem] border border-base-200">
+              {availableResponsibleUsers.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-base-content/70">
+                  Нет доступных сотрудников для назначения.
+                </div>
+              ) : (
+                availableResponsibleUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center justify-between gap-4 border-b border-base-200 px-4 py-3 last:border-b-0"
+                  >
+                    <div>
+                      <div className="font-medium">{user.full_name}</div>
+                      <div className="text-sm text-base-content/70">
+                        {roleLabel[user.role]} · {user.email}
+                        {user.phone_number ? ` · ${user.phone_number}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-xl bg-[#ff4539] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a]"
+                      disabled={responsibilityUpdatingUserId !== null}
+                      onClick={() => handleSetResponsible(user.id)}
+                    >
+                      {responsibilityUpdatingUserId === user.id ? 'Назначение...' : 'Назначить'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowAddResponsible(false)
+                  setResponsibleSearch('')
+                }}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
 
       {showAddUser && (
         <ModalBackdrop

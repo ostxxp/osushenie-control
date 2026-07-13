@@ -1,4 +1,4 @@
-import authApi from './auth'
+import authApi, { authService } from './auth'
 import type {
   Project,
   Task,
@@ -8,9 +8,12 @@ import type {
   ObjectTask,
   ObjectTaskStatus,
   ObjectTaskStatusUpdateResponse,
+  ObjectTaskStats,
   ObjectTaskTree,
   ObjectTaskUpsertPayload,
   NotificationLog,
+  AIChatMessage,
+  AIChatResponse,
 } from '@/types'
 
 export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
@@ -29,6 +32,56 @@ type PhotoMetadata = {
   id: number
   original_filename?: string
   uploaded_by_id?: number | null
+}
+
+const avatarCacheName = 'user-avatars-v1'
+const avatarCacheKey = (userId: number) => `/__avatar-cache/users/${userId}`
+const avatarStorageKey = (userId: number) => `user-avatar:${userId}`
+
+export const getStoredAvatarUrl = (userId: number): string => {
+  try {
+    return localStorage.getItem(avatarStorageKey(userId)) || ''
+  } catch {
+    return ''
+  }
+}
+
+const storeAvatarUrl = (userId: number, avatar: Blob): void => {
+  const reader = new FileReader()
+  reader.addEventListener('load', () => {
+    if (typeof reader.result !== 'string') return
+    try {
+      localStorage.setItem(avatarStorageKey(userId), reader.result)
+    } catch {
+      // Cache Storage remains the fallback when localStorage has no free space.
+    }
+  })
+  reader.readAsDataURL(avatar)
+}
+
+const deleteCachedAvatar = async (userId: number): Promise<void> => {
+  try {
+    localStorage.removeItem(avatarStorageKey(userId))
+  } catch {
+    // Ignore unavailable local storage.
+  }
+  if (!('caches' in window)) return
+  const cache = await caches.open(avatarCacheName)
+  await cache.delete(avatarCacheKey(userId))
+}
+
+const fetchUserAvatar = async (userId: number): Promise<Blob | null> => {
+  try {
+    const metadataResponse = await authApi.get<PhotoMetadata>(`/photos/users/${userId}/avatar`)
+    const fileResponse = await authApi.get<Blob>(`/photos/${metadataResponse.data.id}/file`, {
+      responseType: 'blob',
+    })
+    return fileResponse.data
+  } catch (error: unknown) {
+    const status = (error as { response?: { status?: number } })?.response?.status
+    if (status === 404) return null
+    throw error
+  }
 }
 
 export type ObjectPhotoFile = {
@@ -105,14 +158,19 @@ export const photoApi = {
     const formData = new FormData()
     formData.append('file', file)
     await authApi.post('/photos/profile/avatar', formData)
+    const currentUserId = authService.getCurrentUser()?.id
+    if (currentUserId) await deleteCachedAvatar(currentUserId)
   },
   deleteCurrentAvatar: async (): Promise<void> => {
     await authApi.delete('/photos/profile/avatar')
+    const currentUserId = authService.getCurrentUser()?.id
+    if (currentUserId) await deleteCachedAvatar(currentUserId)
   },
   uploadUserAvatar: async (userId: number, file: File): Promise<void> => {
     const formData = new FormData()
     formData.append('file', file)
     await authApi.post(`/photos/users/${userId}/avatar`, formData)
+    await deleteCachedAvatar(userId)
   },
   uploadObjectPhoto: async (objectId: number, file: File): Promise<void> => {
     const formData = new FormData()
@@ -139,17 +197,25 @@ export const photoApi = {
     await authApi.delete(`/photos/${photoId}`)
   },
   getUserAvatar: async (userId: number): Promise<Blob | null> => {
-    try {
-      const metadataResponse = await authApi.get<PhotoMetadata>(`/photos/users/${userId}/avatar`)
-      const fileResponse = await authApi.get<Blob>(`/photos/${metadataResponse.data.id}/file`, {
-        responseType: 'blob',
-      })
-      return fileResponse.data
-    } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } })?.response?.status
-      if (status === 404) return null
-      throw error
+    if (!('caches' in window)) return fetchUserAvatar(userId)
+
+    const cache = await caches.open(avatarCacheName)
+    const cachedResponse = await cache.match(avatarCacheKey(userId))
+    if (cachedResponse) {
+      const avatar = await cachedResponse.blob()
+      if (!getStoredAvatarUrl(userId)) storeAvatarUrl(userId, avatar)
+      return avatar
     }
+
+    const avatar = await fetchUserAvatar(userId)
+    if (avatar) {
+      storeAvatarUrl(userId, avatar)
+      await cache.put(
+        avatarCacheKey(userId),
+        new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
+      )
+    }
+    return avatar
   },
 }
 
@@ -235,6 +301,22 @@ export const objectApi = {
   getOverdueCount: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/overdue_count`)
     return response.data
+  },
+  getTaskStats: async (objectId: number): Promise<ObjectTaskStats> => {
+    const response = await authApi.get<{
+      total: number
+      done: number
+      todo: number
+      in_progress: number
+      overdue: number
+    }>(`/objects/${objectId}/tasks/stats`)
+    return {
+      total: response.data.total,
+      done: response.data.done,
+      todo: response.data.todo,
+      inProgress: response.data.in_progress,
+      overdue: response.data.overdue,
+    }
   },
   getProgress: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/progress`)
@@ -336,5 +418,18 @@ export const notificationApi = {
   },
   deleteOne: async (notificationId: number): Promise<void> => {
     await authApi.delete(`/notifications/${notificationId}`)
+  },
+}
+
+export const aiApi = {
+  sendMessage: async (
+    message: string,
+    history: AIChatMessage[],
+  ): Promise<AIChatResponse> => {
+    const response = await authApi.post('/ai/chat', {
+      message,
+      history,
+    })
+    return response.data
   },
 }

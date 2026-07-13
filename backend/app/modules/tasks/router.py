@@ -23,6 +23,7 @@ from app.modules.tasks.service import (
     update_object_task,
     build_available_task_tree,
     build_available_task_trees,
+    list_logical_todo_object_tasks,
     list_main_object_tasks,
     get_main_task_id,
     get_progress,
@@ -247,6 +248,38 @@ async def delete_task_for_object(
 ) -> None:
     await deactivate_object_task(db, object_task=object_task)
     response.status_code = status.HTTP_204_NO_CONTENT
+
+@router.get(
+    "/{object_id}/tasks/done",
+    response_model=list[ObjectTaskRead],
+    summary="Get done tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_done_tasks(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ObjectTask]:
+    tasks = await db.execute(
+        select(ObjectTask)
+        .where(
+            ObjectTask.object_id == object.id,
+            ObjectTask.status == ObjectTaskStatus.DONE
+        )
+    )
+    return tasks.scalars().all()
+
+@router.get(
+    "/{object_id}/tasks/todo",
+    response_model=list[ObjectTaskRead],
+    summary="Get todo tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_todo_tasks(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ObjectTask]:
+    return await list_logical_todo_object_tasks(db, object_id=object.id)
+
 
 @router.get(
     "/{object_id}/tasks/overdue",

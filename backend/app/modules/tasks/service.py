@@ -572,6 +572,64 @@ async def get_task_stats(
     return stats
 
 
+async def list_logical_todo_object_tasks(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> list[ObjectTask]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    todo_tasks: list[ObjectTask] = []
+
+    def collect_task(task: ObjectTask) -> None:
+        if task.status in BLOCKING_STATUSES:
+            return
+
+        children = children_by_parent_id.get(task.id, [])
+        if task.parent_id is None and children:
+            collect_children(task)
+            return
+
+        if task.status == ObjectTaskStatus.TODO:
+            todo_tasks.append(task)
+
+        if task.status in {ObjectTaskStatus.DONE, ObjectTaskStatus.IN_PROGRESS}:
+            collect_children(task)
+
+    def collect_children(parent: ObjectTask) -> None:
+        children = children_by_parent_id.get(parent.id, [])
+        if not children:
+            return
+
+        if len(children) == 2:
+            done_children = [
+                child
+                for child in children
+                if child.status == ObjectTaskStatus.DONE
+            ]
+            if done_children:
+                for child in done_children:
+                    collect_children(child)
+                return
+
+            active_children = [
+                child
+                for child in children
+                if child.status not in BLOCKING_STATUSES
+            ]
+            for child in active_children:
+                collect_task(child)
+            return
+
+        for child in children:
+            collect_task(child)
+
+    for root in children_by_parent_id.get(None, []):
+        collect_task(root)
+
+    return todo_tasks
+
+
 async def deactivate_object_task(
     db: AsyncSession,
     *,
