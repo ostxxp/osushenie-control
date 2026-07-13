@@ -226,7 +226,7 @@ function AiChatPage() {
           {loading && (
             <div className="flex justify-start">
               <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-500">
-                Думаю над сводкой...
+                Думаю...
               </div>
             </div>
           )}
