@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { NOTIFICATIONS_UPDATED_EVENT, objectApi } from '@services/api'
+import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue } from '@/components'
 import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
@@ -190,6 +190,43 @@ function TaskStateIcon({ task }: { task: ObjectTaskTree }) {
   return <span className="inline-block h-5 w-5 rounded-full border-2 border-base-300 bg-white" />
 }
 
+function UserAvatar({ userId, name }: { userId: number; name: string }) {
+  const [avatarUrl, setAvatarUrl] = useState(() => getStoredAvatarUrl(userId))
+
+  useEffect(() => {
+    const storedUrl = getStoredAvatarUrl(userId)
+    if (storedUrl) {
+      setAvatarUrl(storedUrl)
+      return
+    }
+
+    let cancelled = false
+    let objectUrl = ''
+    photoApi.getUserAvatar(userId).then((avatar) => {
+      if (!avatar || cancelled) return
+      objectUrl = URL.createObjectURL(avatar)
+      setAvatarUrl(objectUrl)
+    }).catch((error) => {
+      console.warn(`Не удалось загрузить аватар пользователя ${userId}`, error)
+    })
+
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [userId])
+
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" />
+  }
+
+  return (
+    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-base-200 text-[10px] font-semibold text-base-content/60" aria-hidden="true">
+      {name.trim().charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
 function TaskTreeNode({
   task,
   onToggleTask,
@@ -287,7 +324,10 @@ function TaskTreeNode({
           {isDone && (
             <div className="space-y-0.5">
               {task.completed_by?.full_name && (
-                <div className="font-medium text-base-content">{task.completed_by.full_name}</div>
+                <div className="flex items-center gap-1.5 font-medium text-base-content">
+                  <UserAvatar userId={task.completed_by.id} name={task.completed_by.full_name} />
+                  <span>{task.completed_by.full_name}</span>
+                </div>
               )}
               {task.completed_at && <div>{formatDateTimeRu(task.completed_at)}</div>}
             </div>
@@ -772,7 +812,12 @@ function ObjectTasksPage() {
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-content/60">
                           {task.deadline && <span>Дедлайн: {formatDateRu(task.deadline)}</span>}
                           {isOverdue && <span className="badge badge-error badge-sm">Просрочено</span>}
-                          {task.completed_by?.full_name && <span>Выполнил: {task.completed_by.full_name}</span>}
+                          {task.completed_by?.full_name && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <UserAvatar userId={task.completed_by.id} name={task.completed_by.full_name} />
+                              Выполнил: {task.completed_by.full_name}
+                            </span>
+                          )}
                         </div>
                       </Link>
                     </div>
