@@ -408,6 +408,54 @@ function ObjectDetailsPage() {
     }
   }
 
+  const addObjectPhotos = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!objectItem) return
+
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (files.length === 0) return
+
+    if (files.some((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))) {
+      setPhotosError('Добавляйте фотографии только в формате JPG, PNG или WebP.')
+      return
+    }
+
+    if (files.some((file) => file.size > 5 * 1024 * 1024)) {
+      setPhotosError('Размер каждой фотографии не должен превышать 5 МБ.')
+      return
+    }
+
+    setPhotosSaving(true)
+    setPhotosError('')
+    setPhotosSuccess('')
+    try {
+      await Promise.all(files.map((file) => photoApi.uploadObjectPhoto(objectItem.id, file)))
+      setPhotosSuccess(`Добавлено фотографий: ${files.length}.`)
+    } catch (err: unknown) {
+      setPhotosError(formatApiError(err, 'Не удалось добавить фотографии объекта.'))
+    } finally {
+      setPhotosSaving(false)
+      setPhotosVersion((version) => version + 1)
+    }
+  }
+
+  const deleteObjectPhoto = async (photoId: number) => {
+    if (!window.confirm('Удалить эту фотографию объекта?')) return
+
+    setPhotosSaving(true)
+    setPhotosError('')
+    setPhotosSuccess('')
+    try {
+      await photoApi.deletePhoto(photoId)
+      setPhotosSuccess('Фотография удалена.')
+      setPhotosVersion((version) => version + 1)
+    } catch (err: unknown) {
+      setPhotosError(formatApiError(err, 'Не удалось удалить фотографию объекта.'))
+    } finally {
+      setPhotosSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
