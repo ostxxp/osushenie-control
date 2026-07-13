@@ -126,6 +126,8 @@ function ObjectEmployeesPage() {
       const entries = await Promise.all(
         employees.map(async (employee): Promise<[number, string] | null> => {
           try {
+            const storedUrl = getStoredAvatarUrl(employee.id)
+            if (storedUrl) return [employee.id, storedUrl]
             const avatar = await photoApi.getUserAvatar(employee.id)
             if (!avatar) return null
 

@@ -32,7 +32,13 @@ function SettingsPage() {
     let objectUrl = ''
 
     const loadAvatar = async () => {
-      setAvatarLoading(!getStoredAvatarUrl(currentUser.id))
+      const storedAvatar = getStoredAvatarUrl(currentUser.id)
+      if (storedAvatar) {
+        setAvatarUrl(storedAvatar)
+        setAvatarLoading(false)
+        return
+      }
+      setAvatarLoading(true)
       try {
         const avatar = await photoApi.getUserAvatar(currentUser.id)
         if (!avatar || cancelled) return

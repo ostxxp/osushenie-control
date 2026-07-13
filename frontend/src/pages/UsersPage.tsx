@@ -134,6 +134,8 @@ function UsersPage() {
       const entries = await Promise.all(
         users.map(async (user): Promise<[number, string] | null> => {
           try {
+            const storedUrl = getStoredAvatarUrl(user.id)
+            if (storedUrl) return [user.id, storedUrl]
             const avatar = await photoApi.getUserAvatar(user.id)
             if (!avatar) return null
 

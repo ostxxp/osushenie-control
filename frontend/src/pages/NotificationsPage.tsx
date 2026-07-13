@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DatePickerInput } from '@/components'
-import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
+import { getAllStoredAvatarUrls, getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
 import type { NotificationLog } from '@/types'
@@ -51,7 +51,7 @@ function NotificationsPage() {
   const [dateToSearch, setDateToSearch] = useState('')
   const [eventSearch, setEventSearch] = useState('')
   const [objectNames, setObjectNames] = useState<Record<number, string>>({})
-  const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>({})
+  const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>(getAllStoredAvatarUrls)
 
   const canViewNotifications = userRole === 'admin' || userRole === 'chief_engineer'
 
@@ -81,20 +81,24 @@ function NotificationsPage() {
 
   useEffect(() => {
     if (actorOptions.length === 0) {
-      setActorAvatarUrls({})
       return
     }
 
     let cancelled = false
     const createdUrls: string[] = []
-    setActorAvatarUrls(Object.fromEntries(
-      actorOptions.map((actor) => [actor.id, getStoredAvatarUrl(actor.id)]).filter(([, url]) => Boolean(url)),
-    ))
+    setActorAvatarUrls((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        actorOptions.map((actor) => [actor.id, getStoredAvatarUrl(actor.id)]).filter(([, url]) => Boolean(url)),
+      ),
+    }))
 
     const loadActorAvatars = async () => {
       const entries = await Promise.all(
         actorOptions.map(async (actor): Promise<[number, string] | null> => {
           try {
+            const storedUrl = getStoredAvatarUrl(actor.id)
+            if (storedUrl) return [actor.id, storedUrl]
             const avatar = await photoApi.getUserAvatar(actor.id)
             if (!avatar) return null
 
@@ -114,9 +118,10 @@ function NotificationsPage() {
       )
 
       if (!cancelled) {
-        setActorAvatarUrls(
-          Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)),
-        )
+        setActorAvatarUrls((current) => ({
+          ...current,
+          ...Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)),
+        }))
       }
     }
 

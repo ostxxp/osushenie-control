@@ -46,17 +46,52 @@ export const getStoredAvatarUrl = (userId: number): string => {
   }
 }
 
-const storeAvatarUrl = (userId: number, avatar: Blob): void => {
-  const reader = new FileReader()
-  reader.addEventListener('load', () => {
-    if (typeof reader.result !== 'string') return
-    try {
-      localStorage.setItem(avatarStorageKey(userId), reader.result)
-    } catch {
-      // Cache Storage remains the fallback when localStorage has no free space.
+const storeAvatarUrl = async (userId: number, avatar: Blob): Promise<void> => {
+  try {
+    const image = await createImageBitmap(avatar)
+    const size = 160
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const context = canvas.getContext('2d')
+    if (!context) {
+      image.close()
+      return
     }
-  })
-  reader.readAsDataURL(avatar)
+
+    const sourceSize = Math.min(image.width, image.height)
+    const sourceX = (image.width - sourceSize) / 2
+    const sourceY = (image.height - sourceSize) / 2
+    context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size)
+    image.close()
+
+    const thumbnail = canvas.toDataURL('image/webp', 0.82)
+    try {
+      localStorage.setItem(avatarStorageKey(userId), thumbnail)
+    } catch {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('user-avatar:') && (localStorage.getItem(key)?.length || 0) > 250_000) {
+          localStorage.removeItem(key)
+        }
+      })
+      localStorage.setItem(avatarStorageKey(userId), thumbnail)
+    }
+  } catch (error) {
+    console.warn(`Не удалось сохранить миниатюру аватара пользователя ${userId}`, error)
+  }
+}
+
+export const getAllStoredAvatarUrls = (): Record<number, string> => {
+  try {
+    return Object.fromEntries(
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith('user-avatar:'))
+        .map((key) => [Number(key.slice('user-avatar:'.length)), localStorage.getItem(key) || ''])
+        .filter(([userId, url]) => Number.isFinite(userId) && Boolean(url)),
+    )
+  } catch {
+    return {}
+  }
 }
 
 const deleteCachedAvatar = async (userId: number): Promise<void> => {
@@ -203,13 +238,13 @@ export const photoApi = {
     const cachedResponse = await cache.match(avatarCacheKey(userId))
     if (cachedResponse) {
       const avatar = await cachedResponse.blob()
-      if (!getStoredAvatarUrl(userId)) storeAvatarUrl(userId, avatar)
+      if (!getStoredAvatarUrl(userId)) await storeAvatarUrl(userId, avatar)
       return avatar
     }
 
     const avatar = await fetchUserAvatar(userId)
     if (avatar) {
-      storeAvatarUrl(userId, avatar)
+      await storeAvatarUrl(userId, avatar)
       await cache.put(
         avatarCacheKey(userId),
         new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
