@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue } from '@/components'
 import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
@@ -369,6 +369,7 @@ function TaskTreeNode({
 function ObjectTasksPage() {
   const { id, taskId } = useParams<{ id: string; taskId?: string }>()
   const location = useLocation()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
@@ -442,6 +443,11 @@ function ObjectTasksPage() {
   }, [searchParams])
 
   const updateTaskStatusFilter = (filter: TaskStatusFilter) => {
+    if (taskId && id) {
+      navigate(`/objects/${id}/tasks${filter === 'all' ? '' : `?status=${filter}`}`)
+      return
+    }
+
     setTaskStatusFilter(filter)
 
     const nextSearchParams = new URLSearchParams(searchParams)
