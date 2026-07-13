@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
-import { photoApi, userApi } from '@services/api'
+import { getStoredAvatarUrl, photoApi, userApi } from '@services/api'
 import type { User, UserRole } from '@/types'
 
 type UserFormState = {
@@ -89,15 +89,17 @@ function UsersPage() {
 
   const filteredUsers = useMemo(
     () =>
-      users.filter((user) => {
-        const query = search.toLowerCase()
-        return (
-          user.full_name.toLowerCase().includes(query) ||
-          user.email.toLowerCase().includes(query) ||
-          (user.phone_number ?? '').toLowerCase().includes(query) ||
-          roleLabel[user.role].toLowerCase().includes(query)
-        )
-      }),
+      users
+        .filter((user) => {
+          const query = search.toLowerCase()
+          return (
+            user.full_name.toLowerCase().includes(query) ||
+            user.email.toLowerCase().includes(query) ||
+            (user.phone_number ?? '').toLowerCase().includes(query) ||
+            roleLabel[user.role].toLowerCase().includes(query)
+          )
+        })
+        .sort((first, second) => second.id - first.id),
     [search, users],
   )
 
@@ -124,6 +126,9 @@ function UsersPage() {
 
     let cancelled = false
     const createdUrls: string[] = []
+    setAvatarUrls(Object.fromEntries(
+      users.map((user) => [user.id, getStoredAvatarUrl(user.id)]).filter(([, url]) => Boolean(url)),
+    ))
 
     const loadAvatars = async () => {
       const entries = await Promise.all(
@@ -377,22 +382,30 @@ function UsersPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
-          <table className="min-w-[860px] text-left">
+        <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
+          <table className="w-full table-fixed text-left">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[13%]" />
+              <col className="w-[15%]" />
+              <col className="w-[20%]" />
+              <col className="w-[13%]" />
+              <col className="w-[17%]" />
+            </colgroup>
             <thead className="bg-base-200">
               <tr>
-                <th className="px-4 py-3">Имя</th>
-                <th className="px-4 py-3">Должность</th>
-                <th className="px-4 py-3">Телефон</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3 text-right">Действие</th>
+                <th className="px-3 py-3 2xl:px-5">Имя</th>
+                <th className="px-3 py-3 2xl:px-5">Должность</th>
+                <th className="px-3 py-3 2xl:px-5">Телефон</th>
+                <th className="px-3 py-3 2xl:px-5">Email</th>
+                <th className="px-3 py-3 2xl:px-5">Статус</th>
+                <th className="px-3 py-3 text-right 2xl:px-5">Действие</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                <tr key={user.id} className="border-t border-base-200 hover:bg-base-200">
-                  <td className="px-4 py-3">
+                <tr key={user.id} className="border-t border-base-200 align-middle hover:bg-base-200">
+                  <td className="px-3 py-3 2xl:px-5">
                     <div className="flex items-center gap-3">
                       {avatarUrls[user.id] ? (
                         <span
@@ -414,13 +427,13 @@ function UsersPage() {
                           {user.full_name.trim().charAt(0).toUpperCase() || '?'}
                         </span>
                       )}
-                      <span>{user.full_name}</span>
+                      <span className="min-w-0 break-words">{user.full_name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">{roleLabel[user.role]}</td>
-                  <td className="px-4 py-3">{user.phone_number || '—'}</td>
-                  <td className="px-4 py-3">{user.email}</td>
-                  <td className="px-4 py-3">
+                  <td className="break-words px-3 py-3 2xl:px-5">{roleLabel[user.role]}</td>
+                  <td className="break-words px-3 py-3 2xl:px-5">{user.phone_number || '—'}</td>
+                  <td className="break-words px-3 py-3 2xl:px-5">{user.email}</td>
+                  <td className="px-3 py-3 2xl:px-5">
                     <span
                       className={`badge border ${
                         user.is_active
@@ -431,7 +444,7 @@ function UsersPage() {
                       {user.is_active ? 'Работает' : 'Не активен'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-3 text-right 2xl:px-5">
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => openEditModal(user)}>
                       Редактировать
                     </button>
@@ -440,7 +453,7 @@ function UsersPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={6} className="px-3 py-6 text-center text-base-content/70 2xl:px-5">
                     Пользователей не найдено.
                   </td>
                 </tr>
@@ -461,7 +474,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Ф.И.О. *</span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="Иванов Иван Иванович"
                   value={userForm.full_name}
                   onChange={(e) => handleChange('full_name', e.target.value)}
@@ -470,7 +483,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Email *</span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="user@example.com"
                   value={userForm.email}
                   onChange={(e) => handleChange('email', e.target.value)}
@@ -479,7 +492,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Телефон</span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="+7 999 123-45-67"
                   value={userForm.phone_number}
                   onChange={(e) => handleChange('phone_number', e.target.value)}
@@ -490,7 +503,7 @@ function UsersPage() {
                   {modalMode === 'create' ? 'Пароль *' : 'Новый пароль'}
                 </span>
                 <input
-                  className="input w-full"
+                  className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder={modalMode === 'create' ? 'Минимум 8 символов' : 'Оставьте пустым, если не меняете'}
                   type="password"
                   value={userForm.password}
@@ -500,7 +513,7 @@ function UsersPage() {
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Должность</span>
                 <select
-                  className="select w-full"
+                  className="select w-full focus:border-[#ff4539] focus:outline-none"
                   value={userForm.role}
                   onChange={(e) => handleChange('role', e.target.value as UserRole)}
                 >
@@ -513,7 +526,7 @@ function UsersPage() {
                 <span className="flex items-center gap-2 rounded-lg border border-base-200 px-3 py-2">
                 <input
                   type="checkbox"
-                  className="checkbox checkbox-primary"
+                  className="checkbox checkbox-error focus:outline-none focus:ring-2 focus:ring-[#ff4539]/20"
                   checked={userForm.is_active}
                   onChange={(e) => handleChange('is_active', e.target.checked)}
                 />
@@ -544,7 +557,7 @@ function UsersPage() {
                     <div className="flex-1">
                       <input
                         type="file"
-                        className="file-input w-full"
+                        className="file-input w-full focus:border-[#ff4539] focus:outline-none"
                         accept="image/jpeg,image/png,image/webp"
                         onChange={handleAvatarChange}
                       />

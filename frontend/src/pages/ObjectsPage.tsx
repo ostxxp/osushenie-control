@@ -1,11 +1,21 @@
 import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { DatePickerInput, formatDateInputValue } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
 import type { ConstructionObject, User } from '@/types'
 import { AuthContext } from '@services/auth'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
+
+const getTodayDateValue = (): string => {
+  const today = new Date()
+  return [
+    String(today.getFullYear()).padStart(4, '0'),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-')
+}
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -67,13 +77,16 @@ function ObjectsPage() {
   const [formError, setFormError] = useState('')
   const [showCreateObject, setShowCreateObject] = useState(false)
   const [creating, setCreating] = useState(false)
+  const todayDateValue = getTodayDateValue()
   const [newObject, setNewObject] = useState({
     name: '',
     object_type: '',
     address: '',
-    start_date: new Date().toISOString().slice(0, 10),
+    start_date: todayDateValue,
     end_date: '',
   })
+  const [startDateInput, setStartDateInput] = useState(() => formatDateInputValue(todayDateValue))
+  const [endDateInput, setEndDateInput] = useState('')
   const [users, setUsers] = useState<User[]>([])
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<number[]>([])
   const [responsibleUserId, setResponsibleUserId] = useState('')
@@ -86,14 +99,16 @@ function ObjectsPage() {
 
   const filteredObjects = useMemo(
     () =>
-      objects.filter((objectItem) => {
-        const query = search.toLowerCase()
-        return (
-          objectItem.name.toLowerCase().includes(query) ||
-          objectItem.address.toLowerCase().includes(query) ||
-          (objectItem.is_active ? 'активен' : 'неактивен').includes(query)
-        )
-      }),
+      objects
+        .filter((objectItem) => {
+          const query = search.toLowerCase()
+          return (
+            objectItem.name.toLowerCase().includes(query) ||
+            objectItem.address.toLowerCase().includes(query) ||
+            (objectItem.is_active ? 'активен' : 'неактивен').includes(query)
+          )
+        })
+        .sort((first, second) => second.id - first.id),
     [search, objects],
   )
 
@@ -269,9 +284,11 @@ function ObjectsPage() {
         name: '',
         object_type: '',
         address: '',
-        start_date: new Date().toISOString().slice(0, 10),
+        start_date: todayDateValue,
         end_date: '',
       })
+      setStartDateInput(formatDateInputValue(todayDateValue))
+      setEndDateInput('')
     } catch (err: unknown) {
       setFormError(getErrorMessage(err, 'Ошибка создания объекта'))
       console.error(err)
@@ -319,7 +336,7 @@ function ObjectsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Поиск по объектам..."
-                className="w-full rounded-lg border border-base-300 bg-white px-10 py-2 text-slate-900 outline-none transition-colors focus:border-primary focus:ring focus:ring-primary/20 placeholder:text-gray-400"
+                className="w-full rounded-lg border border-base-300 bg-white px-10 py-2 text-slate-900 outline-none transition-colors focus:border-[#ff4539] focus:ring focus:ring-[#ff4539]/20 placeholder:text-gray-400"
                 aria-label="Поиск по объектам"
               />
               {search && (
@@ -361,33 +378,40 @@ function ObjectsPage() {
         </div>
 
         <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
-          <table className="min-w-[760px] text-left">
+          <table className="w-full min-w-[900px] table-fixed text-left">
+            <colgroup>
+              <col className="w-[25%]" />
+              <col className="w-[30%]" />
+              <col className="w-[13%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <thead className="bg-base-200">
               <tr>
-                <th className="px-4 py-3">Название объекта</th>
-                <th className="px-4 py-3">Адрес</th>
-                <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3">Начало работ</th>
-                <th className="px-4 py-3">Сдача по плану</th>
+                <th className="px-5 py-3">Название объекта</th>
+                <th className="px-5 py-3">Адрес</th>
+                <th className="px-5 py-3">Статус</th>
+                <th className="px-5 py-3">Начало работ</th>
+                <th className="px-5 py-3">Сдача по плану</th>
               </tr>
             </thead>
             <tbody>
               {filteredObjects.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-base-content/70">
+                  <td colSpan={5} className="px-5 py-6 text-center text-base-content/70">
                     Объектов не найдено.
                   </td>
                 </tr>
               ) : (
                 filteredObjects.map((objectItem) => (
-                  <tr key={objectItem.id} className="border-t border-base-200 hover:bg-base-200">
-                    <td className="px-4 py-3 font-medium">
+                  <tr key={objectItem.id} className="border-t border-base-200 align-middle hover:bg-base-200">
+                    <td className="break-words px-5 py-3 font-medium">
                       <Link to={`/objects/${objectItem.id}`} className="text-primary hover:underline">
                         {objectItem.name}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">{objectItem.address}</td>
-                    <td className="px-4 py-3">
+                    <td className="break-words px-5 py-3">{objectItem.address}</td>
+                    <td className="px-5 py-3">
                       <span
                         className={`badge border ${
                           objectItem.is_active
@@ -398,8 +422,8 @@ function ObjectsPage() {
                         {objectItem.is_active ? 'Активен' : 'Не активен'}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{formatDateRu(objectItem.start_date)}</td>
-                    <td className="px-4 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
+                    <td className="whitespace-nowrap px-5 py-3">{formatDateRu(objectItem.start_date)}</td>
+                    <td className="whitespace-nowrap px-5 py-3">{objectItem.end_date ? formatDateRu(objectItem.end_date) : '-'}</td>
                   </tr>
                 ))
               )}
@@ -433,7 +457,7 @@ function ObjectsPage() {
                   <label className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Название *</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       placeholder="Например: ЖК Северный, корпус 2"
                       value={newObject.name}
                       onChange={(e) => handleChange('name', e.target.value)}
@@ -443,7 +467,7 @@ function ObjectsPage() {
                   <label className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Адрес *</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       placeholder="Город, улица, дом"
                       value={newObject.address}
                       onChange={(e) => handleChange('address', e.target.value)}
@@ -453,41 +477,51 @@ function ObjectsPage() {
                   <label className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Тип объекта</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       placeholder="Например: квартира, дом, офис"
                       value={newObject.object_type}
                       onChange={(e) => handleChange('object_type', e.target.value)}
                     />
                   </label>
 
-                  <label className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2">
                     <span className="text-sm font-medium">Начало объекта</span>
-                    <input
-                      type="date"
-                      className="input w-full"
+                    <DatePickerInput
                       value={newObject.start_date}
-                      min={new Date().toISOString().slice(0, 10)}
-                      onChange={(e) => {
-                        const newStart = e.target.value
+                      inputValue={startDateInput}
+                      placeholder="Дата начала"
+                      ariaLabel="Дата начала объекта"
+                      onChange={(newStart, inputValue) => {
+                        setStartDateInput(inputValue)
                         setNewObject((prev) => ({
                           ...prev,
                           start_date: newStart,
-                          end_date: prev.end_date && prev.end_date < newStart ? newStart : prev.end_date,
+                          end_date: newStart && prev.end_date && prev.end_date < newStart
+                            ? newStart
+                            : prev.end_date,
                         }))
+
+                        if (newStart && newObject.end_date && newObject.end_date < newStart) {
+                          setEndDateInput(formatDateInputValue(newStart))
+                        }
                       }}
                     />
-                  </label>
+                  </div>
 
-                  <label className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2">
                     <span className="text-sm font-medium">Сдача объекта</span>
-                    <input
-                      type="date"
-                      className="input w-full"
+                    <DatePickerInput
                       value={newObject.end_date}
+                      inputValue={endDateInput}
                       min={newObject.start_date}
-                      onChange={(e) => handleChange('end_date', e.target.value)}
+                      placeholder="Дата сдачи"
+                      ariaLabel="Дата сдачи объекта"
+                      onChange={(value, inputValue) => {
+                        handleChange('end_date', value)
+                        setEndDateInput(inputValue)
+                      }}
                     />
-                  </label>
+                  </div>
 
                   <div className="flex flex-col gap-2 sm:col-span-2">
                     <span className="text-sm font-medium">Фотографии объекта</span>
@@ -548,7 +582,7 @@ function ObjectsPage() {
                   <span className="text-sm font-medium">Ответственный</span>
                   <div className="relative">
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       placeholder="Поиск по имени..."
                       value={responsibleSearch}
                       onChange={(e) => setResponsibleSearch(e.target.value)}
@@ -608,7 +642,7 @@ function ObjectsPage() {
                   <p className="text-sm font-medium">Дополнительные сотрудники</p>
                   <div className="relative">
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       placeholder="Поиск по имени..."
                       value={workerSearch}
                       onChange={(e) => setWorkerSearch(e.target.value)}
@@ -675,9 +709,11 @@ function ObjectsPage() {
                     name: '',
                     object_type: '',
                     address: '',
-                    start_date: new Date().toISOString().slice(0, 10),
+                    start_date: todayDateValue,
                     end_date: '',
                   })
+                  setStartDateInput(formatDateInputValue(todayDateValue))
+                  setEndDateInput('')
                   setWorkerSearch('')
                   setResponsibleDropdownOpen(false)
                   setWorkerDropdownOpen(false)

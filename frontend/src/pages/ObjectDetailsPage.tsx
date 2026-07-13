@@ -1,9 +1,10 @@
-import { useContext, useEffect, useState, useMemo, useRef, type ChangeEvent } from 'react'
+import { useContext, useEffect, useState, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
+import { DatePickerInput, formatDateInputValue } from '@/components'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
-import { calculateLogicalTaskStats, formatApiError, formatDateRu, formatTaskCount } from '@/utils'
-import type { ConstructionObject, ObjectTaskTree, User } from '@/types'
+import { formatApiError, formatDateRu, formatTaskCount } from '@/utils'
+import type { ConstructionObject, ObjectTaskStats, User } from '@/types'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
@@ -18,7 +19,7 @@ function ObjectDetailsPage() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
-  const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
+  const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
   const [progress, setProgress] = useState<number>(0)
   const [overdueCount, setOverdueCount] = useState(0)
   const [employees, setEmployees] = useState<User[]>([])
@@ -39,6 +40,8 @@ function ObjectDetailsPage() {
     end_date: '',
     responsible_user_id: '',
   })
+  const [editStartDateInput, setEditStartDateInput] = useState('')
+  const [editEndDateInput, setEditEndDateInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [objectPhotos, setObjectPhotos] = useState<Array<{ id: number; name: string; uploadedById: number | null; url: string }>>([])
@@ -53,9 +56,9 @@ function ObjectDetailsPage() {
     const fetchData = async () => {
       if (!id) return
       try {
-        const [objData, tasksData] = await Promise.all([
+        const [objData, taskStats] = await Promise.all([
           objectApi.getById(Number(id)),
-          objectApi.getFullTasksTree(Number(id)),
+          objectApi.getTaskStats(Number(id)),
         ])
         setObjectItem(objData)
         setObjectType(localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '')
@@ -68,14 +71,13 @@ function ObjectDetailsPage() {
           end_date: toDateInputValue(objData.end_date),
           responsible_user_id: '',
         })
-        setTasks(tasksData)
+        setEditStartDateInput(formatDateInputValue(toDateInputValue(objData.start_date)))
+        setEditEndDateInput(formatDateInputValue(toDateInputValue(objData.end_date)))
+        setStats(taskStats)
         try {
-          const [progressValue, overdueValue] = await Promise.all([
-            objectApi.getProgress(Number(id)),
-            objectApi.getOverdueCount(Number(id)),
-          ])
+          const progressValue = await objectApi.getProgress(Number(id))
           setProgress(progressValue)
-          setOverdueCount(overdueValue)
+          setOverdueCount(taskStats.overdue)
         } catch (e) {
           console.warn('Failed to load object progress', e)
           setProgress(0)
@@ -220,7 +222,6 @@ function ObjectDetailsPage() {
     }
   }, [activePhotoIndex, objectPhotos.length])
 
-  const stats = useMemo(() => calculateLogicalTaskStats(tasks), [tasks])
   const canEditObject = userRole === 'admin'
   const currentUser = authService.getCurrentUser()
   const progressLabel =
@@ -246,6 +247,8 @@ function ObjectDetailsPage() {
       end_date: toDateInputValue(objectItem.end_date),
       responsible_user_id: responsibleUsers[0]?.id.toString() || '',
     })
+    setEditStartDateInput(formatDateInputValue(toDateInputValue(objectItem.start_date)))
+    setEditEndDateInput(formatDateInputValue(toDateInputValue(objectItem.end_date)))
     setFormError('')
   }
 
@@ -444,7 +447,7 @@ function ObjectDetailsPage() {
               К списку объектов
             </button>
 
-            <div className="mb-5 flex min-w-0 items-center gap-2">
+            <div className="mb-5 flex min-w-0 flex-wrap items-start gap-2">
               {isEditing ? (
                 <input
                   className="input min-h-0 w-full max-w-2xl rounded-xl border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-950"
@@ -459,13 +462,13 @@ function ObjectDetailsPage() {
               )}
 
               {!isEditing && !objectItem.is_active && (
-                <span className="badge h-auto shrink-0 border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                <span className="badge order-2 h-auto max-w-full border border-amber-200 bg-amber-50 px-3 py-1 text-center text-amber-700 sm:shrink-0">
                   Объект неактивен
                 </span>
               )}
 
               {canEditObject && !isEditing && (
-                <div ref={actionsMenuRef} className="relative">
+                <div ref={actionsMenuRef} className="relative order-1 shrink-0">
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm min-h-0 h-9 w-9 rounded-xl border border-slate-200 bg-white p-0 text-slate-700 shadow-sm hover:bg-slate-50"
@@ -478,7 +481,7 @@ function ObjectDetailsPage() {
                     </svg>
                   </button>
                   {actionsOpen && (
-                    <div className="absolute left-0 z-20 mt-2 w-44 rounded-xl border border-slate-100 bg-white p-2 shadow-[0_14px_32px_rgba(15,23,42,0.14)]">
+                    <div className="absolute right-0 z-20 mt-2 w-48 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-100 bg-white p-2 shadow-[0_14px_32px_rgba(15,23,42,0.14)] sm:left-0 sm:right-auto">
                       <button
                         type="button"
                         className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-slate-800 transition hover:bg-slate-50"
@@ -532,7 +535,7 @@ function ObjectDetailsPage() {
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Адрес</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       value={editForm.address}
                       onChange={(e) => updateEditForm('address', e.target.value)}
                     />
@@ -540,7 +543,7 @@ function ObjectDetailsPage() {
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Тип объекта</span>
                     <input
-                      className="input w-full"
+                      className="input w-full focus:border-[#ff4539] focus:outline-none"
                       value={editForm.object_type}
                       onChange={(e) => updateEditForm('object_type', e.target.value)}
                       placeholder="Например: квартира, дом, офис"
@@ -549,7 +552,7 @@ function ObjectDetailsPage() {
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Ответственный</span>
                     <select
-                      className="select w-full"
+                      className="select w-full focus:border-[#ff4539] focus:outline-none"
                       value={editForm.responsible_user_id}
                       onChange={(e) => updateEditForm('responsible_user_id', e.target.value)}
                     >
@@ -572,36 +575,51 @@ function ObjectDetailsPage() {
                       </span>
                     )}
                   </label>
-                  <label className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Начало работ</span>
-                    <input
-                      type="date"
-                      className="input w-full"
+                    <DatePickerInput
                       value={editForm.start_date}
-                      onChange={(e) => {
-                        const nextStartDate = e.target.value
+                      inputValue={editStartDateInput}
+                      placeholder="Дата начала"
+                      ariaLabel="Дата начала работ"
+                      onChange={(nextStartDate, inputValue) => {
+                        setEditStartDateInput(inputValue)
                         setEditForm((prev) => ({
                           ...prev,
                           start_date: nextStartDate,
-                          end_date: prev.end_date && prev.end_date < nextStartDate ? nextStartDate : prev.end_date,
+                          end_date: nextStartDate && prev.end_date && prev.end_date < nextStartDate
+                            ? nextStartDate
+                            : prev.end_date,
                         }))
+
+                        if (
+                          nextStartDate
+                          && editForm.end_date
+                          && editForm.end_date < nextStartDate
+                        ) {
+                          setEditEndDateInput(formatDateInputValue(nextStartDate))
+                        }
                       }}
                     />
-                  </label>
-                  <label className="flex flex-col gap-2">
+                  </div>
+                  <div className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Сдача объекта</span>
-                    <input
-                      type="date"
-                      className="input w-full"
+                    <DatePickerInput
                       value={editForm.end_date}
+                      inputValue={editEndDateInput}
                       min={editForm.start_date}
-                      onChange={(e) => updateEditForm('end_date', e.target.value)}
+                      placeholder="Дата сдачи"
+                      ariaLabel="Дата сдачи объекта"
+                      onChange={(value, inputValue) => {
+                        updateEditForm('end_date', value)
+                        setEditEndDateInput(inputValue)
+                      }}
                     />
-                  </label>
-                  <label className="flex items-center gap-3 rounded-2xl border border-base-200 bg-base-50 px-4 py-3 md:col-span-2">
+                  </div>
+                  <label className="flex items-center gap-3 py-1 md:col-span-2">
                     <input
                       type="checkbox"
-                      className="toggle toggle-primary"
+                      className="toggle toggle-error focus:outline-none focus:ring-2 focus:ring-[#ff4539]/20"
                       checked={editForm.is_active}
                       onChange={(e) => updateEditForm('is_active', e.target.checked)}
                     />
@@ -654,21 +672,21 @@ function ObjectDetailsPage() {
             )}
           </div>
 
-          <div className="flex min-h-[132px] flex-col items-center justify-center rounded-2xl border border-slate-200/70 bg-slate-50/40 px-6 py-5">
+          <div className="flex min-h-[132px] flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
               Прогресс
             </div>
-            <div className="text-5xl font-bold tabular-nums leading-none text-primary">
+            <div className="text-5xl font-bold tabular-nums leading-none text-slate-900">
               {progress}%
             </div>
-            <div className="mt-4 h-px w-full bg-white shadow-[0_1px_0_rgba(15,23,42,0.06)]" />
-            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-4 h-px w-full bg-slate-100" />
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
+                className="h-full rounded-full bg-[#ff4539] transition-all duration-700 ease-out"
                 style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
               />
             </div>
-            <div className="mt-3 text-xs font-medium text-slate-400">
+            <div className="mt-3 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
               {progressLabel}
             </div>
           </div>
@@ -676,7 +694,18 @@ function ObjectDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Link to={`/objects/${id}/tasks`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <div
+          className="cursor-pointer rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm transition hover:border-slate-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30"
+          role="link"
+          tabIndex={0}
+          onClick={() => navigate(`/objects/${id}/tasks`)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              navigate(`/objects/${id}/tasks`)
+            }
+          }}
+        >
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
             <div>
               <div className="flex items-center justify-between gap-4 mb-2">
@@ -688,27 +717,44 @@ function ObjectDetailsPage() {
               <div className="text-sm text-base-content/70">всего</div>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
+            <div className="space-y-2" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+              <Link
+                to={`/objects/${id}/tasks?status=done`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              >
                 <div className="w-3 h-3 rounded-full bg-green-500"></div>
                 <span className="text-sm text-base-content/80 min-w-[100px]">Завершено</span>
                 <span className="font-semibold tabular-nums">{stats.done}</span>
-              </div>
-              <div className="flex items-center gap-3">
+              </Link>
+              <Link
+                to={`/objects/${id}/tasks?status=in_progress`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                <span className="text-sm text-base-content/80 min-w-[100px]">В работе</span>
+                <span className="font-semibold tabular-nums">{stats.inProgress}</span>
+              </Link>
+              <Link
+                to={`/objects/${id}/tasks?status=todo`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              >
                 <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                 <span className="text-sm text-base-content/80 min-w-[100px]">К выполнению</span>
                 <span className="font-semibold tabular-nums">{stats.todo}</span>
-              </div>
-              <div className="flex items-center gap-3">
+              </Link>
+              <Link
+                to={`/objects/${id}/tasks?status=overdue`}
+                className="flex items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+              >
                 <div className="w-3 h-3 rounded-full bg-red-500"></div>
                 <span className="text-sm text-base-content/80 min-w-[100px]">Просрочено</span>
                 <span className="font-semibold tabular-nums">{overdueCount}</span>
-              </div>
+              </Link>
             </div>
           </div>
-        </Link>
+        </div>
 
-        <Link to={`/objects/${id}/employees`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <Link to={`/objects/${id}/employees`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-lg font-semibold mb-2 inline-flex">
@@ -934,7 +980,7 @@ function ObjectDetailsPage() {
 
       {activityConfirmationOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="activity-confirmation-title"
@@ -947,7 +993,7 @@ function ObjectDetailsPage() {
             }}
             aria-label="Закрыть окно подтверждения"
           />
-          <div className="relative w-full max-w-md rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.24)]">
+          <div className="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_70px_rgba(15,23,42,0.24)] sm:rounded-[1.75rem] sm:p-6">
             <div
               className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${
                 objectItem.is_active
@@ -958,7 +1004,7 @@ function ObjectDetailsPage() {
             >
               <span className="text-2xl">{objectItem.is_active ? '!' : '✓'}</span>
             </div>
-            <h2 id="activity-confirmation-title" className="text-xl font-semibold text-slate-950">
+            <h2 id="activity-confirmation-title" className="break-words text-lg font-semibold text-slate-950 sm:text-xl">
               {objectItem.is_active ? 'Деактивировать объект?' : 'Активировать объект?'}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -966,10 +1012,10 @@ function ObjectDetailsPage() {
                 ? `Объект «${objectItem.name}» станет неактивным и будет исключён из текущей работы.`
                 : `Объект «${objectItem.name}» снова станет активным и вернётся в работу.`}
             </p>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 type="button"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={() => setActivityConfirmationOpen(false)}
                 disabled={statusUpdating}
               >
@@ -977,7 +1023,7 @@ function ObjectDetailsPage() {
               </button>
               <button
                 type="button"
-                className={`rounded-xl px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                className={`w-full whitespace-normal rounded-xl px-4 py-2 text-center text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
                   objectItem.is_active
                     ? 'bg-red-600 hover:bg-red-700'
                     : 'bg-emerald-600 hover:bg-emerald-700'

@@ -1,6 +1,7 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
+import { DatePickerInput } from '@/components'
+import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
 import type { NotificationLog } from '@/types'
@@ -32,64 +33,6 @@ const formatDateTime = (value: string | null): string => {
   }).format(date)
 }
 
-const formatDateInputLabel = (value: string): string => {
-  if (!value) return 'Дата события'
-
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return 'Дата события'
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date)
-}
-
-const normalizeDateParts = (year: number, month: number, day: number): string => {
-  const date = new Date(year, month - 1, day)
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return ''
-  }
-
-  return [
-    String(year).padStart(4, '0'),
-    String(month).padStart(2, '0'),
-    String(day).padStart(2, '0'),
-  ].join('-')
-}
-
-const parseDateFilterInput = (value: string): string => {
-  const trimmed = value.trim()
-
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
-  if (isoMatch) {
-    return normalizeDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))
-  }
-
-  const ruMatch = trimmed.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/)
-  if (ruMatch) {
-    return normalizeDateParts(Number(ruMatch[3]), Number(ruMatch[2]), Number(ruMatch[1]))
-  }
-
-  return ''
-}
-
-const formatDateTextInput = (value: string): string => {
-  const digits = value.replace(/\D/g, '').slice(0, 8)
-  const parts = [
-    digits.slice(0, 2),
-    digits.slice(2, 4),
-    digits.slice(4, 8),
-  ].filter(Boolean)
-
-  return parts.join('.')
-}
-
 function NotificationsPage() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
@@ -102,12 +45,13 @@ function NotificationsPage() {
   const [objectFilter, setObjectFilter] = useState('')
   const [objectSearch, setObjectSearch] = useState('')
   const [objectDropdownOpen, setObjectDropdownOpen] = useState(false)
-  const [dateFilter, setDateFilter] = useState('')
-  const [dateSearch, setDateSearch] = useState('')
+  const [dateFromFilter, setDateFromFilter] = useState('')
+  const [dateFromSearch, setDateFromSearch] = useState('')
+  const [dateToFilter, setDateToFilter] = useState('')
+  const [dateToSearch, setDateToSearch] = useState('')
   const [eventSearch, setEventSearch] = useState('')
   const [objectNames, setObjectNames] = useState<Record<number, string>>({})
   const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>({})
-  const datePickerRef = useRef<HTMLInputElement>(null)
 
   const canViewNotifications = userRole === 'admin' || userRole === 'chief_engineer'
 
@@ -143,6 +87,9 @@ function NotificationsPage() {
 
     let cancelled = false
     const createdUrls: string[] = []
+    setActorAvatarUrls(Object.fromEntries(
+      actorOptions.map((actor) => [actor.id, getStoredAvatarUrl(actor.id)]).filter(([, url]) => Boolean(url)),
+    ))
 
     const loadActorAvatars = async () => {
       const entries = await Promise.all(
@@ -231,7 +178,17 @@ function NotificationsPage() {
         return false
       }
 
-      if (dateFilter && toDateInputValue(notification.created_at) !== dateFilter) {
+      const notificationDate = toDateInputValue(notification.created_at)
+
+      if (dateFromFilter && !dateToFilter && notificationDate !== dateFromFilter) {
+        return false
+      }
+
+      if (dateFromFilter && (!notificationDate || notificationDate < dateFromFilter)) {
+        return false
+      }
+
+      if (dateToFilter && (!notificationDate || notificationDate > dateToFilter)) {
         return false
       }
 
@@ -246,9 +203,9 @@ function NotificationsPage() {
 
       return searchableText.includes(query)
     })
-  }, [actorFilter, actorSearch, dateFilter, eventSearch, notifications, objectFilter, objectNames, objectSearch])
+  }, [actorFilter, actorSearch, dateFromFilter, dateToFilter, eventSearch, notifications, objectFilter, objectNames, objectSearch])
 
-  const hasActiveFilters = actorSearch.trim() !== '' || actorFilter !== '' || objectSearch.trim() !== '' || objectFilter !== '' || dateSearch.trim() !== '' || dateFilter !== '' || eventSearch.trim() !== ''
+  const hasActiveFilters = actorSearch.trim() !== '' || actorFilter !== '' || objectSearch.trim() !== '' || objectFilter !== '' || dateFromSearch.trim() !== '' || dateFromFilter !== '' || dateToSearch.trim() !== '' || dateToFilter !== '' || eventSearch.trim() !== ''
 
   const clearFilters = () => {
     setActorFilter('')
@@ -257,20 +214,11 @@ function NotificationsPage() {
     setObjectFilter('')
     setObjectSearch('')
     setObjectDropdownOpen(false)
-    setDateFilter('')
-    setDateSearch('')
+    setDateFromFilter('')
+    setDateFromSearch('')
+    setDateToFilter('')
+    setDateToSearch('')
     setEventSearch('')
-  }
-
-  const openDatePicker = () => {
-    const picker = datePickerRef.current
-    if (!picker) return
-
-    if (picker.showPicker) {
-      picker.showPicker()
-    } else {
-      picker.click()
-    }
   }
 
   const fetchNotifications = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -344,15 +292,15 @@ function NotificationsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="h-28 animate-pulse rounded-[2rem] bg-base-200" />
-        <div className="space-y-3 rounded-[2rem] border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div className="space-y-3">
+        <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
+        <div className="space-y-2 rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
           <div className="h-5 w-48 animate-pulse rounded bg-base-200" />
           <div className="h-4 w-80 animate-pulse rounded bg-base-200" />
-          <div className="space-y-3 pt-4">
-            <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
-            <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
-            <div className="h-20 animate-pulse rounded-2xl bg-base-200" />
+          <div className="space-y-2 pt-3">
+            <div className="h-16 animate-pulse rounded-xl bg-base-200" />
+            <div className="h-16 animate-pulse rounded-xl bg-base-200" />
+            <div className="h-16 animate-pulse rounded-xl bg-base-200" />
           </div>
         </div>
       </div>
@@ -360,19 +308,19 @@ function NotificationsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[2rem] border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm sm:p-4">
         {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        <div className={`${error ? 'mt-5 ' : ''}grid gap-3 lg:grid-cols-[minmax(170px,1fr)_minmax(170px,1fr)_minmax(170px,0.9fr)_minmax(220px,1.3fr)_auto] lg:items-center`}>
+        <div className={`${error ? 'mt-4 ' : ''}grid gap-2 lg:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(260px,1.45fr)_minmax(190px,1.15fr)_auto] lg:items-center`}>
           <div className="relative">
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
+              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={actorSearch}
               onChange={(event) => {
                 setActorSearch(event.target.value)
@@ -418,7 +366,7 @@ function NotificationsPage() {
           <div className="relative">
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
+              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={objectSearch}
               onChange={(event) => {
                 setObjectSearch(event.target.value)
@@ -461,53 +409,28 @@ function NotificationsPage() {
             )}
           </div>
 
-          <div className="relative" onClick={openDatePicker}>
-            <input
-              type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white pr-10 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
-              value={dateSearch}
-              onChange={(event) => {
-                const nextValue = formatDateTextInput(event.target.value)
-                setDateSearch(nextValue)
-                setDateFilter(parseDateFilterInput(nextValue))
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <DatePickerInput
+              value={dateFromFilter}
+              inputValue={dateFromSearch}
+              onChange={(value, inputValue) => {
+                setDateFromFilter(value)
+                setDateFromSearch(inputValue)
               }}
-              onClick={(event) => {
-                event.stopPropagation()
-                openDatePicker()
-              }}
-              placeholder="Дата события"
-              aria-label="Дата события"
-              inputMode="numeric"
-              maxLength={10}
+              max={dateToFilter || undefined}
+              placeholder="Дата"
+              ariaLabel="Дата"
             />
-            <button
-              type="button"
-              className="absolute inset-y-0 right-0 flex items-center rounded-r-lg px-3 text-base-content/50 transition hover:text-base-content"
-              onClick={(event) => {
-                event.stopPropagation()
-                openDatePicker()
+            <DatePickerInput
+              value={dateToFilter}
+              inputValue={dateToSearch}
+              onChange={(value, inputValue) => {
+                setDateToFilter(value)
+                setDateToSearch(inputValue)
               }}
-              aria-label="Открыть календарь"
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M8 2V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M16 2V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M3.5 9.09H20.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M18 4H6C4.62 4 3.5 5.12 3.5 6.5V18C3.5 19.38 4.62 20.5 6 20.5H18C19.38 20.5 20.5 19.38 20.5 18V6.5C20.5 5.12 19.38 4 18 4Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <input
-              ref={datePickerRef}
-              type="date"
-              className="pointer-events-none absolute bottom-0 right-0 h-px w-px opacity-0"
-              value={dateFilter}
-              onChange={(event) => {
-                const nextDate = event.target.value
-                setDateFilter(nextDate)
-                setDateSearch(formatDateInputLabel(nextDate))
-              }}
-              tabIndex={-1}
-              aria-label="Дата события"
+              min={dateFromFilter || undefined}
+              placeholder="Дата по"
+              ariaLabel="Дата по"
             />
           </div>
 
@@ -520,7 +443,7 @@ function NotificationsPage() {
             </span>
             <input
               type="text"
-              className="input min-h-0 w-full rounded-lg border-base-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-primary focus:outline-none"
+              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
               value={eventSearch}
               onChange={(event) => setEventSearch(event.target.value)}
               placeholder="Поиск по событиям"
@@ -530,7 +453,7 @@ function NotificationsPage() {
 
           <button
             type="button"
-            className="w-full rounded-2xl bg-[#ff4539] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a] lg:w-auto"
+            className="h-10 w-full rounded-lg bg-[#ff4539] px-4 text-sm font-semibold text-white transition hover:bg-[#cc372e] disabled:cursor-not-allowed disabled:bg-[#ff918a] lg:w-auto"
             onClick={clearFilters}
             disabled={!hasActiveFilters}
           >
@@ -538,9 +461,9 @@ function NotificationsPage() {
           </button>
         </div>
 
-        <div className="mt-6 space-y-3">
+        <div className="mt-4 space-y-2">
           {visibleNotifications.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-base-300 bg-base-50 p-10 text-center">
+            <div className="rounded-2xl border border-dashed border-base-300 bg-base-50 p-8 text-center">
               <div className="text-lg font-medium">Уведомлений нет</div>
               <div className="mt-1 text-sm text-base-content/60">
                 Здесь будут появляться события по задачам и объектам.
@@ -550,45 +473,39 @@ function NotificationsPage() {
             visibleNotifications.map((notification) => (
               <article
                 key={notification.receipt_id}
-                className="rounded-3xl border border-base-200 bg-base-100 p-5 transition-shadow hover:shadow-md"
+                className="rounded-xl border border-base-200 bg-base-100 px-4 py-3 transition-shadow hover:shadow-sm"
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-3">
-                    <p className="text-base leading-7 text-base-content">{notification.message}</p>
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-base-content/60">
-                      <span>Создано: {formatDateTime(notification.created_at)}</span>
-                      <span className="inline-flex items-center gap-2">
-                        <span>Действие сделал:</span>
-                        {actorAvatarUrls[notification.actor_user_id] ? (
-                          <span
-                            className="shrink-0 overflow-hidden rounded-full"
-                            style={{ width: 20, height: 20, minWidth: 20, maxWidth: 20 }}
-                          >
-                            <img
-                              src={actorAvatarUrls[notification.actor_user_id]}
-                              alt=""
-                              className="block object-cover"
-                              style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
-                            />
-                          </span>
-                        ) : (
-                          <span
-                            className="flex shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/60"
-                            style={{ width: 20, height: 20, minWidth: 20, maxWidth: 20 }}
-                            aria-hidden="true"
-                          >
-                            {(notification.actor_full_name || `#${notification.actor_user_id}`).trim().charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                        <span>{notification.actor_full_name || `#${notification.actor_user_id}`}</span>
-                      </span>
-                      <span>
-                        Объект:{' '}
-                        <Link to={`/objects/${notification.object_id}`} className="font-medium text-primary hover:underline">
-                          {objectNames[notification.object_id] || `#${notification.object_id}`}
-                        </Link>
-                      </span>
-                    </div>
+                <div className="space-y-2">
+                  <p className="text-sm leading-6 text-base-content">{notification.message}</p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-base-content/65">
+                    <Link to={`/objects/${notification.object_id}`} className="font-semibold text-primary hover:underline">
+                      {objectNames[notification.object_id] || `#${notification.object_id}`}
+                    </Link>
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      {actorAvatarUrls[notification.actor_user_id] ? (
+                        <span
+                          className="shrink-0 overflow-hidden rounded-full"
+                          style={{ width: 18, height: 18, minWidth: 18, maxWidth: 18 }}
+                        >
+                          <img
+                            src={actorAvatarUrls[notification.actor_user_id]}
+                            alt=""
+                            className="block object-cover"
+                            style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
+                          />
+                        </span>
+                      ) : (
+                        <span
+                          className="flex shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/60"
+                          style={{ width: 18, height: 18, minWidth: 18, maxWidth: 18 }}
+                          aria-hidden="true"
+                        >
+                          {(notification.actor_full_name || `#${notification.actor_user_id}`).trim().charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="truncate">{notification.actor_full_name || `#${notification.actor_user_id}`}</span>
+                    </span>
+                    <span>{formatDateTime(notification.created_at)}</span>
                   </div>
                 </div>
               </article>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
-import { photoApi, userApi } from '@services/api'
+import { getStoredAvatarUrl, photoApi, userApi } from '@services/api'
 import { authService } from '@services/auth'
 import { formatApiError } from '@/utils'
 
@@ -8,11 +8,11 @@ const maxAvatarSize = 5 * 1024 * 1024
 
 function SettingsPage() {
   const currentUser = authService.getCurrentUser()
-  const [avatarUrl, setAvatarUrl] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState(() => currentUser ? getStoredAvatarUrl(currentUser.id) : '')
   const [avatarVersion, setAvatarVersion] = useState(0)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('')
-  const [avatarLoading, setAvatarLoading] = useState(true)
+  const [avatarLoading, setAvatarLoading] = useState(() => !avatarUrl)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [avatarError, setAvatarError] = useState('')
   const [avatarSuccess, setAvatarSuccess] = useState('')
@@ -32,7 +32,7 @@ function SettingsPage() {
     let objectUrl = ''
 
     const loadAvatar = async () => {
-      setAvatarLoading(true)
+      setAvatarLoading(!getStoredAvatarUrl(currentUser.id))
       try {
         const avatar = await photoApi.getUserAvatar(currentUser.id)
         if (!avatar || cancelled) return
@@ -48,7 +48,9 @@ function SettingsPage() {
       }
     }
 
-    setAvatarUrl('')
+    const storedAvatar = getStoredAvatarUrl(currentUser.id)
+    setAvatarUrl(storedAvatar)
+    setAvatarLoading(!storedAvatar)
     loadAvatar()
 
     return () => {
@@ -185,7 +187,7 @@ function SettingsPage() {
             <div className="flex-1 space-y-3">
               <input
                 type="file"
-                className="file-input w-full"
+                className="file-input w-full focus:border-[#ff4539] focus:outline-none"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={handleAvatarChange}
                 disabled={avatarSaving}
@@ -224,7 +226,7 @@ function SettingsPage() {
               <span className="text-sm font-medium">Новый пароль</span>
               <input
                 type="password"
-                className="input w-full"
+                className="input w-full focus:border-[#ff4539] focus:outline-none"
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 placeholder="Минимум 8 символов"
@@ -235,7 +237,7 @@ function SettingsPage() {
               <span className="text-sm font-medium">Повторите новый пароль</span>
               <input
                 type="password"
-                className="input w-full"
+                className="input w-full focus:border-[#ff4539] focus:outline-none"
                 value={passwordConfirmation}
                 onChange={(event) => setPasswordConfirmation(event.target.value)}
                 placeholder="Введите пароль ещё раз"

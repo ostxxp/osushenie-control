@@ -50,6 +50,16 @@ svg {
   border-radius: 1rem;
 }
 
+.input,
+.select,
+.textarea,
+.file-input,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-radius: 1rem;
+}
+
 .task-tree-node {
   display: flex;
   flex-direction: column;
