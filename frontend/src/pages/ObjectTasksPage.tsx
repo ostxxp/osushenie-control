@@ -35,6 +35,13 @@ type TaskFormState = {
   deadlineInput: string
 }
 
+type LogicalTaskEntry = {
+  key: string
+  task: ObjectTaskTree
+  status: 'done' | 'in_progress' | 'todo'
+  overdue: boolean
+}
+
 const emptyTaskForm = (): TaskFormState => ({
   title: '',
   parentId: '',
@@ -73,6 +80,73 @@ const flattenTaskTree = (tasks: ObjectTaskTree[], depth = 0): FlatTaskOption[] =
     { task, depth },
     ...flattenTaskTree(task.children, depth + 1),
   ])
+
+const isBlockingStatus = (status: ObjectTaskStatus): boolean =>
+  status === 'skipped' || status === 'not_applicable'
+
+const buildLogicalTaskEntries = (roots: ObjectTaskTree[]): LogicalTaskEntry[] => {
+  const entries: LogicalTaskEntry[] = []
+  let sequence = 0
+  const isOverdue = (task: ObjectTaskTree) => (
+    Boolean(task.deadline) && new Date(task.deadline as string).getTime() < Date.now() && task.status !== 'done'
+  )
+  const add = (task: ObjectTaskTree, status: LogicalTaskEntry['status'], overdue = false) => {
+    entries.push({ key: `${task.id}-${sequence++}`, task, status, overdue })
+  }
+
+  const childrenAsDone = (parent: ObjectTaskTree) => {
+    if (parent.children.length === 2) {
+      add(parent, 'done')
+      parent.children.forEach(childrenAsDone)
+      return
+    }
+    parent.children.forEach(taskAsDone)
+  }
+  const taskAsDone = (task: ObjectTaskTree) => {
+    if (task.parent_id === null && task.children.length > 0) {
+      childrenAsDone(task)
+      return
+    }
+    add(task, 'done')
+    childrenAsDone(task)
+  }
+  const children = (parent: ObjectTaskTree) => {
+    if (parent.children.length === 2) {
+      const active = parent.children.filter((task) => !isBlockingStatus(task.status))
+      const representative = active.find((task) => task.status === 'done')
+        || active.find((task) => task.status === 'in_progress')
+        || active[0]
+        || parent
+      const status: LogicalTaskEntry['status'] = active.some((task) => task.status === 'done')
+        ? 'done'
+        : active.some((task) => task.status === 'in_progress')
+          ? 'in_progress'
+          : active.length === 0 ? 'done' : 'todo'
+      add(representative, status, status !== 'done' && parent.children.some(isOverdue))
+      parent.children.forEach((task) => {
+        if (isBlockingStatus(task.status)) childrenAsDone(task)
+        else children(task)
+      })
+      return
+    }
+    parent.children.forEach(taskEntry)
+  }
+  const taskEntry = (task: ObjectTaskTree) => {
+    if (isBlockingStatus(task.status)) {
+      taskAsDone(task)
+      return
+    }
+    if (task.parent_id === null && task.children.length > 0) {
+      children(task)
+      return
+    }
+    add(task, task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'in_progress' : 'todo', isOverdue(task))
+    children(task)
+  }
+
+  roots.forEach(taskEntry)
+  return entries
+}
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -455,9 +529,10 @@ function ObjectTasksPage() {
   const taskMatchesFilter = (task: ObjectTaskTree): boolean => {
     if (taskStatusFilter === 'all') return true
     if (taskStatusFilter === 'overdue') return overdueTaskIds.has(task.id)
-    if (taskStatusFilter === 'todo') {
-      return task.status !== 'done' && task.status !== 'in_progress'
+    if (taskStatusFilter === 'done') {
+      return task.status === 'done' || task.status === 'skipped' || task.status === 'not_applicable'
     }
+    if (taskStatusFilter === 'todo') return task.status === 'todo'
     return task.status === taskStatusFilter
   }
 
@@ -490,10 +565,10 @@ function ObjectTasksPage() {
 
   const filteredTaskList = useMemo(() => {
     const source = taskId ? tasks : allTasks
-    return flattenTaskTree(source)
-      .map(({ task }) => task)
-      .filter(taskMatchesFilter)
-  }, [allTasks, overdueTaskIds, taskId, taskStatusFilter, tasks])
+    return buildLogicalTaskEntries(source).filter((entry) => (
+      taskStatusFilter === 'overdue' ? entry.overdue : entry.status === taskStatusFilter
+    ))
+  }, [allTasks, taskId, taskStatusFilter, tasks])
 
   useLayoutEffect(() => {
     if (!location.hash || tasks.length === 0) return
@@ -669,22 +744,25 @@ function ObjectTasksPage() {
         ) : (
           <div className="overflow-hidden rounded-3xl border border-base-200 bg-base-100 shadow-sm">
             <ul className="divide-y divide-base-200">
-              {filteredTaskList.map((task) => {
-                const isDone = task.status === 'done'
-                const isOverdue = overdueTaskIds.has(task.id)
+              {filteredTaskList.map((entry) => {
+                const { task } = entry
+                const isDone = entry.status === 'done'
+                const isOverdue = entry.overdue
                 const sectionId = taskSectionIds.get(task.id)
                 const taskDestination = sectionId
                   ? `/objects/${objectItem.id}/tasks/${sectionId}?returnStatus=${taskStatusFilter}#task-${task.id}`
                   : `/objects/${objectItem.id}/tasks`
 
                 return (
-                  <li key={task.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <li key={entry.key} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <div className="flex min-w-0 items-start gap-3">
                       <span
                         className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
                         aria-label={isDone ? 'Задача выполнена' : 'Задача не выполнена'}
                       >
-                        <TaskStateIcon task={task} />
+                        {isDone && task.status !== 'done' ? (
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">✓</span>
+                        ) : <TaskStateIcon task={task} />}
                       </span>
                       <Link
                         to={taskDestination}
