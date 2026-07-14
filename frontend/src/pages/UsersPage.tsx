@@ -338,7 +338,7 @@ function UsersPage() {
       </div>
 
       <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 px-[calc(0.75rem+1px)] sm:flex-row sm:items-center sm:justify-between 2xl:px-[calc(1.25rem+1px)]">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
