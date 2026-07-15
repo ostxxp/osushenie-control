@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { authService } from '@services/auth'
 import type { UserRole } from '@/types'
 import logo from '../../photos/logo цветной горизонтальный.png'
-import heroImage from '../../photos/главная картинка.png'
+import heroImage from '../../photos/main picture.jpg'
 
 interface LoginPageProps {
   setIsAuthenticated: (value: boolean) => void
