@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -415,6 +416,44 @@ def _group_tasks_by_parent_id(tasks: list[ObjectTask]) -> dict[int | None, list[
     return children_by_parent_id
 
 
+def _get_scope_roots(
+    tasks: list[ObjectTask],
+    children_by_parent_id: dict[int | None, list[ObjectTask]],
+    root_task_id: int | None,
+) -> list[ObjectTask]:
+    if root_task_id is None:
+        return children_by_parent_id.get(None, [])
+
+    tasks_by_id = {task.id: task for task in tasks}
+    root = tasks_by_id.get(root_task_id)
+    if root is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Main task not found.",
+        )
+    return [root]
+
+
+def _collect_task_subtree(
+    root: ObjectTask,
+    children_by_parent_id: dict[int | None, list[ObjectTask]],
+    *,
+    include_root: bool,
+) -> list[ObjectTask]:
+    subtree = [root] if include_root else []
+
+    for child in children_by_parent_id.get(root.id, []):
+        subtree.extend(
+            _collect_task_subtree(
+                child,
+                children_by_parent_id,
+                include_root=True,
+            )
+        )
+
+    return subtree
+
+
 def _empty_task_stats() -> dict[str, int]:
     return {
         "total": 0,
@@ -430,6 +469,7 @@ def _is_task_overdue(task: ObjectTask) -> bool:
         task.deadline is not None
         and task.deadline < datetime.now(UTC)
         and task.status != ObjectTaskStatus.DONE
+        and task.status not in BLOCKING_STATUSES
     )
 
 
@@ -478,14 +518,17 @@ async def get_task_stats(
     db: AsyncSession,
     *,
     object_id: int,
+    root_task_id: int | None = None,
 ) -> dict[str, int]:
     tasks = await _list_active_object_tasks(db, object_id=object_id)
     children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    scope_root_ids = {task.id for task in scope_roots}
     stats = _empty_task_stats()
 
     def count_total_task(task: ObjectTask) -> int:
         children = children_by_parent_id.get(task.id, [])
-        if task.parent_id is None and children:
+        if task.id in scope_root_ids and children:
             return count_total_children(task)
         return 1 + count_total_children(task)
 
@@ -510,7 +553,7 @@ async def get_task_stats(
 
     def count_task_as_done(task: ObjectTask) -> None:
         children = children_by_parent_id.get(task.id, [])
-        if task.parent_id is None and children:
+        if task.id in scope_root_ids and children:
             count_children_as_done(task)
             return
 
@@ -537,7 +580,7 @@ async def get_task_stats(
             return
 
         children = children_by_parent_id.get(task.id, [])
-        if task.parent_id is None and children:
+        if task.id in scope_root_ids and children:
             count_children(task)
             return
 
@@ -563,22 +606,52 @@ async def get_task_stats(
 
     stats["total"] = sum(
         count_total_task(root)
-        for root in children_by_parent_id.get(None, [])
+        for root in scope_roots
     )
 
-    for root in children_by_parent_id.get(None, []):
+    for root in scope_roots:
         count_task(root)
 
     return stats
+
+
+async def list_done_object_tasks(
+    db: AsyncSession,
+    *,
+    object_id: int,
+    root_task_id: int | None = None,
+) -> list[ObjectTask]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    scoped_tasks: list[ObjectTask] = []
+
+    for root in scope_roots:
+        scoped_tasks.extend(
+            _collect_task_subtree(
+                root,
+                children_by_parent_id,
+                include_root=root_task_id is None,
+            )
+        )
+
+    return [
+        task
+        for task in scoped_tasks
+        if task.status == ObjectTaskStatus.DONE
+    ]
 
 
 async def list_logical_todo_object_tasks(
     db: AsyncSession,
     *,
     object_id: int,
+    root_task_id: int | None = None,
 ) -> list[ObjectTask]:
     tasks = await _list_active_object_tasks(db, object_id=object_id)
     children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    scope_root_ids = {task.id for task in scope_roots}
     todo_tasks: list[ObjectTask] = []
 
     def collect_task(task: ObjectTask) -> None:
@@ -586,7 +659,7 @@ async def list_logical_todo_object_tasks(
             return
 
         children = children_by_parent_id.get(task.id, [])
-        if task.parent_id is None and children:
+        if task.id in scope_root_ids and children:
             collect_children(task)
             return
 
@@ -624,10 +697,37 @@ async def list_logical_todo_object_tasks(
         for child in children:
             collect_task(child)
 
-    for root in children_by_parent_id.get(None, []):
+    for root in scope_roots:
         collect_task(root)
 
     return todo_tasks
+
+
+async def list_overdue_object_tasks(
+    db: AsyncSession,
+    *,
+    object_id: int,
+    root_task_id: int | None = None,
+) -> list[ObjectTask]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    scoped_tasks: list[ObjectTask] = []
+
+    for root in scope_roots:
+        scoped_tasks.extend(
+            _collect_task_subtree(
+                root,
+                children_by_parent_id,
+                include_root=root_task_id is None,
+            )
+        )
+
+    return [
+        task
+        for task in scoped_tasks
+        if _is_task_overdue(task)
+    ]
 
 
 async def deactivate_object_task(
@@ -724,8 +824,9 @@ async def get_progress(
     db: AsyncSession,
     *,
     object_id: int,
+    root_task_id: int | None = None,
 ):
-    stats = await get_task_stats(db, object_id=object_id)
+    stats = await get_task_stats(db, object_id=object_id, root_task_id=root_task_id)
     if stats["total"] == 0:
         return 0
 

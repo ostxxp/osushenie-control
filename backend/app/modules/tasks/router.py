@@ -1,6 +1,5 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from app.db.session import get_db_session
 from app.modules.objects.dependencies import get_object_or_404, user_can_access_object
@@ -28,6 +27,8 @@ from app.modules.tasks.service import (
     get_main_task_id,
     get_progress,
     get_task_stats,
+    list_done_object_tasks,
+    list_overdue_object_tasks,
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -97,10 +98,11 @@ async def create_task_for_object(
     dependencies=[Depends(user_can_access_object)]
 )
 async def get_object_progress(
+    main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> float:
-    return await get_progress(db, object_id=object.id)
+    return await get_progress(db, object_id=object.id, root_task_id=main_task_id)
 
 
 @router.get(
@@ -110,10 +112,11 @@ async def get_object_progress(
     dependencies=[Depends(user_can_access_object)]
 )
 async def get_object_task_stats(
+    main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict[str, int]:
-    return await get_task_stats(db, object_id=object.id)
+    return await get_task_stats(db, object_id=object.id, root_task_id=main_task_id)
 
 
 @router.get(
@@ -256,17 +259,15 @@ async def delete_task_for_object(
     dependencies=[Depends(user_can_access_object)]
 )
 async def get_done_tasks(
+    main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ObjectTask]:
-    tasks = await db.execute(
-        select(ObjectTask)
-        .where(
-            ObjectTask.object_id == object.id,
-            ObjectTask.status == ObjectTaskStatus.DONE
-        )
+    return await list_done_object_tasks(
+        db,
+        object_id=object.id,
+        root_task_id=main_task_id,
     )
-    return tasks.scalars().all()
 
 @router.get(
     "/{object_id}/tasks/todo",
@@ -275,10 +276,15 @@ async def get_done_tasks(
     dependencies=[Depends(user_can_access_object)]
 )
 async def get_todo_tasks(
+    main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ObjectTask]:
-    return await list_logical_todo_object_tasks(db, object_id=object.id)
+    return await list_logical_todo_object_tasks(
+        db,
+        object_id=object.id,
+        root_task_id=main_task_id,
+    )
 
 
 @router.get(
@@ -288,18 +294,15 @@ async def get_todo_tasks(
     dependencies=[Depends(user_can_access_object)]
 )
 async def get_overdue_tasks_for_object(
+    main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ObjectTask]:
-    tasks = await db.execute(
-        select(ObjectTask)
-        .where(
-            ObjectTask.object_id == object.id,
-            ObjectTask.status == ObjectTaskStatus.TODO,
-            ObjectTask.deadline < func.now()
-        )
+    return await list_overdue_object_tasks(
+        db,
+        object_id=object.id,
+        root_task_id=main_task_id,
     )
-    return tasks.scalars().all()
 
 
 @router.get(
@@ -309,15 +312,13 @@ async def get_overdue_tasks_for_object(
     dependencies=[Depends(user_can_access_object)]
 )
 async def get_overdue_tasks_count_for_object(
+    main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> int:
-    tasks = await db.execute(
-        select(func.count(ObjectTask.id))
-        .where(
-            ObjectTask.object_id == object.id,
-            ObjectTask.status == ObjectTaskStatus.TODO,
-            ObjectTask.deadline < func.now()
-        )
+    overdue_tasks = await list_overdue_object_tasks(
+        db,
+        object_id=object.id,
+        root_task_id=main_task_id,
     )
-    return tasks.scalar()
+    return len(overdue_tasks)
