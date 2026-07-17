@@ -553,9 +553,15 @@ def _empty_task_stats() -> dict[str, int]:
 
 
 def _is_task_overdue(task: ObjectTask) -> bool:
+    if task.deadline is None:
+        return False
+
+    deadline = task.deadline
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+
     return (
-        task.deadline is not None
-        and task.deadline < datetime.now(UTC)
+        deadline < datetime.now(UTC)
         and task.status != ObjectTaskStatus.DONE
         and task.status not in BLOCKING_STATUSES
     )
