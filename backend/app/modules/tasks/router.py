@@ -7,6 +7,7 @@ from app.modules.objects.models import ConstructionObject
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
     ObjectTaskCreate,
+    ObjectTaskListGroupRead,
     ObjectTaskRead,
     ObjectTaskStatsRead,
     ObjectTaskStatusUpdate,
@@ -27,6 +28,7 @@ from app.modules.tasks.service import (
     get_main_task_id,
     get_progress,
     get_task_stats,
+    group_object_tasks_by_main_task,
     list_done_object_tasks,
     list_overdue_object_tasks,
 )
@@ -254,7 +256,7 @@ async def delete_task_for_object(
 
 @router.get(
     "/{object_id}/tasks/done",
-    response_model=list[ObjectTaskRead],
+    response_model=list[ObjectTaskListGroupRead],
     summary="Get done tasks for object",
     dependencies=[Depends(user_can_access_object)]
 )
@@ -262,16 +264,22 @@ async def get_done_tasks(
     main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
-) -> list[ObjectTask]:
-    return await list_done_object_tasks(
+) -> list[dict]:
+    tasks = await list_done_object_tasks(
         db,
         object_id=object.id,
+        root_task_id=main_task_id,
+    )
+    return await group_object_tasks_by_main_task(
+        db,
+        object_id=object.id,
+        tasks=tasks,
         root_task_id=main_task_id,
     )
 
 @router.get(
     "/{object_id}/tasks/todo",
-    response_model=list[ObjectTaskRead],
+    response_model=list[ObjectTaskListGroupRead],
     summary="Get todo tasks for object",
     dependencies=[Depends(user_can_access_object)]
 )
@@ -279,17 +287,23 @@ async def get_todo_tasks(
     main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
-) -> list[ObjectTask]:
-    return await list_logical_todo_object_tasks(
+) -> list[dict]:
+    tasks = await list_logical_todo_object_tasks(
         db,
         object_id=object.id,
+        root_task_id=main_task_id,
+    )
+    return await group_object_tasks_by_main_task(
+        db,
+        object_id=object.id,
+        tasks=tasks,
         root_task_id=main_task_id,
     )
 
 
 @router.get(
     "/{object_id}/tasks/overdue",
-    response_model=list[ObjectTaskRead],
+    response_model=list[ObjectTaskListGroupRead],
     summary="Get overdue tasks for object",
     dependencies=[Depends(user_can_access_object)]
 )
@@ -297,10 +311,16 @@ async def get_overdue_tasks_for_object(
     main_task_id: int | None = Query(default=None),
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
-) -> list[ObjectTask]:
-    return await list_overdue_object_tasks(
+) -> list[dict]:
+    tasks = await list_overdue_object_tasks(
         db,
         object_id=object.id,
+        root_task_id=main_task_id,
+    )
+    return await group_object_tasks_by_main_task(
+        db,
+        object_id=object.id,
+        tasks=tasks,
         root_task_id=main_task_id,
     )
 

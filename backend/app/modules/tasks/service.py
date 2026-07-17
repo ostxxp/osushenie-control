@@ -454,6 +454,94 @@ def _collect_task_subtree(
     return subtree
 
 
+def _get_task_path(
+    task: ObjectTask,
+    tasks_by_id: dict[int, ObjectTask],
+) -> list[ObjectTask]:
+    path = [task]
+    parent_id = task.parent_id
+
+    while parent_id is not None:
+        parent = tasks_by_id.get(parent_id)
+        if parent is None:
+            break
+        path.append(parent)
+        parent_id = parent.parent_id
+
+    path.reverse()
+    return path
+
+
+def _serialize_task_list_item(
+    task: ObjectTask,
+    *,
+    tasks_by_id: dict[int, ObjectTask],
+    completed_by_map: dict[int, dict],
+) -> dict:
+    path = _get_task_path(task, tasks_by_id)
+    main_task = path[0]
+
+    return {
+        "id": task.id,
+        "object_id": task.object_id,
+        "parent_id": task.parent_id,
+        "template_id": task.template_id,
+        "title": task.title,
+        "depth": task.depth,
+        "sort_order": task.sort_order,
+        "children_mode": task.children_mode,
+        "status": task.status,
+        "is_active": task.is_active,
+        "deadline": task.deadline,
+        "completed_at": task.completed_at,
+        "completed_by_id": task.completed_by_id,
+        "completed_by": completed_by_map.get(task.completed_by_id),
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "main_task_id": main_task.id,
+        "main_task_title": main_task.title,
+        "path": [path_task.title for path_task in path],
+    }
+
+
+async def group_object_tasks_by_main_task(
+    db: AsyncSession,
+    *,
+    object_id: int,
+    tasks: list[ObjectTask],
+    root_task_id: int | None = None,
+) -> list[dict]:
+    all_tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(all_tasks)
+    scope_roots = _get_scope_roots(all_tasks, children_by_parent_id, root_task_id)
+    tasks_by_id = {task.id: task for task in all_tasks}
+    completed_by_map = await _build_completed_by_map(db, tasks)
+    items_by_main_task_id: dict[int, list[dict]] = {}
+
+    for task in sorted(tasks, key=lambda item: (item.depth, item.sort_order, item.id)):
+        item = _serialize_task_list_item(
+            task,
+            tasks_by_id=tasks_by_id,
+            completed_by_map=completed_by_map,
+        )
+        items_by_main_task_id.setdefault(item["main_task_id"], []).append(item)
+
+    groups = []
+    for root in scope_roots:
+        items = items_by_main_task_id.get(root.id, [])
+        if not items:
+            continue
+        groups.append(
+            {
+                "main_task_id": root.id,
+                "main_task_title": root.title,
+                "tasks": items,
+            }
+        )
+
+    return groups
+
+
 def _empty_task_stats() -> dict[str, int]:
     return {
         "total": 0,
