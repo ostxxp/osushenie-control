@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.modules.ai.schemas import AIChatMessage
 from app.modules.objects.models import ConstructionObject, ObjectToUser
+from app.modules.photos.models import Photo
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.service import get_task_stats
 from app.modules.users.models import User
@@ -35,6 +36,7 @@ SYSTEM_PROMPT = """
 - если пользователь спрашивает про прогресс, дай оценку "нормально / средне / плохо" и объясни ее по проценту выполнения, количеству задач к выполнению, просрочкам и распределению по объектам;
 - если пользователь явно просит сводку, отчет, таблицу или подробный разбор по всем объектам, тогда сначала дай общий итог, потом кратко по каждому объекту;
 - если пользователь спрашивает, кто выполнил больше всего задач, используй строки "Кто выполнил задачи на объекте" и "Общий рейтинг исполнителей";
+- если пользователь спрашивает, какие именно задачи выполнил человек, найди их в разделе "Подробные задачи объекта" по полям completed_by, completed_at и status=done;
 - не говори, что исполнителей нет, если в контексте есть выполненные задачи с исполнителями;
 - "Ответственные" и "Участники" — это назначенные люди на объекте, а "Кто выполнил задачи" — реальные исполнители выполненных задач;
 - не выводи сырые служебные строки из контекста без обработки.
@@ -80,7 +82,28 @@ def _format_date(value) -> str:
     return str(value)
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _format_datetime(value: datetime | None) -> str:
+    value = _as_utc(value)
+    if value is None:
+        return "дата не указана"
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
 async def _build_objects_context(db: AsyncSession) -> str:
+    all_users_result = await db.execute(select(User).order_by(User.id))
+    users_by_id = {
+        user.id: user
+        for user in all_users_result.scalars().all()
+    }
+
     objects_result = await db.execute(
         select(ConstructionObject)
         .where(ConstructionObject.is_active.is_(True))
@@ -91,6 +114,17 @@ async def _build_objects_context(db: AsyncSession) -> str:
         return "Активных объектов нет."
 
     object_ids = [obj.id for obj in objects]
+
+    photos_result = await db.execute(
+        select(Photo).where(
+            Photo.object_id.in_(object_ids),
+            Photo.is_active.is_(True),
+        )
+    )
+    photos_by_object_id: dict[int, list[Photo]] = {}
+    for photo in photos_result.scalars().all():
+        if photo.object_id is not None:
+            photos_by_object_id.setdefault(photo.object_id, []).append(photo)
 
     tasks_result = await db.execute(
         select(ObjectTask)
@@ -104,22 +138,6 @@ async def _build_objects_context(db: AsyncSession) -> str:
     for task in tasks_result.scalars().all():
         tasks_by_object_id.setdefault(task.object_id, []).append(task)
 
-    completed_by_ids = {
-        task.completed_by_id
-        for tasks in tasks_by_object_id.values()
-        for task in tasks
-        if task.completed_by_id is not None
-    }
-    completed_users_by_id: dict[int, User] = {}
-    if completed_by_ids:
-        completed_users_result = await db.execute(
-            select(User).where(User.id.in_(completed_by_ids))
-        )
-        completed_users_by_id = {
-            user.id: user
-            for user in completed_users_result.scalars().all()
-        }
-
     users_result = await db.execute(
         select(ObjectToUser, User)
         .join(User, User.id == ObjectToUser.user_id)
@@ -131,7 +149,16 @@ async def _build_objects_context(db: AsyncSession) -> str:
         users_by_object_id.setdefault(object_to_user.object_id, []).append((object_to_user, user))
 
     now = datetime.now(UTC)
-    lines = ["Контекст по активным объектам:"]
+    lines = [
+        "Контекст по бизнес-данным системы.",
+        "В контексте нет паролей, хэшей, refresh/access токенов и служебных auth-сессий.",
+        "Пользователи:",
+    ]
+    lines.extend(
+        f"- user_id={user.id}; full_name={user.full_name}; role={user.role}; is_active={user.is_active}; email={user.email}; phone={user.phone_number or 'не указан'}"
+        for user in users_by_id.values()
+    )
+    lines.append("Активные объекты и связанные данные:")
     total_completed_by_user: dict[str, int] = {}
 
     for obj in objects:
@@ -142,13 +169,11 @@ async def _build_objects_context(db: AsyncSession) -> str:
         in_progress_tasks = task_stats["in_progress"]
         todo_tasks = task_stats["todo"]
         overdue_tasks_count = task_stats["overdue"]
-        overdue_tasks = [
-            task
-            for task in tasks
-            if task.deadline is not None
-            and task.deadline < now
-            and task.status != ObjectTaskStatus.DONE
-        ]
+        overdue_tasks = []
+        for task in tasks:
+            deadline = _as_utc(task.deadline)
+            if deadline is not None and deadline < now and task.status != ObjectTaskStatus.DONE:
+                overdue_tasks.append(task)
 
         users = users_by_object_id.get(obj.id, [])
         responsible_users = [
@@ -166,7 +191,7 @@ async def _build_objects_context(db: AsyncSession) -> str:
             if task.status != ObjectTaskStatus.DONE or task.completed_by_id is None:
                 continue
 
-            user = completed_users_by_id.get(task.completed_by_id)
+            user = users_by_id.get(task.completed_by_id)
             user_name = user.full_name if user is not None else f"Пользователь #{task.completed_by_id}"
             completed_by_user[user_name] = completed_by_user.get(user_name, 0) + 1
             total_completed_by_user[user_name] = total_completed_by_user.get(user_name, 0) + 1
@@ -180,6 +205,39 @@ async def _build_objects_context(db: AsyncSession) -> str:
             )
         ) or "нет выполненных задач с исполнителем"
 
+        task_detail_lines: list[str] = []
+        for task in tasks:
+            completed_by = (
+                users_by_id[task.completed_by_id].full_name
+                if task.completed_by_id is not None and task.completed_by_id in users_by_id
+                else "не указан"
+            )
+            task_detail_lines.append(
+                "    "
+                f"- task_id={task.id}; parent_id={task.parent_id}; template_id={task.template_id}; "
+                f"depth={task.depth}; sort_order={task.sort_order}; children_mode={task.children_mode}; "
+                f"title={task.title}; status={task.status}; deadline={_format_datetime(task.deadline)}; "
+                f"completed_at={_format_datetime(task.completed_at)}; completed_by={completed_by}; "
+                f"is_active={task.is_active}"
+            )
+
+        assigned_user_lines = [
+            (
+                f"    - user_id={user.id}; full_name={user.full_name}; role={user.role}; "
+                f"is_responsible={object_to_user.is_responsible}; is_active={user.is_active}"
+            )
+            for object_to_user, user in users
+        ]
+
+        object_photos = photos_by_object_id.get(obj.id, [])
+        photo_lines = [
+            (
+                f"    - photo_id={photo.id}; filename={photo.original_filename}; "
+                f"type={photo.type}; uploaded_by_id={photo.uploaded_by_id}; created_at={_format_datetime(photo.created_at)}"
+            )
+            for photo in object_photos
+        ]
+
         lines.extend(
             [
                 f"- Объект #{obj.id}: {obj.name}",
@@ -191,6 +249,12 @@ async def _build_objects_context(db: AsyncSession) -> str:
                 f"  Прогресс: {progress}%",
                 f"  Кто выполнил задачи на объекте: {completed_by_text}",
                 f"  Просроченные задачи: {overdue_titles}",
+                "  Назначенные пользователи объекта:",
+                *(assigned_user_lines or ["    нет назначенных пользователей"]),
+                "  Фотографии объекта:",
+                *(photo_lines or ["    нет фотографий"]),
+                "  Подробные задачи объекта:",
+                *(task_detail_lines or ["    нет задач"]),
             ]
         )
 
