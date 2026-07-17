@@ -203,7 +203,7 @@ function AiChatPage() {
     <div className="mx-auto flex h-[calc(100vh-3rem)] max-w-5xl flex-col gap-6 overflow-hidden">
       <div className="shrink-0 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-semibold tracking-tight">AI-бот</h1>
+          <h1 className="text-4xl font-semibold tracking-tight">ИИ-инженер</h1>
           <p className="mt-2 max-w-3xl text-base text-slate-600">
             Чат для администратора: сводка по объектам, риски, просрочки и задачи, которые требуют внимания.
           </p>

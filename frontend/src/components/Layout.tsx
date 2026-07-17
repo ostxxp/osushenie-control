@@ -31,9 +31,9 @@ function Layout() {
     },
     {
       to: '/ai',
-      label: 'AI-бот',
+      label: 'ИИ-инженер',
       isActive: location.pathname === '/ai',
-      hidden: userRole !== 'admin',
+      hidden: userRole !== 'admin' && userRole !== 'chief_engineer',
     },
   ].filter((item) => !item.hidden)
 

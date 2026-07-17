@@ -75,7 +75,7 @@ function App() {
             />
             <Route
               path="/ai"
-              element={userRole === 'admin' ? <AiChatPage /> : <Navigate to="/" replace />}
+              element={userRole === 'admin' || userRole === 'chief_engineer' ? <AiChatPage /> : <Navigate to="/" replace />}
             />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
