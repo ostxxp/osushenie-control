@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.modules.ai.schemas import AIChatMessage
+from app.modules.notifications.models import Notifications
 from app.modules.objects.models import ConstructionObject, ObjectToUser
 from app.modules.photos.models import Photo
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
@@ -14,6 +15,7 @@ from app.modules.users.models import User
 
 
 AI_CONTEXT_USER_HISTORY_LIMIT = 8
+AI_CONTEXT_ACTION_HISTORY_LIMIT = 300
 
 SYSTEM_PROMPT = """
 Ты AI-ассистент администратора системы ОСУШЕНИЕ.РФ.
@@ -37,6 +39,7 @@ SYSTEM_PROMPT = """
 - если пользователь явно просит сводку, отчет, таблицу или подробный разбор по всем объектам, тогда сначала дай общий итог, потом кратко по каждому объекту;
 - если пользователь спрашивает, кто выполнил больше всего задач, используй строки "Кто выполнил задачи на объекте" и "Общий рейтинг исполнителей";
 - если пользователь спрашивает, какие именно задачи выполнил человек, найди их в разделе "Подробные задачи объекта" по полям completed_by, completed_at и status=done;
+- если пользователь спрашивает про историю действий, кто когда что сделал, кто выполнил задачу за период или на каком объекте, используй раздел "История действий";
 - не говори, что исполнителей нет, если в контексте есть выполненные задачи с исполнителями;
 - "Ответственные" и "Участники" — это назначенные люди на объекте, а "Кто выполнил задачи" — реальные исполнители выполненных задач;
 - не выводи сырые служебные строки из контекста без обработки.
@@ -114,6 +117,15 @@ async def _build_objects_context(db: AsyncSession) -> str:
         return "Активных объектов нет."
 
     object_ids = [obj.id for obj in objects]
+    objects_by_id = {obj.id: obj for obj in objects}
+
+    action_history_result = await db.execute(
+        select(Notifications)
+        .where(Notifications.object_id.in_(object_ids))
+        .order_by(Notifications.created_at.desc(), Notifications.id.desc())
+        .limit(AI_CONTEXT_ACTION_HISTORY_LIMIT)
+    )
+    action_history = list(action_history_result.scalars().all())
 
     photos_result = await db.execute(
         select(Photo).where(
@@ -267,6 +279,21 @@ async def _build_objects_context(db: AsyncSession) -> str:
         )
     ) or "нет выполненных задач с исполнителем"
     lines.append(f"Общий рейтинг исполнителей по выполненным задачам: {total_completed_by_text}")
+
+    lines.append("История действий:")
+    if action_history:
+        for action in action_history:
+            actor = users_by_id.get(action.user_id)
+            actor_name = actor.full_name if actor is not None else f"Пользователь #{action.user_id}"
+            obj = objects_by_id.get(action.object_id)
+            object_name = obj.name if obj is not None else f"Объект #{action.object_id}"
+            lines.append(
+                f"- action_id={action.id}; created_at={_format_datetime(action.created_at)}; "
+                f"actor={actor_name}; object_id={action.object_id}; object_name={object_name}; "
+                f"type={action.type}; message={action.message}"
+            )
+    else:
+        lines.append("- действий пока нет")
 
     return "\n".join(lines)
 
