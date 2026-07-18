@@ -122,6 +122,25 @@ export interface ObjectTaskStatusUpdateResponse extends ObjectTask {
   main_task_id: number
 }
 
+export interface ObjectPhotoSummary {
+  id: number
+  original_filename: string
+  file_url: string
+  created_at: string
+}
+
+export interface ObjectSummary extends ConstructionObject {
+  stats: {
+    total: number
+    done: number
+    todo: number
+    in_progress: number
+    overdue: number
+  }
+  progress: number
+  photos: ObjectPhotoSummary[]
+}
+
 export interface ObjectTaskStats {
   total: number
   done: number

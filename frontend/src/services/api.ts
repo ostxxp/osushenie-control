@@ -5,6 +5,7 @@ import type {
   User,
   UserRole,
   ConstructionObject,
+  ObjectSummary,
   ObjectTask,
   ObjectTaskStatus,
   ObjectTaskStatusUpdateResponse,
@@ -189,6 +190,12 @@ export const userApi = {
 }
 
 export const photoApi = {
+  getFile: async (photoId: number): Promise<Blob> => {
+    const response = await authApi.get<Blob>(`/photos/${photoId}/file`, {
+      responseType: 'blob',
+    })
+    return response.data
+  },
   uploadCurrentAvatar: async (file: File): Promise<void> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -335,6 +342,10 @@ export const objectApi = {
   },
   getOverdueCount: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/overdue_count`)
+    return response.data
+  },
+  getSummaries: async (): Promise<ObjectSummary[]> => {
+    const response = await authApi.get<ObjectSummary[]>('/objects/summary')
     return response.data
   },
   getTaskStats: async (objectId: number): Promise<ObjectTaskStats> => {
