@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from datetime import date, datetime
 
 from app.db.base import Base
+from app.modules.photos.schemas import PhotoRead
+from app.modules.tasks.schemas import ObjectTaskStatsRead
 
 class ObjectBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -26,3 +28,9 @@ class ObjectRead(ObjectBase):
     model_config = {
         "from_attributes": True,
     }
+
+
+class ObjectSummaryRead(ObjectRead):
+    stats: ObjectTaskStatsRead
+    progress: int
+    photos: list[PhotoRead]
