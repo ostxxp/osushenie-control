@@ -31,9 +31,9 @@ function Layout() {
     },
     {
       to: '/ai',
-      label: 'AI-бот',
+      label: 'ИИ-инженер',
       isActive: location.pathname === '/ai',
-      hidden: userRole !== 'admin',
+      hidden: userRole !== 'admin' && userRole !== 'chief_engineer',
     },
   ].filter((item) => !item.hidden)
 
@@ -130,9 +130,12 @@ function Layout() {
               to={item.to}
               className={[
                 'flex items-center justify-between rounded-2xl border px-4 py-3 text-base font-medium transition-all',
+                item.to === '/ai',
                 item.isActive
                   ? 'border-[#ff4539]/25 bg-[#ff4539]/15 text-[#b42318] shadow-sm'
-                  : 'border-transparent text-base-content hover:bg-base-200 hover:text-base-content',
+                  : item.to === '/ai'
+                    ? 'border-transparent hover:bg-[#ff4539]/10 hover:text-[#e63d32]'
+                    : 'border-transparent text-base-content hover:bg-base-200 hover:text-base-content',
               ].join(' ')}
             >
               <span>{item.label}</span>

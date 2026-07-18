@@ -54,6 +54,18 @@ class ObjectTaskTreeRead(ObjectTaskRead):
     children: list["ObjectTaskTreeRead"] = Field(default_factory=list)
 
 
+class ObjectTaskListItemRead(ObjectTaskRead):
+    main_task_id: int
+    main_task_title: str
+    path: list[str]
+
+
+class ObjectTaskListGroupRead(BaseModel):
+    main_task_id: int
+    main_task_title: str
+    tasks: list[ObjectTaskListItemRead]
+
+
 class ObjectTaskStatusUpdateRead(ObjectTaskRead):
     main_task_id: int
 

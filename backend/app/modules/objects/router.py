@@ -11,13 +11,15 @@ from sqlalchemy import select
 
 from app.modules.objects.dependencies import get_object_or_404, get_object_to_user_or_404
 
-from app.modules.objects.schemas import ObjectBase, ObjectRead, ObjectUpdate
+from app.modules.objects.schemas import ObjectBase, ObjectRead, ObjectSummaryRead, ObjectUpdate
 
 from app.modules.users.dependencies import get_current_auth_user, require_admin, get_user_or_404
 from app.modules.users.dependencies import require_chief_engineer_or_admin, require_logged_in_user
 from app.modules.users.models import User
 from app.modules.objects.service import set_responsible_status
-from app.modules.tasks.service import copy_task_templates_to_object
+from app.modules.photos.models import Photo, PhotoType
+from app.modules.photos.service import serialize_photo
+from app.modules.tasks.service import copy_task_templates_to_object, get_task_stats
 
 
 router = APIRouter()
@@ -69,6 +71,70 @@ async def list_objects(
     result = await db.execute(query)
     objects = result.scalars().all()
     return objects
+
+
+@router.get(
+    "/summary",
+    response_model=list[ObjectSummaryRead],
+    summary="Get object tiles data with task stats and photos",
+)
+async def list_object_summaries(
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_auth_user),
+) -> list[dict]:
+    query = select(ConstructionObject)
+
+    if user.role == "foreman":
+        query = (
+            query
+            .join(ObjectToUser)
+            .where(ObjectToUser.user_id == user.id)
+        )
+    elif user.role not in ("admin", "chief_engineer", "engineer"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    result = await db.execute(query)
+    objects = result.scalars().unique().all()
+    object_ids = [object.id for object in objects]
+
+    photos_by_object_id: dict[int, list[dict]] = {object_id: [] for object_id in object_ids}
+    if object_ids:
+        photos_result = await db.execute(
+            select(Photo)
+            .where(
+                Photo.type == PhotoType.OBJECT_PHOTO,
+                Photo.object_id.in_(object_ids),
+                Photo.is_active.is_(True),
+            )
+            .order_by(Photo.object_id, Photo.created_at.desc(), Photo.id.desc())
+        )
+
+        for photo in photos_result.scalars().all():
+            if photo.object_id is None:
+                continue
+            photos_by_object_id.setdefault(photo.object_id, []).append(serialize_photo(photo))
+
+    summaries = []
+    for object in objects:
+        stats = await get_task_stats(db, object_id=object.id)
+        progress = 0 if stats["total"] == 0 else stats["done"] * 100 // stats["total"]
+        summaries.append(
+            {
+                "id": object.id,
+                "name": object.name,
+                "address": object.address,
+                "is_active": object.is_active,
+                "start_date": object.start_date,
+                "end_date": object.end_date,
+                "created_at": object.created_at,
+                "updated_at": object.updated_at,
+                "stats": stats,
+                "progress": progress,
+                "photos": photos_by_object_id.get(object.id, []),
+            }
+        )
+
+    return summaries
 
 @router.get(
     "/responsible", response_model=list[ObjectRead],
