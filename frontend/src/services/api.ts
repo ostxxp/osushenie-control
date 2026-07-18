@@ -7,6 +7,7 @@ import type {
   ConstructionObject,
   ObjectSummary,
   ObjectTask,
+  ObjectTaskListGroup,
   ObjectTaskStatus,
   ObjectTaskStatusUpdateResponse,
   ObjectTaskStats,
@@ -336,8 +337,14 @@ export const objectApi = {
     const response = await authApi.get(`/objects/${objectId}/tasks/${taskId}/available`)
     return normalizeTask(response.data, { hideNotApplicable: true })
   },
-  getOverdueTasks: async (objectId: number): Promise<ObjectTask[]> => {
-    const response = await authApi.get(`/objects/${objectId}/tasks/overdue`)
+  getTaskGroups: async (
+    objectId: number,
+    status: 'done' | 'todo' | 'overdue',
+    mainTaskId?: number,
+  ): Promise<ObjectTaskListGroup[]> => {
+    const response = await authApi.get<ObjectTaskListGroup[]>(`/objects/${objectId}/tasks/${status}`, {
+      params: mainTaskId ? { main_task_id: mainTaskId } : undefined,
+    })
     return response.data
   },
   getOverdueCount: async (objectId: number): Promise<number> => {
@@ -348,14 +355,16 @@ export const objectApi = {
     const response = await authApi.get<ObjectSummary[]>('/objects/summary')
     return response.data
   },
-  getTaskStats: async (objectId: number): Promise<ObjectTaskStats> => {
+  getTaskStats: async (objectId: number, mainTaskId?: number): Promise<ObjectTaskStats> => {
     const response = await authApi.get<{
       total: number
       done: number
       todo: number
       in_progress: number
       overdue: number
-    }>(`/objects/${objectId}/tasks/stats`)
+    }>(`/objects/${objectId}/tasks/stats`, {
+      params: mainTaskId ? { main_task_id: mainTaskId } : undefined,
+    })
     return {
       total: response.data.total,
       done: response.data.done,

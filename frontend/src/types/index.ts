@@ -118,6 +118,18 @@ export interface ObjectTaskTree extends ObjectTask {
   children: ObjectTaskTree[]
 }
 
+export interface ObjectTaskListItem extends ObjectTask {
+  main_task_id: number
+  main_task_title: string
+  path: string[]
+}
+
+export interface ObjectTaskListGroup {
+  main_task_id: number
+  main_task_title: string
+  tasks: ObjectTaskListItem[]
+}
+
 export interface ObjectTaskStatusUpdateResponse extends ObjectTask {
   main_task_id: number
 }

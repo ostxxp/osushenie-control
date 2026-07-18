@@ -6,6 +6,7 @@ import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/uti
 import type {
   ConstructionObject,
   ObjectTask,
+  ObjectTaskListGroup,
   ObjectTaskStatus,
   ObjectTaskStats,
   ObjectTaskTree,
@@ -164,7 +165,7 @@ const isNegativeTaskTitle = (title: string): boolean => {
   return /(^|[\s(«"—-])(нет|не|без|отсутствует|отсутствуют|отсутствовал|отсутствовала|отсутствовало)(?=$|[\s.,;:!?»")—-])/u.test(normalizedTitle)
 }
 
-function TaskStateIcon({ task }: { task: ObjectTaskTree }) {
+function TaskStateIcon({ task }: { task: ObjectTask }) {
   if (task.status === 'done') {
     if (isNegativeTaskTitle(task.title)) {
       return (
@@ -376,13 +377,14 @@ function ObjectTasksPage() {
   const [taskHeaders, setTaskHeaders] = useState<ObjectTask[]>([])
   const [allTasks, setAllTasks] = useState<ObjectTaskTree[]>([])
   const [overdueTasks, setOverdueTasks] = useState<ObjectTask[]>([])
+  const [statusTaskGroups, setStatusTaskGroups] = useState<ObjectTaskListGroup[]>([])
   const [overdueCount, setOverdueCount] = useState(0)
   const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
   const [taskEditorOpen, setTaskEditorOpen] = useState(false)
-  const [taskEditorTarget, setTaskEditorTarget] = useState<ObjectTaskTree | null>(null)
+  const [taskEditorTarget, setTaskEditorTarget] = useState<ObjectTask | null>(null)
   const [taskEditorMode, setTaskEditorMode] = useState<'create' | 'edit'>('create')
   const [taskForm, setTaskForm] = useState<TaskFormState>(emptyTaskForm())
   const [savingTask, setSavingTask] = useState(false)
@@ -400,11 +402,17 @@ function ObjectTasksPage() {
     try {
       const objectId = Number(id)
       const selectedTaskId = taskId ? Number(taskId) : null
-      const [objData, fullTreeData, overdueData, taskStats] = await Promise.all([
+      const groupedStatus = taskStatusFilter === 'done' || taskStatusFilter === 'todo' || taskStatusFilter === 'overdue'
+        ? taskStatusFilter
+        : null
+      const [objData, fullTreeData, overdueGroups, taskStats, filteredGroups] = await Promise.all([
         objectApi.getById(objectId),
         objectApi.getFullTasksTree(objectId),
-        objectApi.getOverdueTasks(objectId).catch(() => []),
-        objectApi.getTaskStats(objectId),
+        objectApi.getTaskGroups(objectId, 'overdue', selectedTaskId ?? undefined).catch(() => []),
+        objectApi.getTaskStats(objectId, selectedTaskId ?? undefined),
+        groupedStatus
+          ? objectApi.getTaskGroups(objectId, groupedStatus, selectedTaskId ?? undefined).catch(() => [])
+          : Promise.resolve([]),
       ])
       const headersData = selectedTaskId === null
         ? await objectApi.getTasksHeaders(objectId)
@@ -416,7 +424,8 @@ function ObjectTasksPage() {
       setTasks(treeData)
       setTaskHeaders(headersData)
       setAllTasks(fullTreeData)
-      setOverdueTasks(overdueData)
+      setOverdueTasks(overdueGroups.flatMap((group) => group.tasks))
+      setStatusTaskGroups(filteredGroups)
       setStats(taskStats)
       setOverdueCount(taskStats.overdue)
       setError('')
@@ -436,7 +445,7 @@ function ObjectTasksPage() {
     loadData().then((loadedTasks) => {
       setExpandedTaskIds(loadedTasks.map((task) => task.id))
     })
-  }, [id, taskId])
+  }, [id, taskId, taskStatusFilter])
 
   useEffect(() => {
     setTaskStatusFilter(parseTaskStatusFilter(searchParams.get('status')))
@@ -488,7 +497,7 @@ function ObjectTasksPage() {
     setTaskEditorOpen(true)
   }
 
-  const openEditTask = (task: ObjectTaskTree) => {
+  const openEditTask = (task: ObjectTask) => {
     const deadline = toDateInputValue(task.deadline)
 
     setTaskEditorMode('edit')
@@ -615,6 +624,32 @@ function ObjectTasksPage() {
       taskStatusFilter === 'overdue' ? entry.overdue : entry.status === taskStatusFilter
     ))
   }, [allTasks, taskId, taskStatusFilter, tasks])
+
+  const displayedStatusGroups = useMemo(() => {
+    if (taskStatusFilter !== 'in_progress') return statusTaskGroups
+
+    const headerNames = new Map(taskHeaders.map((header) => [header.id, header.title]))
+    const groups = new Map<number, ObjectTaskListGroup>()
+
+    filteredTaskList.forEach(({ task }) => {
+      const mainTaskId = taskSectionIds.get(task.id) ?? task.id
+      const mainTaskTitle = headerNames.get(mainTaskId) ?? task.title
+      const group = groups.get(mainTaskId) ?? {
+        main_task_id: mainTaskId,
+        main_task_title: mainTaskTitle,
+        tasks: [],
+      }
+      group.tasks.push({
+        ...task,
+        main_task_id: mainTaskId,
+        main_task_title: mainTaskTitle,
+        path: task.id === mainTaskId ? [mainTaskTitle] : [mainTaskTitle, task.title],
+      })
+      groups.set(mainTaskId, group)
+    })
+
+    return Array.from(groups.values())
+  }, [filteredTaskList, statusTaskGroups, taskHeaders, taskSectionIds, taskStatusFilter])
 
   useLayoutEffect(() => {
     if (!location.hash || tasks.length === 0) return
@@ -783,57 +818,65 @@ function ObjectTasksPage() {
       )}
 
       {taskStatusFilter !== 'all' ? (
-        filteredTaskList.length === 0 ? (
+        displayedStatusGroups.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
             Задачи с выбранным статусом не найдены.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-3xl border border-base-200 bg-base-100 shadow-sm">
-            <ul className="divide-y divide-base-200">
-              {filteredTaskList.map((entry) => {
-                const { task } = entry
-                const isDone = entry.status === 'done'
-                const isOverdue = entry.overdue
-                const sectionId = taskSectionIds.get(task.id)
-                const taskDestination = sectionId
-                  ? `/objects/${objectItem.id}/tasks/${sectionId}?returnStatus=${taskStatusFilter}#task-${task.id}`
-                  : `/objects/${objectItem.id}/tasks`
+          <div className="space-y-4">
+            {displayedStatusGroups.map((group) => (
+              <section key={group.main_task_id} className="overflow-hidden rounded-3xl border border-base-200 bg-base-100 shadow-sm">
+                <div className="flex items-center justify-between gap-4 border-b border-base-200 bg-base-200/45 px-4 py-3 sm:px-5">
+                  <Link
+                    to={`/objects/${objectItem.id}/tasks/${group.main_task_id}?returnStatus=${taskStatusFilter}`}
+                    className="min-w-0 font-semibold text-slate-900 transition hover:text-[#ff4539]"
+                  >
+                    {group.main_task_title}
+                  </Link>
+                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-base-content/60 shadow-sm">
+                    {group.tasks.length}
+                  </span>
+                </div>
 
-                return (
-                  <li key={entry.key} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span
-                        className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                        aria-label={isDone ? 'Задача выполнена' : 'Задача не выполнена'}
-                      >
-                        {isDone && task.status !== 'done' ? (
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">✓</span>
-                        ) : <TaskStateIcon task={task} />}
-                      </span>
-                      <Link
-                        to={taskDestination}
-                        className="group min-w-0 flex-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30"
-                      >
-                        <div className="break-words font-medium text-base-content transition-colors group-hover:text-[#ff4539]">{task.title}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-content/60">
-                          {task.deadline && <span>Дедлайн: {formatDateRu(task.deadline)}</span>}
-                          {isOverdue && <span className="badge badge-error badge-sm">Просрочено</span>}
-                          {task.completed_by?.full_name && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <UserAvatar userId={task.completed_by.id} name={task.completed_by.full_name} />
-                              Выполнил: {task.completed_by.full_name}
-                            </span>
-                          )}
+                <ul className="divide-y divide-base-200">
+                  {group.tasks.map((task) => {
+                    const isDone = taskStatusFilter === 'done'
+                    const isOverdue = taskStatusFilter === 'overdue'
+                    const taskDestination = `/objects/${objectItem.id}/tasks/${group.main_task_id}?returnStatus=${taskStatusFilter}#task-${task.id}`
+                    const taskPath = task.path.filter((part) => part !== group.main_task_title && part !== task.title)
+
+                    return (
+                      <li key={task.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full" aria-label={isDone ? 'Задача выполнена' : 'Задача не выполнена'}>
+                            <TaskStateIcon task={task} />
+                          </span>
+                          <Link to={taskDestination} className="group min-w-0 flex-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
+                            {taskPath.length > 0 && (
+                              <div className="mb-1 truncate text-xs text-base-content/45">{taskPath.join(' / ')}</div>
+                            )}
+                            <div className="break-words font-medium text-base-content transition-colors group-hover:text-[#ff4539]">{task.title}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-content/60">
+                              {task.deadline && <span>Дедлайн: {formatDateRu(task.deadline)}</span>}
+                              {isOverdue && <span className="badge badge-error badge-sm">Просрочено</span>}
+                              {task.completed_by?.full_name && (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <UserAvatar userId={task.completed_by.id} name={task.completed_by.full_name} />
+                                  Выполнил: {task.completed_by.full_name}
+                                </span>
+                              )}
+                            </div>
+                          </Link>
                         </div>
-                      </Link>
-                    </div>
-                    <button type="button" className="btn btn-ghost btn-sm self-end sm:self-auto" onClick={() => openEditTask(task)}>
-                      Редактировать
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
+                        <button type="button" className="btn btn-ghost btn-sm self-end sm:self-auto" onClick={() => openEditTask(task)}>
+                          Редактировать
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+            ))}
           </div>
         )
       ) : !taskId ? (
