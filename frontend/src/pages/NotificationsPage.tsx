@@ -1,10 +1,19 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DatePickerInput } from '@/components'
-import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
+import { getAllStoredAvatarUrls, getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
 import type { NotificationLog } from '@/types'
+
+const PAGE_SIZE = 50
+const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
 
 const toDateInputValue = (value: string | null): string => {
   if (!value) return ''
@@ -24,13 +33,7 @@ const formatDateTime = (value: string | null): string => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
 
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  return dateTimeFormatter.format(date)
 }
 
 function NotificationsPage() {
@@ -51,7 +54,9 @@ function NotificationsPage() {
   const [dateToSearch, setDateToSearch] = useState('')
   const [eventSearch, setEventSearch] = useState('')
   const [objectNames, setObjectNames] = useState<Record<number, string>>({})
-  const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>({})
+  const [actorAvatarUrls, setActorAvatarUrls] = useState<Record<number, string>>(getAllStoredAvatarUrls)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const refreshInProgress = useRef(false)
 
   const canViewNotifications = userRole === 'admin' || userRole === 'chief_engineer'
 
@@ -81,20 +86,24 @@ function NotificationsPage() {
 
   useEffect(() => {
     if (actorOptions.length === 0) {
-      setActorAvatarUrls({})
       return
     }
 
     let cancelled = false
     const createdUrls: string[] = []
-    setActorAvatarUrls(Object.fromEntries(
-      actorOptions.map((actor) => [actor.id, getStoredAvatarUrl(actor.id)]).filter(([, url]) => Boolean(url)),
-    ))
+    setActorAvatarUrls((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        actorOptions.map((actor) => [actor.id, getStoredAvatarUrl(actor.id)]).filter(([, url]) => Boolean(url)),
+      ),
+    }))
 
     const loadActorAvatars = async () => {
       const entries = await Promise.all(
         actorOptions.map(async (actor): Promise<[number, string] | null> => {
           try {
+            const storedUrl = getStoredAvatarUrl(actor.id)
+            if (storedUrl) return [actor.id, storedUrl]
             const avatar = await photoApi.getUserAvatar(actor.id)
             if (!avatar) return null
 
@@ -114,9 +123,10 @@ function NotificationsPage() {
       )
 
       if (!cancelled) {
-        setActorAvatarUrls(
-          Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)),
-        )
+        setActorAvatarUrls((current) => ({
+          ...current,
+          ...Object.fromEntries(entries.filter((entry): entry is [number, string] => entry !== null)),
+        }))
       }
     }
 
@@ -207,6 +217,15 @@ function NotificationsPage() {
 
   const hasActiveFilters = actorSearch.trim() !== '' || actorFilter !== '' || objectSearch.trim() !== '' || objectFilter !== '' || dateFromSearch.trim() !== '' || dateFromFilter !== '' || dateToSearch.trim() !== '' || dateToFilter !== '' || eventSearch.trim() !== ''
 
+  const renderedNotifications = useMemo(
+    () => visibleNotifications.slice(0, visibleCount),
+    [visibleCount, visibleNotifications],
+  )
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [actorFilter, actorSearch, dateFromFilter, dateToFilter, eventSearch, objectFilter, objectSearch])
+
   const clearFilters = () => {
     setActorFilter('')
     setActorSearch('')
@@ -221,8 +240,11 @@ function NotificationsPage() {
     setEventSearch('')
   }
 
-  const fetchNotifications = useCallback(async (options?: { showLoading?: boolean }) => {
+  const fetchNotifications = useCallback(async (options?: { showLoading?: boolean; loadObjects?: boolean }) => {
     if (!canViewNotifications) return
+    if (refreshInProgress.current) return
+
+    refreshInProgress.current = true
 
     if (options?.showLoading !== false) {
       setLoading(true)
@@ -232,16 +254,19 @@ function NotificationsPage() {
     try {
       const [data, objects] = await Promise.all([
         notificationApi.getAll(),
-        objectApi.getAll().catch(() => []),
+        options?.loadObjects ? objectApi.getAll().catch(() => null) : Promise.resolve(null),
       ])
       setNotifications(data)
-      setObjectNames(
-        Object.fromEntries(objects.map((objectItem) => [objectItem.id, objectItem.name])),
-      )
+      if (objects) {
+        setObjectNames(
+          Object.fromEntries(objects.map((objectItem) => [objectItem.id, objectItem.name])),
+        )
+      }
       window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
       setError(formatApiError(err, 'Не удалось загрузить историю действий'))
     } finally {
+      refreshInProgress.current = false
       if (options?.showLoading !== false) {
         setLoading(false)
       }
@@ -254,7 +279,7 @@ function NotificationsPage() {
       return
     }
 
-    fetchNotifications()
+    fetchNotifications({ loadObjects: true })
   }, [canViewNotifications, fetchNotifications])
 
   useEffect(() => {
@@ -470,7 +495,7 @@ function NotificationsPage() {
               </div>
             </div>
           ) : (
-            visibleNotifications.map((notification) => (
+            renderedNotifications.map((notification) => (
               <article
                 key={notification.receipt_id}
                 className="rounded-xl border border-base-200 bg-base-100 px-4 py-3 transition-shadow hover:shadow-sm"
@@ -512,6 +537,18 @@ function NotificationsPage() {
             ))
           )}
         </div>
+
+        {renderedNotifications.length < visibleNotifications.length && (
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-base-300 bg-white px-4 text-sm font-semibold transition hover:bg-base-200"
+              onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            >
+              Показать ещё ({visibleNotifications.length - renderedNotifications.length})
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

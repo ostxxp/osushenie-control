@@ -5,7 +5,9 @@ import type {
   User,
   UserRole,
   ConstructionObject,
+  ObjectSummary,
   ObjectTask,
+  ObjectTaskListGroup,
   ObjectTaskStatus,
   ObjectTaskStatusUpdateResponse,
   ObjectTaskStats,
@@ -46,17 +48,52 @@ export const getStoredAvatarUrl = (userId: number): string => {
   }
 }
 
-const storeAvatarUrl = (userId: number, avatar: Blob): void => {
-  const reader = new FileReader()
-  reader.addEventListener('load', () => {
-    if (typeof reader.result !== 'string') return
-    try {
-      localStorage.setItem(avatarStorageKey(userId), reader.result)
-    } catch {
-      // Cache Storage remains the fallback when localStorage has no free space.
+const storeAvatarUrl = async (userId: number, avatar: Blob): Promise<void> => {
+  try {
+    const image = await createImageBitmap(avatar)
+    const size = 160
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const context = canvas.getContext('2d')
+    if (!context) {
+      image.close()
+      return
     }
-  })
-  reader.readAsDataURL(avatar)
+
+    const sourceSize = Math.min(image.width, image.height)
+    const sourceX = (image.width - sourceSize) / 2
+    const sourceY = (image.height - sourceSize) / 2
+    context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size)
+    image.close()
+
+    const thumbnail = canvas.toDataURL('image/webp', 0.82)
+    try {
+      localStorage.setItem(avatarStorageKey(userId), thumbnail)
+    } catch {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('user-avatar:') && (localStorage.getItem(key)?.length || 0) > 250_000) {
+          localStorage.removeItem(key)
+        }
+      })
+      localStorage.setItem(avatarStorageKey(userId), thumbnail)
+    }
+  } catch (error) {
+    console.warn(`Не удалось сохранить миниатюру аватара пользователя ${userId}`, error)
+  }
+}
+
+export const getAllStoredAvatarUrls = (): Record<number, string> => {
+  try {
+    return Object.fromEntries(
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith('user-avatar:'))
+        .map((key) => [Number(key.slice('user-avatar:'.length)), localStorage.getItem(key) || ''])
+        .filter(([userId, url]) => Number.isFinite(userId) && Boolean(url)),
+    )
+  } catch {
+    return {}
+  }
 }
 
 const deleteCachedAvatar = async (userId: number): Promise<void> => {
@@ -154,6 +191,12 @@ export const userApi = {
 }
 
 export const photoApi = {
+  getFile: async (photoId: number): Promise<Blob> => {
+    const response = await authApi.get<Blob>(`/photos/${photoId}/file`, {
+      responseType: 'blob',
+    })
+    return response.data
+  },
   uploadCurrentAvatar: async (file: File): Promise<void> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -203,13 +246,13 @@ export const photoApi = {
     const cachedResponse = await cache.match(avatarCacheKey(userId))
     if (cachedResponse) {
       const avatar = await cachedResponse.blob()
-      if (!getStoredAvatarUrl(userId)) storeAvatarUrl(userId, avatar)
+      if (!getStoredAvatarUrl(userId)) await storeAvatarUrl(userId, avatar)
       return avatar
     }
 
     const avatar = await fetchUserAvatar(userId)
     if (avatar) {
-      storeAvatarUrl(userId, avatar)
+      await storeAvatarUrl(userId, avatar)
       await cache.put(
         avatarCacheKey(userId),
         new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
@@ -294,22 +337,34 @@ export const objectApi = {
     const response = await authApi.get(`/objects/${objectId}/tasks/${taskId}/available`)
     return normalizeTask(response.data, { hideNotApplicable: true })
   },
-  getOverdueTasks: async (objectId: number): Promise<ObjectTask[]> => {
-    const response = await authApi.get(`/objects/${objectId}/tasks/overdue`)
+  getTaskGroups: async (
+    objectId: number,
+    status: 'done' | 'todo' | 'overdue',
+    mainTaskId?: number,
+  ): Promise<ObjectTaskListGroup[]> => {
+    const response = await authApi.get<ObjectTaskListGroup[]>(`/objects/${objectId}/tasks/${status}`, {
+      params: mainTaskId ? { main_task_id: mainTaskId } : undefined,
+    })
     return response.data
   },
   getOverdueCount: async (objectId: number): Promise<number> => {
     const response = await authApi.get(`/objects/${objectId}/tasks/overdue_count`)
     return response.data
   },
-  getTaskStats: async (objectId: number): Promise<ObjectTaskStats> => {
+  getSummaries: async (): Promise<ObjectSummary[]> => {
+    const response = await authApi.get<ObjectSummary[]>('/objects/summary')
+    return response.data
+  },
+  getTaskStats: async (objectId: number, mainTaskId?: number): Promise<ObjectTaskStats> => {
     const response = await authApi.get<{
       total: number
       done: number
       todo: number
       in_progress: number
       overdue: number
-    }>(`/objects/${objectId}/tasks/stats`)
+    }>(`/objects/${objectId}/tasks/stats`, {
+      params: mainTaskId ? { main_task_id: mainTaskId } : undefined,
+    })
     return {
       total: response.data.total,
       done: response.data.done,

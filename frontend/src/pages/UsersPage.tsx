@@ -134,6 +134,8 @@ function UsersPage() {
       const entries = await Promise.all(
         users.map(async (user): Promise<[number, string] | null> => {
           try {
+            const storedUrl = getStoredAvatarUrl(user.id)
+            if (storedUrl) return [user.id, storedUrl]
             const avatar = await photoApi.getUserAvatar(user.id)
             if (!avatar) return null
 
@@ -336,7 +338,7 @@ function UsersPage() {
       </div>
 
       <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 px-[calc(0.75rem+1px)] sm:flex-row sm:items-center sm:justify-between 2xl:px-[calc(1.25rem+1px)]">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
@@ -386,16 +388,16 @@ function UsersPage() {
           <table className="w-full table-fixed text-left">
             <colgroup>
               <col className="w-[22%]" />
-              <col className="w-[13%]" />
-              <col className="w-[15%]" />
-              <col className="w-[20%]" />
+              <col className="w-[16%]" />
+              <col className="w-[14%]" />
+              <col className="w-[18%]" />
               <col className="w-[13%]" />
               <col className="w-[17%]" />
             </colgroup>
             <thead className="bg-base-200">
               <tr>
                 <th className="px-3 py-3 2xl:px-5">Имя</th>
-                <th className="px-3 py-3 2xl:px-5">Должность</th>
+                <th className="whitespace-nowrap px-3 py-3 2xl:px-5">Должность</th>
                 <th className="px-3 py-3 2xl:px-5">Телефон</th>
                 <th className="px-3 py-3 2xl:px-5">Email</th>
                 <th className="px-3 py-3 2xl:px-5">Статус</th>
@@ -430,7 +432,7 @@ function UsersPage() {
                       <span className="min-w-0 break-words">{user.full_name}</span>
                     </div>
                   </td>
-                  <td className="break-words px-3 py-3 2xl:px-5">{roleLabel[user.role]}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-sm 2xl:px-5">{roleLabel[user.role]}</td>
                   <td className="break-words px-3 py-3 2xl:px-5">{user.phone_number || '—'}</td>
                   <td className="break-words px-3 py-3 2xl:px-5">{user.email}</td>
                   <td className="px-3 py-3 2xl:px-5">
