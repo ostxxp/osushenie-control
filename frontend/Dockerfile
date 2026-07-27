@@ -1,12 +1,16 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
+RUN npm run build
 
-EXPOSE 3000
+FROM caddy:2.10-alpine
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/dist /srv
+
+EXPOSE 80 443
