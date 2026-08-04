@@ -16,6 +16,7 @@ from app.modules.notifications.models import Notifications, NotificationReads  #
 from app.modules.photos.models import Photo  # noqa: F401
 from app.modules.task_attachments.models import TaskAttachment  # noqa: F401
 from app.modules.task_activity.models import TaskActivity  # noqa: F401
+from app.modules.task_sync.models import TaskSyncReceipt  # noqa: F401
 
 
 config = context.config
