@@ -1,10 +1,11 @@
 import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue } from '@/components'
+import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
-import type { ConstructionObject, User } from '@/types'
-import { AuthContext } from '@services/auth'
+import type { ObjectSummary, ObjectTask, User } from '@/types'
+import { authService, AuthContext } from '@services/auth'
+import { getCurrentStage } from '@/components/objects/StageStepper'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
@@ -70,8 +71,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
 function ObjectsPage() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
-  const [objects, setObjects] = useState<ConstructionObject[]>([])
+  const [objects, setObjects] = useState<ObjectSummary[]>([])
+  const [responsibleByObjectId, setResponsibleByObjectId] = useState<Record<number, User | undefined>>({})
+  const [stagesByObjectId, setStagesByObjectId] = useState<Record<number, ObjectTask[]>>({})
   const [search, setSearch] = useState('')
+  const [view, setView] = useState<'table' | 'kanban'>('table')
+  const [onlyMine, setOnlyMine] = useState(false)
+  const [roleFilter, setRoleFilter] = useState<'all' | User['role']>('all')
+  const [stageFilter, setStageFilter] = useState('all')
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
+  const [onlyWithoutResponsible, setOnlyWithoutResponsible] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
@@ -97,7 +106,7 @@ function ObjectsPage() {
   const [objectPhotoFiles, setObjectPhotoFiles] = useState<File[]>([])
   const [objectPhotoPreviewUrls, setObjectPhotoPreviewUrls] = useState<string[]>([])
 
-  const filteredObjects = useMemo(
+  const searchedObjects = useMemo(
     () =>
       objects
         .filter((objectItem) => {
@@ -112,10 +121,42 @@ function ObjectsPage() {
     [search, objects],
   )
 
+  const currentUser = authService.getCurrentUser()
+  const stageOptions = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => {
+      const stageTitle = Object.values(stagesByObjectId).find((stages) => stages[index]?.title)?.[index]?.title
+      return { value: String(index + 1), label: stageTitle || `Макроэтап ${index + 1}` }
+    }),
+    [stagesByObjectId],
+  )
+  const filteredObjects = useMemo(
+    () => searchedObjects.filter((objectItem) => {
+      const responsible = responsibleByObjectId[objectItem.id]
+      const matchesMine = !onlyMine || responsible?.id === currentUser?.id
+      const matchesRole = roleFilter === 'all' || responsible?.role === roleFilter
+      const matchesStage = stageFilter === 'all' || getCurrentStage(stagesByObjectId[objectItem.id] || []) === Number(stageFilter)
+      const matchesOverdue = !onlyOverdue || objectItem.stats.overdue > 0
+      const matchesResponsible = !onlyWithoutResponsible || !responsible
+      return matchesMine && matchesRole && matchesStage && matchesOverdue && matchesResponsible
+    }),
+    [currentUser?.id, onlyMine, onlyOverdue, onlyWithoutResponsible, responsibleByObjectId, roleFilter, searchedObjects, stageFilter, stagesByObjectId],
+  )
+
   useEffect(() => {
     const fetchObjects = async () => {
       try {
-        const data = await objectApi.getAll()
+        const data = await objectApi.getSummaries()
+        const objectDetails = await Promise.all(
+          data.map(async (objectItem) => {
+            const [responsibleUsers, stages] = await Promise.all([
+              objectApi.getResponsibleUsers(objectItem.id).catch(() => []),
+              objectApi.getTasksHeaders(objectItem.id).catch(() => []),
+            ])
+            return [objectItem.id, responsibleUsers[0], stages] as const
+          }),
+        )
+        setResponsibleByObjectId(Object.fromEntries(objectDetails.map(([id, responsible]) => [id, responsible])))
+        setStagesByObjectId(Object.fromEntries(objectDetails.map(([id, , stages]) => [id, stages])))
         setObjects(data)
       } catch (err: unknown) {
         setLoadError(getErrorMessage(err, 'Ошибка загрузки объектов'))
@@ -269,11 +310,16 @@ function ObjectsPage() {
       }
       // Refresh list from server to ensure consistent shape
       try {
-        const data = await objectApi.getAll()
+        const data = await objectApi.getSummaries()
         setObjects(data)
       } catch (err) {
         // fallback: prepend created object
-        setObjects((prev) => [created, ...prev])
+        setObjects((prev) => [{
+          ...created,
+          stats: { total: 0, done: 0, todo: 0, in_progress: 0, overdue: 0 },
+          progress: 0,
+          photos: [],
+        }, ...prev])
       }
       setShowCreateObject(false)
       setSelectedWorkerIds([])
@@ -321,8 +367,8 @@ function ObjectsPage() {
         <h1 className="text-2xl font-semibold sm:text-3xl">Объекты строительства</h1>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 px-[calc(1.25rem+1px)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 px-0 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
@@ -353,7 +399,7 @@ function ObjectsPage() {
             <p className="mt-2 text-sm text-base-content/70">Поиск по названию или адресу.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            {search && (
+            {false && search && (
               <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
                 Найдено {filteredObjects.length}
               </span>
@@ -377,7 +423,66 @@ function ObjectsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
+        <div className="flex flex-col gap-3 border-t border-base-200 px-0 pt-2 xl:flex-row xl:items-center">
+          <div className="flex flex-1 flex-wrap items-center gap-2 rounded-2xl bg-base-200/70 p-2">
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
+              <input type="checkbox" className="checkbox checkbox-sm" checked={onlyMine} onChange={(event) => setOnlyMine(event.target.checked)} />
+              Мои задачи
+            </label>
+            <select className="select select-sm border-base-300 focus:border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/15" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as 'all' | User['role'])}>
+              <option value="all">Все роли</option>
+              <option value="admin">Администратор</option>
+              <option value="chief_engineer">Главный инженер</option>
+              <option value="foreman">Прораб</option>
+            </select>
+            <select className="select select-sm border-base-300 focus:border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/15" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}>
+              <option value="all">Все этапы</option>
+              {stageOptions.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
+            </select>
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
+              <input type="checkbox" className="checkbox checkbox-sm" checked={onlyOverdue} onChange={(event) => setOnlyOverdue(event.target.checked)} />
+              Просроченные
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
+              <input type="checkbox" className="checkbox checkbox-sm" checked={onlyWithoutResponsible} onChange={(event) => setOnlyWithoutResponsible(event.target.checked)} />
+              Без ответственного
+            </label>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm self-start text-base-content/65 xl:self-auto"
+            onClick={() => {
+              setSearch('')
+              setOnlyMine(false)
+              setRoleFilter('all')
+              setStageFilter('all')
+              setOnlyOverdue(false)
+              setOnlyWithoutResponsible(false)
+            }}
+          >
+            Сбросить
+          </button>
+          <div className="flex self-start rounded-xl bg-base-200 p-1 xl:self-auto">
+            <button type="button" className={`btn btn-sm border-0 ${view === 'table' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('table')}>Таблица</button>
+            <button type="button" className={`btn btn-sm border-0 ${view === 'kanban' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('kanban')}>Канбан</button>
+          </div>
+        </div>
+
+        {view === 'table' ? (
+          <ObjectTable
+            objects={filteredObjects}
+            responsibleByObjectId={responsibleByObjectId}
+            stagesByObjectId={stagesByObjectId}
+          />
+        ) : (
+          <ObjectKanban
+            objects={filteredObjects}
+            responsibleByObjectId={responsibleByObjectId}
+            stagesByObjectId={stagesByObjectId}
+          />
+        )}
+
+        <div className="hidden overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
           <table className="w-full min-w-[900px] table-fixed text-left">
             <colgroup>
               <col className="w-[25%]" />
