@@ -12,6 +12,7 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
+from app.modules.tasks.stages import PROJECT_STAGES, ProjectStage, infer_project_stage
 from app.modules.notifications.models import Notifications, NotificationReads as NotificationReceipt
 from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
 from app.modules.users.models import User, UserRole
@@ -61,6 +62,7 @@ async def copy_task_templates_to_object(
             depth=template.depth if parent is None else parent.depth + 1,
             sort_order=template.sort_order,
             children_mode=template.children_mode,
+            stage=template.stage or (parent.stage if parent is not None else infer_project_stage(template.title)),
         )
         db.add(object_task)
         await db.flush()
@@ -135,9 +137,11 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "depth": task.depth,
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
+            "stage": task.stage,
             "status": task.status,
             "deadline": task.deadline,
             "is_active": task.is_active,
+            "version": task.version,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
             "completed_by": completed_by_map.get(task.completed_by_id),
@@ -193,6 +197,7 @@ async def create_object_task(
         depth=0 if parent is None else parent.depth + 1,
         sort_order=sort_order,
         children_mode=task_data.children_mode,
+        stage=task_data.stage or (parent.stage if parent is not None else infer_project_stage(task_data.title)),
         deadline=task_data.deadline,
     )
     db.add(object_task)
@@ -209,6 +214,15 @@ async def update_object_task(
     current_user: User,
 ) -> ObjectTask:
     update_data = task_data.model_dump(exclude_unset=True)
+    expected_version = update_data.pop("expected_version", None)
+    if expected_version is not None and object_task.version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Task was changed by another user",
+                "current_version": object_task.version,
+            },
+        )
 
     if task_data.status is not None:
         if task_data.status == ObjectTaskStatus.DONE:
@@ -232,9 +246,11 @@ async def update_object_task(
                 root_task=object_task,
             )
 
-    for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
+    for field in ("title", "sort_order", "children_mode", "is_active", "deadline", "stage"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
+
+    object_task.version += 1
     
     if "status" in update_data:
         taskTitle = object_task.title if object_task.title is not None else "Задача"
@@ -490,8 +506,10 @@ def _serialize_task_list_item(
         "depth": task.depth,
         "sort_order": task.sort_order,
         "children_mode": task.children_mode,
+        "stage": task.stage,
         "status": task.status,
         "is_active": task.is_active,
+        "version": task.version,
         "deadline": task.deadline,
         "completed_at": task.completed_at,
         "completed_by_id": task.completed_by_id,
@@ -608,15 +626,11 @@ def _get_task_group_status(tasks: list[ObjectTask]) -> ObjectTaskStatus:
     return ObjectTaskStatus.TODO
 
 
-async def get_task_stats(
-    db: AsyncSession,
-    *,
-    object_id: int,
-    root_task_id: int | None = None,
+def _calculate_task_stats(
+    tasks: list[ObjectTask],
+    scope_roots: list[ObjectTask],
 ) -> dict[str, int]:
-    tasks = await _list_active_object_tasks(db, object_id=object_id)
     children_by_parent_id = _group_tasks_by_parent_id(tasks)
-    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
     scope_root_ids = {task.id for task in scope_roots}
     stats = _empty_task_stats()
 
@@ -707,6 +721,50 @@ async def get_task_stats(
         count_task(root)
 
     return stats
+
+
+async def get_task_stats(
+    db: AsyncSession,
+    *,
+    object_id: int,
+    root_task_id: int | None = None,
+) -> dict[str, int]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    return _calculate_task_stats(tasks, scope_roots)
+
+
+async def get_project_stage_summaries(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> list[dict]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    summaries = []
+
+    for stage_definition in PROJECT_STAGES:
+        stage_tasks = [
+            task
+            for task in tasks
+            if task.stage == stage_definition.code
+        ]
+        stage_task_ids = {task.id for task in stage_tasks}
+        stage_roots = [
+            task
+            for task in stage_tasks
+            if task.parent_id not in stage_task_ids
+        ]
+        summaries.append(
+            {
+                "code": stage_definition.code,
+                "title": stage_definition.title,
+                "order": stage_definition.order,
+                "stats": _calculate_task_stats(stage_tasks, stage_roots),
+            }
+        )
+
+    return summaries
 
 
 async def list_done_object_tasks(
@@ -853,11 +911,13 @@ async def build_available_task_tree(
             "depth": task.depth,
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
+            "stage": task.stage,
             "status": task.status,
             "deadline": task.deadline,
             "days_until_deadline": (task.deadline - datetime.now(UTC)).days if task.deadline is not None else None,
             "is_overdue": task.deadline is not None and task.deadline < datetime.now(UTC) and task.status != ObjectTaskStatus.DONE,
             "is_active": task.is_active,
+            "version": task.version,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
             "completed_by": completed_by_map.get(task.completed_by_id),

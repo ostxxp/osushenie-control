@@ -14,6 +14,7 @@ from app.modules.tasks.schemas import (
     ObjectTaskStatusUpdateRead,
     ObjectTaskTreeRead,
     ObjectTaskUpdate,
+    ProjectStageRead,
 )
 from app.modules.tasks.service import (
     build_object_task_tree,
@@ -28,6 +29,7 @@ from app.modules.tasks.service import (
     get_main_task_id,
     get_progress,
     get_task_stats,
+    get_project_stage_summaries,
     group_object_tasks_by_main_task,
     list_done_object_tasks,
     list_overdue_object_tasks,
@@ -119,6 +121,19 @@ async def get_object_task_stats(
     db: AsyncSession = Depends(get_db_session),
 ) -> dict[str, int]:
     return await get_task_stats(db, object_id=object.id, root_task_id=main_task_id)
+
+
+@router.get(
+    "/{object_id}/stages",
+    response_model=list[ProjectStageRead],
+    summary="Get all project stages with task stats",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def get_object_project_stages(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    return await get_project_stage_summaries(db, object_id=object.id)
 
 
 @router.get(

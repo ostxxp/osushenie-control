@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.modules.tasks.models import ObjectTaskStatus, TaskChildrenMode
+from app.modules.tasks.stages import ProjectStage
 from app.modules.users.schemas import UserRead
 
 
@@ -12,6 +13,7 @@ class ObjectTaskCreate(BaseModel):
     sort_order: int | None = Field(default=None, ge=0)
     children_mode: TaskChildrenMode = TaskChildrenMode.ALL
     deadline: datetime | None = None
+    stage: ProjectStage | None = None
 
 
 class ObjectTaskUpdate(BaseModel):
@@ -21,6 +23,8 @@ class ObjectTaskUpdate(BaseModel):
     status: ObjectTaskStatus | None = None
     is_active: bool | None = None
     deadline: datetime | None = None
+    stage: ProjectStage | None = None
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class ObjectTaskStatusUpdate(BaseModel):
@@ -36,8 +40,10 @@ class ObjectTaskRead(BaseModel):
     depth: int
     sort_order: int
     children_mode: TaskChildrenMode
+    stage: ProjectStage | None
     status: ObjectTaskStatus
     is_active: bool
+    version: int
     deadline: datetime | None
     completed_at: datetime | None
     completed_by_id: int | None
@@ -76,3 +82,10 @@ class ObjectTaskStatsRead(BaseModel):
     todo: int
     in_progress: int
     overdue: int
+
+
+class ProjectStageRead(BaseModel):
+    code: ProjectStage
+    title: str
+    order: int
+    stats: ObjectTaskStatsRead

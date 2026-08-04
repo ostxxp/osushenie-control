@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.modules.tasks.stages import ProjectStage
 
 
 class ObjectTaskStatus(StrEnum):
@@ -51,6 +52,11 @@ class TaskTemplate(Base):
         String(32),
         default=TaskChildrenMode.ALL,
         nullable=False,
+    )
+    stage: Mapped[ProjectStage | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -106,6 +112,11 @@ class ObjectTask(Base):
         default=TaskChildrenMode.ALL,
         nullable=False,
     )
+    stage: Mapped[ProjectStage | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
 
     status: Mapped[ObjectTaskStatus] = mapped_column(
         Enum(ObjectTaskStatus, name="object_task_status"),
@@ -113,6 +124,7 @@ class ObjectTask(Base):
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     deadline: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
