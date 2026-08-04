@@ -31,6 +31,15 @@ class ObjectTaskStatusUpdate(BaseModel):
     status: ObjectTaskStatus
 
 
+class ObjectTaskAssignmentUpdate(BaseModel):
+    assigned_to_id: int | None = None
+    reviewer_id: int | None = None
+
+
+class ObjectTaskReject(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class ObjectTaskRead(BaseModel):
     id: int
     object_id: int
@@ -48,6 +57,15 @@ class ObjectTaskRead(BaseModel):
     completed_at: datetime | None
     completed_by_id: int | None
     completed_by: UserRead | None = None
+    assigned_to_id: int | None
+    assigned_to: UserRead | None = None
+    reviewer_id: int | None
+    reviewer: UserRead | None = None
+    submitted_at: datetime | None
+    reviewed_at: datetime | None
+    reviewed_by_id: int | None
+    reviewed_by: UserRead | None = None
+    rejection_reason: str | None
     created_at: datetime
     updated_at: datetime
 

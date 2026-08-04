@@ -11,6 +11,8 @@ from app.modules.tasks.stages import ProjectStage
 class ObjectTaskStatus(StrEnum):
     TODO = "todo"
     IN_PROGRESS = "in_progress"
+    PENDING_REVIEW = "pending_review"
+    REJECTED = "rejected"
     DONE = "done"
     SKIPPED = "skipped"
     NOT_APPLICABLE = "not_applicable"
@@ -140,6 +142,30 @@ class ObjectTask(Base):
         nullable=True,
         index=True,
     )
+    assigned_to_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reviewer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reviewed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -160,4 +186,19 @@ class ObjectTask(Base):
     children: Mapped[list["ObjectTask"]] = relationship(
         back_populates="parent",
         cascade="all, delete-orphan",
+    )
+    assigned_to: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[assigned_to_id],
+        lazy="selectin",
+    )
+    reviewer: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[reviewer_id],
+        lazy="selectin",
+    )
+    reviewed_by: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[reviewed_by_id],
+        lazy="selectin",
     )

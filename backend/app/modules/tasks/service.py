@@ -14,7 +14,12 @@ from app.modules.tasks.models import (
 )
 from app.modules.tasks.stages import PROJECT_STAGES, ProjectStage, infer_project_stage
 from app.modules.notifications.models import Notifications, NotificationReads as NotificationReceipt
-from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
+from app.modules.notifications.service import create_notification
+from app.modules.tasks.schemas import (
+    ObjectTaskAssignmentUpdate,
+    ObjectTaskCreate,
+    ObjectTaskUpdate,
+)
 from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import UserRead
 
@@ -28,6 +33,13 @@ BLOCKING_STATUSES = {
 STOPPING_STATUSES = {
     ObjectTaskStatus.TODO,
     ObjectTaskStatus.IN_PROGRESS,
+    ObjectTaskStatus.PENDING_REVIEW,
+    ObjectTaskStatus.REJECTED,
+}
+
+WORKING_STATUSES = {
+    ObjectTaskStatus.IN_PROGRESS,
+    ObjectTaskStatus.PENDING_REVIEW,
 }
 
 
@@ -145,6 +157,15 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
             "completed_by": completed_by_map.get(task.completed_by_id),
+            "assigned_to_id": task.assigned_to_id,
+            "assigned_to": task.assigned_to,
+            "reviewer_id": task.reviewer_id,
+            "reviewer": task.reviewer,
+            "submitted_at": task.submitted_at,
+            "reviewed_at": task.reviewed_at,
+            "reviewed_by_id": task.reviewed_by_id,
+            "reviewed_by": task.reviewed_by,
+            "rejection_reason": task.rejection_reason,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -514,6 +535,15 @@ def _serialize_task_list_item(
         "completed_at": task.completed_at,
         "completed_by_id": task.completed_by_id,
         "completed_by": completed_by_map.get(task.completed_by_id),
+        "assigned_to_id": task.assigned_to_id,
+        "assigned_to": task.assigned_to,
+        "reviewer_id": task.reviewer_id,
+        "reviewer": task.reviewer,
+        "submitted_at": task.submitted_at,
+        "reviewed_at": task.reviewed_at,
+        "reviewed_by_id": task.reviewed_by_id,
+        "reviewed_by": task.reviewed_by,
+        "rejection_reason": task.rejection_reason,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "main_task_id": main_task.id,
@@ -593,7 +623,7 @@ def _add_status_to_stats(
 ) -> None:
     if status == ObjectTaskStatus.DONE or status in BLOCKING_STATUSES:
         stats["done"] += 1
-    elif status == ObjectTaskStatus.IN_PROGRESS:
+    elif status in WORKING_STATUSES:
         stats["in_progress"] += 1
     else:
         stats["todo"] += 1
@@ -619,7 +649,7 @@ def _get_task_group_status(tasks: list[ObjectTask]) -> ObjectTaskStatus:
 
     if any(task.status == ObjectTaskStatus.DONE for task in active_tasks):
         return ObjectTaskStatus.DONE
-    if any(task.status == ObjectTaskStatus.IN_PROGRESS for task in active_tasks):
+    if any(task.status in WORKING_STATUSES for task in active_tasks):
         return ObjectTaskStatus.IN_PROGRESS
     if not active_tasks:
         return ObjectTaskStatus.DONE
@@ -815,10 +845,14 @@ async def list_logical_todo_object_tasks(
             collect_children(task)
             return
 
-        if task.status == ObjectTaskStatus.TODO:
+        if task.status in {ObjectTaskStatus.TODO, ObjectTaskStatus.REJECTED}:
             todo_tasks.append(task)
 
-        if task.status in {ObjectTaskStatus.DONE, ObjectTaskStatus.IN_PROGRESS}:
+        if task.status in {
+            ObjectTaskStatus.DONE,
+            ObjectTaskStatus.IN_PROGRESS,
+            ObjectTaskStatus.PENDING_REVIEW,
+        }:
             collect_children(task)
 
     def collect_children(parent: ObjectTask) -> None:
@@ -921,6 +955,15 @@ async def build_available_task_tree(
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
             "completed_by": completed_by_map.get(task.completed_by_id),
+            "assigned_to_id": task.assigned_to_id,
+            "assigned_to": task.assigned_to,
+            "reviewer_id": task.reviewer_id,
+            "reviewer": task.reviewer,
+            "submitted_at": task.submitted_at,
+            "reviewed_at": task.reviewed_at,
+            "reviewed_by_id": task.reviewed_by_id,
+            "reviewed_by": task.reviewed_by,
+            "rejection_reason": task.rejection_reason,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -949,6 +992,212 @@ async def build_available_task_tree(
         return node
 
     return await serialize_until_blocker(main_task)
+
+
+async def _get_active_user(db: AsyncSession, user_id: int) -> User:
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Active user not found.",
+        )
+    return user
+
+
+async def _ensure_foreman_has_object_access(
+    db: AsyncSession,
+    *,
+    user: User,
+    object_id: int,
+) -> None:
+    if user.role != UserRole.FOREMAN:
+        return
+    assignment = await db.scalar(
+        select(ObjectToUser).where(
+            ObjectToUser.object_id == object_id,
+            ObjectToUser.user_id == user.id,
+        )
+    )
+    if assignment is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Foreman must be assigned to the object first.",
+        )
+
+
+def _can_manage_task(task: ObjectTask, user: User) -> bool:
+    return user.role in {UserRole.ADMIN, UserRole.CHIEF_ENGINEER} or (
+        task.assigned_to_id == user.id
+    )
+
+
+def _can_review_task(task: ObjectTask, user: User) -> bool:
+    return user.role in {UserRole.ADMIN, UserRole.CHIEF_ENGINEER} or (
+        task.reviewer_id == user.id
+    )
+
+
+def _require_task_status(
+    task: ObjectTask,
+    allowed_statuses: set[ObjectTaskStatus],
+) -> None:
+    if task.status not in allowed_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Task cannot be changed from status '{task.status}'.",
+        )
+
+
+async def assign_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    assignment: ObjectTaskAssignmentUpdate,
+    current_user: User,
+) -> ObjectTask:
+    assigned_to = None
+    reviewer = None
+    if assignment.assigned_to_id is not None:
+        assigned_to = await _get_active_user(db, assignment.assigned_to_id)
+        await _ensure_foreman_has_object_access(
+            db,
+            user=assigned_to,
+            object_id=object_task.object_id,
+        )
+    if assignment.reviewer_id is not None:
+        reviewer = await _get_active_user(db, assignment.reviewer_id)
+        if reviewer.role not in {UserRole.ADMIN, UserRole.CHIEF_ENGINEER}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reviewer must be an admin or chief engineer.",
+            )
+
+    object_task.assigned_to_id = assigned_to.id if assigned_to is not None else None
+    object_task.reviewer_id = reviewer.id if reviewer is not None else None
+    object_task.version += 1
+    object_task.assigned_to = assigned_to
+    object_task.reviewer = reviewer
+
+    recipient_ids = {
+        user_id
+        for user_id in (object_task.assigned_to_id, object_task.reviewer_id)
+        if user_id is not None
+    }
+    await create_notification(
+        db,
+        actor_user_id=current_user.id,
+        object_id=object_task.object_id,
+        recipient_ids=recipient_ids,
+        message=f'Назначены участники задачи "{object_task.title}".',
+        notification_type=NotificationType.TASK_ASSIGNED,
+    )
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
+
+
+async def start_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    current_user: User,
+) -> ObjectTask:
+    if not _can_manage_task(object_task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot start this task.")
+    _require_task_status(
+        object_task,
+        {ObjectTaskStatus.TODO, ObjectTaskStatus.REJECTED},
+    )
+    _set_task_status(object_task, ObjectTaskStatus.IN_PROGRESS)
+    object_task.rejection_reason = None
+    object_task.reviewed_at = None
+    object_task.reviewed_by_id = None
+    object_task.version += 1
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
+
+
+async def submit_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    current_user: User,
+) -> ObjectTask:
+    if not _can_manage_task(object_task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot submit this task.")
+    _require_task_status(object_task, {ObjectTaskStatus.IN_PROGRESS})
+    _set_task_status(object_task, ObjectTaskStatus.PENDING_REVIEW)
+    object_task.submitted_at = datetime.now(UTC)
+    object_task.version += 1
+
+    recipients = {object_task.reviewer_id} if object_task.reviewer_id else set()
+    if not recipients:
+        recipients = set(
+            await db.scalars(
+                select(User.id).where(
+                    User.is_active.is_(True),
+                    User.role.in_([UserRole.ADMIN, UserRole.CHIEF_ENGINEER]),
+                )
+            )
+        )
+    await create_notification(
+        db,
+        actor_user_id=current_user.id,
+        object_id=object_task.object_id,
+        recipient_ids=recipients,
+        message=f'Задача "{object_task.title}" отправлена на проверку.',
+        notification_type=NotificationType.TASK_SUBMITTED,
+    )
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
+
+
+async def review_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    current_user: User,
+    accepted: bool,
+    rejection_reason: str | None = None,
+) -> ObjectTask:
+    if not _can_review_task(object_task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot review this task.")
+    _require_task_status(object_task, {ObjectTaskStatus.PENDING_REVIEW})
+
+    object_task.reviewed_at = datetime.now(UTC)
+    object_task.reviewed_by_id = current_user.id
+    object_task.reviewed_by = current_user
+    object_task.version += 1
+    if accepted:
+        _set_task_status(
+            object_task,
+            ObjectTaskStatus.DONE,
+            current_user=current_user,
+        )
+        object_task.rejection_reason = None
+        notification_type = NotificationType.TASK_ACCEPTED
+        message = f'Задача "{object_task.title}" принята.'
+    else:
+        _set_task_status(object_task, ObjectTaskStatus.REJECTED)
+        object_task.rejection_reason = rejection_reason
+        notification_type = NotificationType.TASK_REJECTED
+        short_reason = (rejection_reason or "")[:160]
+        message = f'Задача "{object_task.title}" возвращена: {short_reason}'
+
+    recipients = {object_task.assigned_to_id} if object_task.assigned_to_id else set()
+    await create_notification(
+        db,
+        actor_user_id=current_user.id,
+        object_id=object_task.object_id,
+        recipient_ids=recipients,
+        message=message,
+        notification_type=notification_type,
+    )
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
 
 
 async def build_available_task_trees(

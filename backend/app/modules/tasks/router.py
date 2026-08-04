@@ -7,7 +7,9 @@ from app.modules.objects.models import ConstructionObject
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
     ObjectTaskCreate,
+    ObjectTaskAssignmentUpdate,
     ObjectTaskListGroupRead,
+    ObjectTaskReject,
     ObjectTaskRead,
     ObjectTaskStatsRead,
     ObjectTaskStatusUpdate,
@@ -18,6 +20,7 @@ from app.modules.tasks.schemas import (
 )
 from app.modules.tasks.service import (
     build_object_task_tree,
+    assign_object_task,
     create_object_task,
     deactivate_object_task,
     list_object_tasks,
@@ -33,6 +36,9 @@ from app.modules.tasks.service import (
     group_object_tasks_by_main_task,
     list_done_object_tasks,
     list_overdue_object_tasks,
+    review_object_task,
+    start_object_task,
+    submit_object_task,
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -198,6 +204,102 @@ async def update_task_for_object_post(
         object_task=object_task,
         task_data=task_data,
         current_user=current_user,
+    )
+
+
+@router.patch(
+    "/{object_id}/tasks/{task_id}/assignment",
+    response_model=ObjectTaskRead,
+    summary="Assign task executor and reviewer",
+    dependencies=[Depends(user_can_access_object), Depends(require_chief_engineer_or_admin)],
+)
+async def assign_task_for_object(
+    assignment: ObjectTaskAssignmentUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await assign_object_task(
+        db,
+        object_task=object_task,
+        assignment=assignment,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{object_id}/tasks/{task_id}/start",
+    response_model=ObjectTaskRead,
+    summary="Start assigned task",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def start_task_for_object(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await start_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{object_id}/tasks/{task_id}/submit",
+    response_model=ObjectTaskRead,
+    summary="Submit task for review",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def submit_task_for_object(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await submit_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{object_id}/tasks/{task_id}/accept",
+    response_model=ObjectTaskRead,
+    summary="Accept submitted task",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def accept_task_for_object(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await review_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+        accepted=True,
+    )
+
+
+@router.post(
+    "/{object_id}/tasks/{task_id}/reject",
+    response_model=ObjectTaskRead,
+    summary="Reject submitted task",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def reject_task_for_object(
+    payload: ObjectTaskReject,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await review_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+        accepted=False,
+        rejection_reason=payload.reason,
     )
 
 @router.patch(
