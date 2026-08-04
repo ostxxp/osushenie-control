@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import zipfile
 from pathlib import Path
 from typing import Any
 
-from task_branch_classifier import classify_children_mode
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.modules.tasks.stages import infer_project_stage
+from scripts.task_branch_classifier import classify_children_mode
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +46,7 @@ def parse_topic(
 ) -> dict[str, Any]:
     title = normalize_title(topic.get("title"))
     current_path = [*(path or []), title]
+    stage_root_title = current_path[1] if len(current_path) > 1 else None
     children = [
         parse_topic(
             child,
@@ -58,6 +65,11 @@ def parse_topic(
         "depth": depth,
         "sort_order": sort_order,
         "path": current_path,
+        "stage": (
+            infer_project_stage(stage_root_title).value
+            if stage_root_title is not None
+            else None
+        ),
         "children_mode": classify_children_mode({"title": title}, children),
         "children": children,
     }
@@ -79,6 +91,7 @@ def flatten_topic(
         "depth": topic["depth"],
         "sort_order": topic["sort_order"],
         "path": topic["path"],
+        "stage": topic["stage"],
         "has_children": bool(children),
         "children_mode": topic["children_mode"],
     }

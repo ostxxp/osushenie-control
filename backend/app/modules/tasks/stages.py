@@ -66,7 +66,11 @@ def infer_project_stage(title: str) -> ProjectStage:
         return ProjectStage.SAFETY_INDUSTRIAL
     if "рабочая документац" in normalized or "согласован" in normalized:
         return ProjectStage.DOCUMENTATION_APPROVALS
-    if "мобилизац" in normalized or "подготов" in normalized:
+    if (
+        "мобилизац" in normalized
+        or "подготов" in normalized
+        or "ответственный итр" in normalized
+    ):
         return ProjectStage.PREPARATION_MOBILIZATION
     if "эксплуатац" in normalized or "мониторинг" in normalized:
         return ProjectStage.OPERATION_MONITORING
@@ -74,6 +78,6 @@ def infer_project_stage(title: str) -> ProjectStage:
         return ProjectStage.COMPLETION_WARRANTY
     if "сдач" in normalized or "приёмк" in normalized or "приемк" in normalized:
         return ProjectStage.HANDOVER_ACCEPTANCE
-    if "договор" in normalized or "ответственный итр" in normalized:
+    if "договор" in normalized:
         return ProjectStage.CONTRACT_START
     return ProjectStage.CONSTRUCTION_INSTALLATION
