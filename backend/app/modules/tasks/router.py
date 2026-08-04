@@ -116,8 +116,14 @@ async def create_task_for_object(
     task_data: ObjectTaskCreate,
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
 ) -> ObjectTask:
-    return await create_object_task(db, object_id=object.id, task_data=task_data)
+    return await create_object_task(
+        db,
+        object_id=object.id,
+        task_data=task_data,
+        current_user=current_user,
+    )
 
 @router.get(
     "/{object_id}/progress",
@@ -331,12 +337,14 @@ async def select_task_branch_for_object(
     payload: ObjectTaskBranchSelect,
     db: AsyncSession = Depends(get_db_session),
     parent_task: ObjectTask = Depends(get_object_task_or_404),
+    current_user: User = Depends(get_current_auth_user),
 ) -> ObjectTask:
     return await select_object_task_branch(
         db,
         parent_task=parent_task,
         child_id=payload.child_id,
         expected_version=payload.expected_version,
+        current_user=current_user,
     )
 
 
@@ -349,8 +357,13 @@ async def select_task_branch_for_object(
 async def clear_task_branch_for_object(
     db: AsyncSession = Depends(get_db_session),
     parent_task: ObjectTask = Depends(get_object_task_or_404),
+    current_user: User = Depends(get_current_auth_user),
 ) -> ObjectTask:
-    return await clear_object_task_branch(db, parent_task=parent_task)
+    return await clear_object_task_branch(
+        db,
+        parent_task=parent_task,
+        current_user=current_user,
+    )
 
 @router.patch(
     "/{object_id}/tasks/{task_id}/status",
@@ -416,9 +429,14 @@ async def update_task_status_for_object(
 async def delete_task_for_object(
     response: Response,
     db: AsyncSession = Depends(get_db_session),
-    object_task: ObjectTask = Depends(get_object_task_or_404)
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+    current_user: User = Depends(get_current_auth_user),
 ) -> None:
-    await deactivate_object_task(db, object_task=object_task)
+    await deactivate_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+    )
     response.status_code = status.HTTP_204_NO_CONTENT
 
 @router.get(

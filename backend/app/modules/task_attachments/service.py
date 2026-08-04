@@ -9,6 +9,8 @@ from app.core.config import settings
 from app.modules.task_attachments.models import TaskAttachment
 from app.modules.tasks.models import ObjectTask
 from app.modules.users.models import User, UserRole
+from app.modules.task_activity.models import TaskActivityAction
+from app.modules.task_activity.service import record_task_activity
 
 
 ALLOWED_ATTACHMENT_MIME_TYPES = {
@@ -87,6 +89,19 @@ async def create_task_attachment(
         size_bytes=len(content),
     )
     db.add(attachment)
+    await record_task_activity(
+        db,
+        task=task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.ATTACHMENT_ADDED,
+        from_status=task.status,
+        to_status=task.status,
+        details={
+            "filename": attachment.original_filename,
+            "mime_type": attachment.mime_type,
+            "size_bytes": attachment.size_bytes,
+        },
+    )
     await db.commit()
     await db.refresh(attachment)
     return attachment
@@ -138,5 +153,15 @@ async def deactivate_task_attachment(
     ):
         raise HTTPException(status_code=403, detail="You cannot delete this attachment.")
     attachment.is_active = False
+    task = await db.get(ObjectTask, attachment.task_id)
+    if task is not None:
+        await record_task_activity(
+            db,
+            task=task,
+            actor_user_id=current_user.id,
+            action=TaskActivityAction.ATTACHMENT_REMOVED,
+            from_status=task.status,
+            to_status=task.status,
+            details={"filename": attachment.original_filename},
+        )
     await db.commit()
-

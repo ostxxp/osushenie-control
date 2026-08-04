@@ -24,6 +24,8 @@ from app.modules.tasks.schemas import (
 )
 from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import UserRead
+from app.modules.task_activity.models import TaskActivityAction
+from app.modules.task_activity.service import record_task_activity
 
 from app.modules.notifications.models import NotificationType
 
@@ -194,6 +196,7 @@ async def create_object_task(
     *,
     object_id: int,
     task_data: ObjectTaskCreate,
+    current_user: User,
 ) -> ObjectTask:
     parent = None
     if task_data.parent_id is not None:
@@ -226,6 +229,14 @@ async def create_object_task(
         deadline=task_data.deadline,
     )
     db.add(object_task)
+    await db.flush()
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.CREATED,
+        to_status=object_task.status,
+    )
     await db.commit()
     await db.refresh(object_task)
     return object_task
@@ -238,6 +249,7 @@ async def update_object_task(
     task_data: ObjectTaskUpdate,
     current_user: User,
 ) -> ObjectTask:
+    previous_status = object_task.status
     update_data = task_data.model_dump(exclude_unset=True)
     expected_version = update_data.pop("expected_version", None)
     if expected_version is not None and object_task.version != expected_version:
@@ -276,6 +288,23 @@ async def update_object_task(
             setattr(object_task, field, update_data[field])
 
     object_task.version += 1
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=(
+            TaskActivityAction.STATUS_CHANGED
+            if "status" in update_data
+            else TaskActivityAction.UPDATED
+        ),
+        from_status=previous_status,
+        to_status=object_task.status,
+        details={
+            "changed_fields": sorted(
+                field for field in update_data if field != "expected_version"
+            )
+        },
+    )
     
     if "status" in update_data:
         taskTitle = object_task.title if object_task.title is not None else "Задача"
@@ -929,8 +958,17 @@ async def deactivate_object_task(
     db: AsyncSession,
     *,
     object_task: ObjectTask,
+    current_user: User,
 ) -> None:
     object_task.is_active = False
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.DEACTIVATED,
+        from_status=object_task.status,
+        to_status=object_task.status,
+    )
     db.add(object_task)
     await db.commit()
 
@@ -1011,6 +1049,7 @@ async def select_object_task_branch(
     parent_task: ObjectTask,
     child_id: int,
     expected_version: int | None = None,
+    current_user: User,
 ) -> ObjectTask:
     if parent_task.children_mode != TaskChildrenMode.SINGLE_CHOICE:
         raise HTTPException(
@@ -1052,6 +1091,16 @@ async def select_object_task_branch(
         _set_task_status(child, ObjectTaskStatus.NOT_APPLICABLE)
         child.not_applicable_reason = "Выбрана другая взаимоисключающая ветка"
 
+    await record_task_activity(
+        db,
+        task=parent_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.BRANCH_SELECTED,
+        from_status=parent_task.status,
+        to_status=parent_task.status,
+        details={"selected_child_id": selected_child.id},
+    )
+
     await db.commit()
     await db.refresh(parent_task)
     return parent_task
@@ -1061,6 +1110,7 @@ async def clear_object_task_branch(
     db: AsyncSession,
     *,
     parent_task: ObjectTask,
+    current_user: User,
 ) -> ObjectTask:
     if parent_task.children_mode != TaskChildrenMode.SINGLE_CHOICE:
         raise HTTPException(
@@ -1081,6 +1131,14 @@ async def clear_object_task_branch(
 
     parent_task.selected_child_id = None
     parent_task.version += 1
+    await record_task_activity(
+        db,
+        task=parent_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.BRANCH_CLEARED,
+        from_status=parent_task.status,
+        to_status=parent_task.status,
+    )
     await db.commit()
     await db.refresh(parent_task)
     return parent_task
@@ -1183,6 +1241,18 @@ async def assign_object_task(
         message=f'Назначены участники задачи "{object_task.title}".',
         notification_type=NotificationType.TASK_ASSIGNED,
     )
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.ASSIGNED,
+        from_status=object_task.status,
+        to_status=object_task.status,
+        details={
+            "assigned_to_id": object_task.assigned_to_id,
+            "reviewer_id": object_task.reviewer_id,
+        },
+    )
     await db.commit()
     await db.refresh(object_task)
     return object_task
@@ -1200,11 +1270,20 @@ async def start_object_task(
         object_task,
         {ObjectTaskStatus.TODO, ObjectTaskStatus.REJECTED},
     )
+    previous_status = object_task.status
     _set_task_status(object_task, ObjectTaskStatus.IN_PROGRESS)
     object_task.rejection_reason = None
     object_task.reviewed_at = None
     object_task.reviewed_by_id = None
     object_task.version += 1
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.STARTED,
+        from_status=previous_status,
+        to_status=object_task.status,
+    )
     await db.commit()
     await db.refresh(object_task)
     return object_task
@@ -1219,6 +1298,7 @@ async def submit_object_task(
     if not _can_manage_task(object_task, current_user):
         raise HTTPException(status_code=403, detail="You cannot submit this task.")
     _require_task_status(object_task, {ObjectTaskStatus.IN_PROGRESS})
+    previous_status = object_task.status
     _set_task_status(object_task, ObjectTaskStatus.PENDING_REVIEW)
     object_task.submitted_at = datetime.now(UTC)
     object_task.version += 1
@@ -1241,6 +1321,14 @@ async def submit_object_task(
         message=f'Задача "{object_task.title}" отправлена на проверку.',
         notification_type=NotificationType.TASK_SUBMITTED,
     )
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.SUBMITTED,
+        from_status=previous_status,
+        to_status=object_task.status,
+    )
     await db.commit()
     await db.refresh(object_task)
     return object_task
@@ -1258,6 +1346,7 @@ async def review_object_task(
         raise HTTPException(status_code=403, detail="You cannot review this task.")
     _require_task_status(object_task, {ObjectTaskStatus.PENDING_REVIEW})
 
+    previous_status = object_task.status
     object_task.reviewed_at = datetime.now(UTC)
     object_task.reviewed_by_id = current_user.id
     object_task.reviewed_by = current_user
@@ -1286,6 +1375,15 @@ async def review_object_task(
         recipient_ids=recipients,
         message=message,
         notification_type=notification_type,
+    )
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=(TaskActivityAction.ACCEPTED if accepted else TaskActivityAction.REJECTED),
+        from_status=previous_status,
+        to_status=object_task.status,
+        details={"rejection_reason": rejection_reason} if rejection_reason else {},
     )
     await db.commit()
     await db.refresh(object_task)

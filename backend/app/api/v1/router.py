@@ -10,6 +10,7 @@ from app.modules.photos.router import router as photos_router
 from app.modules.ai.router import router as ai_router
 from app.modules.task_attachments.router import router as task_attachments_router
 from app.modules.work_items.router import router as work_items_router
+from app.modules.task_activity.router import router as task_activity_router
 
 api_router = APIRouter()
 
@@ -53,6 +54,11 @@ api_router.include_router(
     work_items_router,
     prefix="/tasks",
     tags=["My Tasks"],
+)
+
+api_router.include_router(
+    task_activity_router,
+    tags=["Task Activity"],
 )
 
 api_router.include_router(
