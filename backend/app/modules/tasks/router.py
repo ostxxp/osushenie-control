@@ -6,6 +6,7 @@ from app.modules.objects.dependencies import get_object_or_404, user_can_access_
 from app.modules.objects.models import ConstructionObject
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
+    CurrentStepRead,
     ObjectTaskCreate,
     ObjectTaskAssignmentUpdate,
     ObjectTaskBranchSelect,
@@ -35,6 +36,7 @@ from app.modules.tasks.service import (
     get_progress,
     get_task_stats,
     get_project_stage_summaries,
+    get_current_object_step,
     group_object_tasks_by_main_task,
     list_done_object_tasks,
     list_overdue_object_tasks,
@@ -50,6 +52,19 @@ from app.modules.users.schemas import UserRead
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/{object_id}/current-step",
+    response_model=CurrentStepRead,
+    summary="Get current actionable object step",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def get_current_step_for_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    return await get_current_object_step(db, object_id=object.id)
 
 @router.get(
     "/{object_id}/tasks",

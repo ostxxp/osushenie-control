@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.objects.models import ConstructionObject, ObjectToUser
@@ -16,9 +16,11 @@ from app.modules.tasks.stages import PROJECT_STAGES, ProjectStage, infer_project
 from app.modules.notifications.models import Notifications, NotificationReads as NotificationReceipt
 from app.modules.notifications.service import create_notification
 from app.modules.tasks.schemas import (
+    MyTaskPageRead,
     ObjectTaskAssignmentUpdate,
     ObjectTaskCreate,
     ObjectTaskUpdate,
+    TaskAttentionFlag,
 )
 from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import UserRead
@@ -1324,3 +1326,185 @@ async def get_progress(
         return 0
 
     return stats["done"] * 100 // stats["total"]
+
+
+def _task_deadline_details(task: ObjectTask) -> tuple[TaskAttentionFlag, int | None]:
+    if task.status == ObjectTaskStatus.REJECTED:
+        return TaskAttentionFlag.REJECTED, None
+    if task.deadline is None:
+        return TaskAttentionFlag.NORMAL, None
+
+    deadline = task.deadline
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    days_remaining = (deadline.date() - datetime.now(UTC).date()).days
+    if days_remaining < 0:
+        return TaskAttentionFlag.OVERDUE, days_remaining
+    if days_remaining <= 3:
+        return TaskAttentionFlag.DUE_SOON, days_remaining
+    return TaskAttentionFlag.NORMAL, days_remaining
+
+
+def _task_stage_details(task: ObjectTask | None) -> tuple[str | None, int | None]:
+    if task is None or task.stage is None:
+        return None, None
+    definition = next((item for item in PROJECT_STAGES if item.code == task.stage), None)
+    if definition is None:
+        return None, None
+    return definition.title, definition.order
+
+
+def _task_action_required_by(task: ObjectTask) -> User | None:
+    if task.status == ObjectTaskStatus.PENDING_REVIEW:
+        return task.reviewer
+    return task.assigned_to
+
+
+async def get_current_object_step(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> dict:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    if not tasks:
+        return {
+            "task": None,
+            "stage": None,
+            "stage_title": None,
+            "stage_order": None,
+            "action_required_by": None,
+            "flag": TaskAttentionFlag.NORMAL,
+            "days_remaining": None,
+        }
+
+    logical_todo = await list_logical_todo_object_tasks(db, object_id=object_id)
+    candidate_ids = {task.id for task in logical_todo}
+    candidates = [
+        task
+        for task in tasks
+        if task.id in candidate_ids
+        or task.status in {
+            ObjectTaskStatus.IN_PROGRESS,
+            ObjectTaskStatus.PENDING_REVIEW,
+            ObjectTaskStatus.REJECTED,
+        }
+    ]
+    stage_order = {item.code: item.order for item in PROJECT_STAGES}
+    status_order = {
+        ObjectTaskStatus.REJECTED: 0,
+        ObjectTaskStatus.PENDING_REVIEW: 1,
+        ObjectTaskStatus.IN_PROGRESS: 2,
+        ObjectTaskStatus.TODO: 3,
+    }
+    candidates.sort(
+        key=lambda task: (
+            stage_order.get(task.stage, len(PROJECT_STAGES) + 1),
+            status_order.get(task.status, 4),
+            task.depth,
+            task.sort_order,
+            task.id,
+        )
+    )
+    task = candidates[0] if candidates else None
+    title, order = _task_stage_details(task)
+    flag, days_remaining = (
+        _task_deadline_details(task)
+        if task is not None
+        else (TaskAttentionFlag.NORMAL, None)
+    )
+    return {
+        "task": task,
+        "stage": task.stage if task is not None else None,
+        "stage_title": title,
+        "stage_order": order,
+        "action_required_by": _task_action_required_by(task) if task is not None else None,
+        "flag": flag,
+        "days_remaining": days_remaining,
+    }
+
+
+async def list_user_work_items(
+    db: AsyncSession,
+    *,
+    user: User,
+    object_id: int | None = None,
+    task_status: ObjectTaskStatus | None = None,
+    today_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    query = (
+        select(ObjectTask, ConstructionObject)
+        .join(ConstructionObject, ConstructionObject.id == ObjectTask.object_id)
+        .where(
+            ObjectTask.is_active.is_(True),
+            ObjectTask.status.notin_(BLOCKING_STATUSES),
+            or_(
+                ObjectTask.assigned_to_id == user.id,
+                and_(
+                    ObjectTask.reviewer_id == user.id,
+                    ObjectTask.status == ObjectTaskStatus.PENDING_REVIEW,
+                ),
+            ),
+        )
+    )
+    if object_id is not None:
+        query = query.where(ObjectTask.object_id == object_id)
+    if task_status is not None:
+        query = query.where(ObjectTask.status == task_status)
+
+    result = await db.execute(
+        query.order_by(
+            ObjectTask.deadline.asc().nullslast(),
+            ObjectTask.updated_at.desc(),
+            ObjectTask.id,
+        )
+    )
+    rows = list(result.all())
+    if today_only:
+        today = datetime.now(UTC).date()
+        rows = [
+            row
+            for row in rows
+            if row.ObjectTask.status in {
+                ObjectTaskStatus.IN_PROGRESS,
+                ObjectTaskStatus.PENDING_REVIEW,
+                ObjectTaskStatus.REJECTED,
+            }
+            or (
+                row.ObjectTask.deadline is not None
+                and row.ObjectTask.deadline.date() <= today
+            )
+        ]
+
+    total = len(rows)
+    items = []
+    for task, object_item in rows[offset:offset + limit]:
+        flag, days_remaining = _task_deadline_details(task)
+        task_data = {
+            column.name: getattr(task, column.name)
+            for column in ObjectTask.__table__.columns
+        }
+        task_data.update(
+            {
+                "assigned_to": task.assigned_to,
+                "reviewer": task.reviewer,
+                "reviewed_by": task.reviewed_by,
+                "completed_by": None,
+                "object_name": object_item.name,
+                "object_address": object_item.address,
+                "action_required": (
+                    "review" if task.status == ObjectTaskStatus.PENDING_REVIEW else "execute"
+                ),
+                "flag": flag,
+                "days_remaining": days_remaining,
+            }
+        )
+        items.append(task_data)
+
+    return MyTaskPageRead(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    ).model_dump()

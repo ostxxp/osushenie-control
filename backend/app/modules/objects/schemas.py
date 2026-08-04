@@ -4,7 +4,8 @@ from datetime import date, datetime
 
 from app.db.base import Base
 from app.modules.photos.schemas import PhotoRead
-from app.modules.tasks.schemas import ObjectTaskStatsRead
+from app.modules.tasks.schemas import CurrentStepRead, ObjectTaskStatsRead
+from app.modules.users.schemas import UserRead
 
 class ObjectBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -34,3 +35,5 @@ class ObjectSummaryRead(ObjectRead):
     stats: ObjectTaskStatsRead
     progress: int
     photos: list[PhotoRead]
+    responsible_users: list[UserRead]
+    current_step: CurrentStepRead

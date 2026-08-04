@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -114,3 +115,35 @@ class ProjectStageRead(BaseModel):
     title: str
     order: int
     stats: ObjectTaskStatsRead
+
+
+class TaskAttentionFlag(StrEnum):
+    NORMAL = "normal"
+    DUE_SOON = "due_soon"
+    OVERDUE = "overdue"
+    REJECTED = "rejected"
+
+
+class CurrentStepRead(BaseModel):
+    task: ObjectTaskRead | None
+    stage: ProjectStage | None
+    stage_title: str | None
+    stage_order: int | None
+    action_required_by: UserRead | None
+    flag: TaskAttentionFlag
+    days_remaining: int | None
+
+
+class MyTaskRead(ObjectTaskRead):
+    object_name: str
+    object_address: str
+    action_required: str
+    flag: TaskAttentionFlag
+    days_remaining: int | None
+
+
+class MyTaskPageRead(BaseModel):
+    items: list[MyTaskRead]
+    total: int
+    limit: int
+    offset: int
