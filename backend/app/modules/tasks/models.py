@@ -105,6 +105,11 @@ class ObjectTask(Base):
         nullable=True,
         index=True,
     )
+    selected_child_id: Mapped[int | None] = mapped_column(
+        ForeignKey("object_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     depth: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -166,6 +171,10 @@ class ObjectTask(Base):
         index=True,
     )
     rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    not_applicable_reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -180,10 +189,12 @@ class ObjectTask(Base):
     )
 
     parent: Mapped["ObjectTask | None"] = relationship(
+        foreign_keys=[parent_id],
         remote_side=[id],
         back_populates="children",
     )
     children: Mapped[list["ObjectTask"]] = relationship(
+        foreign_keys=[parent_id],
         back_populates="parent",
         cascade="all, delete-orphan",
     )
@@ -201,4 +212,10 @@ class ObjectTask(Base):
         "User",
         foreign_keys=[reviewed_by_id],
         lazy="selectin",
+    )
+    selected_child: Mapped["ObjectTask | None"] = relationship(
+        "ObjectTask",
+        foreign_keys=[selected_child_id],
+        remote_side=[id],
+        post_update=True,
     )

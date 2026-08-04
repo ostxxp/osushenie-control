@@ -3,6 +3,7 @@ from datetime import date
 from httpx import AsyncClient
 
 from app.modules.users.models import UserRole
+from app.modules.tasks.models import TaskChildrenMode
 from tests.conftest import auth_headers, login
 
 
@@ -100,3 +101,97 @@ async def test_assigned_task_can_be_submitted_rejected_and_accepted(
         notification["type"]
         for notification in notifications_response.json()
     } >= {"task_assigned", "task_rejected", "task_accepted"}
+
+
+async def test_single_choice_branch_can_be_selected_switched_and_cleared(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    root = await create_task_template(
+        title="Есть рабочая документация?",
+        source_id="documentation-choice",
+        children_mode=TaskChildrenMode.SINGLE_CHOICE,
+    )
+    await create_task_template(
+        title="Есть",
+        parent_id=root.id,
+        source_id="documentation-yes",
+        parent_source_id=root.source_id,
+        depth=1,
+        sort_order=0,
+    )
+    await create_task_template(
+        title="Нет",
+        parent_id=root.id,
+        source_id="documentation-no",
+        parent_source_id=root.source_id,
+        depth=1,
+        sort_order=1,
+    )
+    token = await login(client, email="admin@example.com")
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(token),
+        json=object_payload(),
+    )
+    object_id = create_response.json()["id"]
+    tasks = (
+        await client.get(
+            f"/api/v1/objects/{object_id}/tasks",
+            headers=auth_headers(token),
+        )
+    ).json()
+    root_task = next(task for task in tasks if task["parent_id"] is None)
+    yes_task = next(task for task in tasks if task["title"] == "Есть")
+    no_task = next(task for task in tasks if task["title"] == "Нет")
+
+    select_yes_response = await client.put(
+        f"/api/v1/objects/{object_id}/tasks/{root_task['id']}/branch",
+        headers=auth_headers(token),
+        json={
+            "child_id": yes_task["id"],
+            "expected_version": root_task["version"],
+        },
+    )
+    select_no_response = await client.put(
+        f"/api/v1/objects/{object_id}/tasks/{root_task['id']}/branch",
+        headers=auth_headers(token),
+        json={
+            "child_id": no_task["id"],
+            "expected_version": select_yes_response.json()["version"],
+        },
+    )
+    selected_tasks = (
+        await client.get(
+            f"/api/v1/objects/{object_id}/tasks",
+            headers=auth_headers(token),
+        )
+    ).json()
+    clear_response = await client.delete(
+        f"/api/v1/objects/{object_id}/tasks/{root_task['id']}/branch",
+        headers=auth_headers(token),
+    )
+    cleared_tasks = (
+        await client.get(
+            f"/api/v1/objects/{object_id}/tasks",
+            headers=auth_headers(token),
+        )
+    ).json()
+
+    assert select_yes_response.status_code == 200
+    assert select_yes_response.json()["selected_child_id"] == yes_task["id"]
+    assert select_no_response.json()["selected_child_id"] == no_task["id"]
+    assert next(task for task in selected_tasks if task["id"] == yes_task["id"])[
+        "status"
+    ] == "not_applicable"
+    assert next(task for task in selected_tasks if task["id"] == no_task["id"])[
+        "status"
+    ] == "todo"
+    assert clear_response.json()["selected_child_id"] is None
+    assert {
+        task["status"]
+        for task in cleared_tasks
+        if task["parent_id"] == root_task["id"]
+    } == {"todo"}

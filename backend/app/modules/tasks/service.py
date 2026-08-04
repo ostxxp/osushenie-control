@@ -145,6 +145,7 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "object_id": task.object_id,
             "parent_id": task.parent_id,
             "template_id": task.template_id,
+            "selected_child_id": task.selected_child_id,
             "title": task.title,
             "depth": task.depth,
             "sort_order": task.sort_order,
@@ -166,6 +167,7 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "reviewed_by_id": task.reviewed_by_id,
             "reviewed_by": task.reviewed_by,
             "rejection_reason": task.rejection_reason,
+            "not_applicable_reason": task.not_applicable_reason,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -387,6 +389,7 @@ async def _sync_single_choice_siblings(
     siblings = children_by_parent_id.get(parent.id, [])
 
     if changed_task.status == ObjectTaskStatus.DONE:
+        parent.selected_child_id = changed_task.id
         for sibling in siblings:
             if sibling.id == changed_task.id:
                 continue
@@ -406,6 +409,8 @@ async def _sync_single_choice_siblings(
     )
     if has_selected_sibling:
         return
+
+    parent.selected_child_id = None
 
     for sibling in siblings:
         if sibling.id == changed_task.id:
@@ -523,6 +528,7 @@ def _serialize_task_list_item(
         "object_id": task.object_id,
         "parent_id": task.parent_id,
         "template_id": task.template_id,
+        "selected_child_id": task.selected_child_id,
         "title": task.title,
         "depth": task.depth,
         "sort_order": task.sort_order,
@@ -544,6 +550,7 @@ def _serialize_task_list_item(
         "reviewed_by_id": task.reviewed_by_id,
         "reviewed_by": task.reviewed_by,
         "rejection_reason": task.rejection_reason,
+        "not_applicable_reason": task.not_applicable_reason,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "main_task_id": main_task.id,
@@ -941,6 +948,7 @@ async def build_available_task_tree(
             "object_id": task.object_id,
             "parent_id": task.parent_id,
             "template_id": task.template_id,
+            "selected_child_id": task.selected_child_id,
             "title": task.title,
             "depth": task.depth,
             "sort_order": task.sort_order,
@@ -964,6 +972,7 @@ async def build_available_task_tree(
             "reviewed_by_id": task.reviewed_by_id,
             "reviewed_by": task.reviewed_by,
             "rejection_reason": task.rejection_reason,
+            "not_applicable_reason": task.not_applicable_reason,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -992,6 +1001,87 @@ async def build_available_task_tree(
         return node
 
     return await serialize_until_blocker(main_task)
+
+
+async def select_object_task_branch(
+    db: AsyncSession,
+    *,
+    parent_task: ObjectTask,
+    child_id: int,
+    expected_version: int | None = None,
+) -> ObjectTask:
+    if parent_task.children_mode != TaskChildrenMode.SINGLE_CHOICE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task does not contain a single-choice branch.",
+        )
+    if expected_version is not None and parent_task.version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Task was changed by another user",
+                "current_version": parent_task.version,
+            },
+        )
+
+    result = await db.execute(
+        select(ObjectTask).where(
+            ObjectTask.object_id == parent_task.object_id,
+            ObjectTask.parent_id == parent_task.id,
+            ObjectTask.is_active.is_(True),
+        )
+    )
+    children = list(result.scalars().all())
+    selected_child = next((child for child in children if child.id == child_id), None)
+    if selected_child is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected task is not an active direct child.",
+        )
+
+    parent_task.selected_child_id = selected_child.id
+    parent_task.version += 1
+    for child in children:
+        if child.id == selected_child.id:
+            if child.status == ObjectTaskStatus.NOT_APPLICABLE:
+                _set_task_status(child, ObjectTaskStatus.TODO)
+            child.not_applicable_reason = None
+            continue
+        _set_task_status(child, ObjectTaskStatus.NOT_APPLICABLE)
+        child.not_applicable_reason = "Выбрана другая взаимоисключающая ветка"
+
+    await db.commit()
+    await db.refresh(parent_task)
+    return parent_task
+
+
+async def clear_object_task_branch(
+    db: AsyncSession,
+    *,
+    parent_task: ObjectTask,
+) -> ObjectTask:
+    if parent_task.children_mode != TaskChildrenMode.SINGLE_CHOICE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task does not contain a single-choice branch.",
+        )
+
+    result = await db.execute(
+        select(ObjectTask).where(
+            ObjectTask.object_id == parent_task.object_id,
+            ObjectTask.parent_id == parent_task.id,
+            ObjectTask.is_active.is_(True),
+        )
+    )
+    for child in result.scalars().all():
+        _set_task_status(child, ObjectTaskStatus.TODO)
+        child.not_applicable_reason = None
+
+    parent_task.selected_child_id = None
+    parent_task.version += 1
+    await db.commit()
+    await db.refresh(parent_task)
+    return parent_task
 
 
 async def _get_active_user(db: AsyncSession, user_id: int) -> User:

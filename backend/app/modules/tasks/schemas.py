@@ -40,11 +40,17 @@ class ObjectTaskReject(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class ObjectTaskBranchSelect(BaseModel):
+    child_id: int
+    expected_version: int | None = Field(default=None, ge=1)
+
+
 class ObjectTaskRead(BaseModel):
     id: int
     object_id: int
     parent_id: int | None
     template_id: int | None
+    selected_child_id: int | None
     title: str
     depth: int
     sort_order: int
@@ -66,6 +72,7 @@ class ObjectTaskRead(BaseModel):
     reviewed_by_id: int | None
     reviewed_by: UserRead | None = None
     rejection_reason: str | None
+    not_applicable_reason: str | None
     created_at: datetime
     updated_at: datetime
 

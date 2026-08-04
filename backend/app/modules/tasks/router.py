@@ -8,6 +8,7 @@ from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
     ObjectTaskCreate,
     ObjectTaskAssignmentUpdate,
+    ObjectTaskBranchSelect,
     ObjectTaskListGroupRead,
     ObjectTaskReject,
     ObjectTaskRead,
@@ -21,6 +22,7 @@ from app.modules.tasks.schemas import (
 from app.modules.tasks.service import (
     build_object_task_tree,
     assign_object_task,
+    clear_object_task_branch,
     create_object_task,
     deactivate_object_task,
     list_object_tasks,
@@ -37,6 +39,7 @@ from app.modules.tasks.service import (
     list_done_object_tasks,
     list_overdue_object_tasks,
     review_object_task,
+    select_object_task_branch,
     start_object_task,
     submit_object_task,
 )
@@ -301,6 +304,38 @@ async def reject_task_for_object(
         accepted=False,
         rejection_reason=payload.reason,
     )
+
+
+@router.put(
+    "/{object_id}/tasks/{task_id}/branch",
+    response_model=ObjectTaskRead,
+    summary="Select a single-choice task branch",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def select_task_branch_for_object(
+    payload: ObjectTaskBranchSelect,
+    db: AsyncSession = Depends(get_db_session),
+    parent_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await select_object_task_branch(
+        db,
+        parent_task=parent_task,
+        child_id=payload.child_id,
+        expected_version=payload.expected_version,
+    )
+
+
+@router.delete(
+    "/{object_id}/tasks/{task_id}/branch",
+    response_model=ObjectTaskRead,
+    summary="Clear a single-choice task branch",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def clear_task_branch_for_object(
+    db: AsyncSession = Depends(get_db_session),
+    parent_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await clear_object_task_branch(db, parent_task=parent_task)
 
 @router.patch(
     "/{object_id}/tasks/{task_id}/status",
