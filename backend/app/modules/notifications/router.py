@@ -49,7 +49,7 @@ def serialize_notification_receipt(receipt: NotificationReceipt) -> dict:
 @router.get(
     "", response_model=list[NotificationRead],
     summary="Get a list of notifications",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def list_notifications(
     db: AsyncSession = Depends(get_db_session),
@@ -74,7 +74,7 @@ async def list_notifications(
 @router.get(
     "/unread", response_model=list[NotificationRead],
     summary="Get a list of unread notifications",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def list_unread_notifications(
     db: AsyncSession = Depends(get_db_session),
@@ -100,7 +100,7 @@ async def list_unread_notifications(
 
 @router.get(
     "/unread-count", summary="Get count of unread notifications",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def get_unread_notifications_count(
     db: AsyncSession = Depends(get_db_session),
@@ -119,7 +119,7 @@ async def get_unread_notifications_count(
 @router.patch(
     "/{notification_id}/read", response_model=NotificationRead,
     summary="Mark a notification as read",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def mark_notification_as_read(
     notification_id: int,
@@ -150,7 +150,7 @@ async def mark_notification_as_read(
 @router.patch(
     "", response_model=list[NotificationRead],
     summary="Mark all notifications as read",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def mark_all_notifications_as_read(
     db: AsyncSession = Depends(get_db_session),
@@ -182,7 +182,7 @@ async def mark_all_notifications_as_read(
 @router.delete(
     "", status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete all notifications",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def delete_all_notifications(
     db: AsyncSession = Depends(get_db_session),
@@ -200,7 +200,7 @@ async def delete_all_notifications(
 @router.delete(
     "/{notification_id}", status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a notification",
-    dependencies=[Depends(require_chief_engineer_or_admin)]
+    dependencies=[Depends(require_logged_in_user)]
 )
 async def delete_notification(
     notification_id: int,

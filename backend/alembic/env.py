@@ -14,6 +14,9 @@ from app.modules.objects.models import ConstructionObject, ObjectToUser  # noqa:
 from app.modules.tasks.models import ObjectTask, TaskTemplate  # noqa: F401
 from app.modules.notifications.models import Notifications, NotificationReads  # noqa: F401
 from app.modules.photos.models import Photo  # noqa: F401
+from app.modules.task_attachments.models import TaskAttachment  # noqa: F401
+from app.modules.task_activity.models import TaskActivity  # noqa: F401
+from app.modules.task_sync.models import TaskSyncReceipt  # noqa: F401
 
 
 config = context.config

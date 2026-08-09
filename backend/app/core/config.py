@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
     UPLOAD_DIR: str = "uploads"
     MAX_PHOTO_SIZE_BYTES: int = 5 * 1024 * 1024
+    MAX_TASK_ATTACHMENT_SIZE_BYTES: int = 20 * 1024 * 1024
     AI_API_URL: str | None = None
     AI_API_KEY: str | None = None
     AI_MODEL: str = "gpt-4o-mini"

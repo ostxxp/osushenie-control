@@ -10,6 +10,10 @@ class NotificationType(StrEnum):
     OBJECT_CREATED = "object_created"
     TASK_STATUS_CHANGED = "task_status_changed"
     USER_CREATED = "user_created"
+    TASK_ASSIGNED = "task_assigned"
+    TASK_SUBMITTED = "task_submitted"
+    TASK_ACCEPTED = "task_accepted"
+    TASK_REJECTED = "task_rejected"
 
 class Notifications(Base):
     __tablename__ = "notifications"

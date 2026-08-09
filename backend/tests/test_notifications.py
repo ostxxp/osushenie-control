@@ -334,7 +334,7 @@ async def test_delete_all_notifications_removes_only_current_user_receipts(
     assert len(chief_list_response.json()) == 2
 
 
-async def test_foreman_cannot_access_notifications(
+async def test_foreman_can_access_own_notifications(
     client: AsyncClient,
     create_test_user,
 ) -> None:
@@ -346,7 +346,8 @@ async def test_foreman_cannot_access_notifications(
         headers=auth_headers(foreman_token),
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 async def test_task_status_change_notifies_admins_and_chief_engineers(
