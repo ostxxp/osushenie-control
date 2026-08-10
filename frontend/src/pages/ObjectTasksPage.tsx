@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
+import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi, userApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue } from '@/components'
 import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
@@ -12,6 +12,8 @@ import type {
   ObjectTaskTree,
   ObjectTaskUpsertPayload,
   TaskChildrenMode,
+  TaskAttachment,
+  User,
 } from '@/types'
 
 type FlatTaskOption = {
@@ -228,6 +230,22 @@ function UserAvatar({ userId, name }: { userId: number; name: string }) {
   )
 }
 
+function TaskOperations({ task, onChanged }: { task: ObjectTaskTree; onChanged: () => Promise<unknown> }) {
+  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('')
+  const [users, setUsers] = useState<User[]>([]); const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  const run = async (action: () => Promise<unknown>) => { setBusy(true); setMessage(''); try { await action(); await onChanged() } catch (error: unknown) { const status = (error as { response?: { status?: number } })?.response?.status; setMessage(status === 409 ? 'Задача уже изменилась. Данные обновлены — повторите действие.' : 'Не удалось выполнить действие.'); if (status === 409) await onChanged() } finally { setBusy(false) } }
+  useEffect(() => { if (!open) return; Promise.all([userApi.getAll().catch(() => []), objectApi.getAttachments(task.object_id, task.id).catch(() => [])]).then(([u, a]) => { setUsers(u); setAttachments(a) }) }, [open, task.id, task.object_id])
+  const upload = async (file?: File) => { if (!file) return; await run(async () => { await objectApi.uploadAttachment(task.object_id, task.id, file); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) }) }
+  const download = async (file: TaskAttachment) => { const blob = await objectApi.downloadAttachment(task.object_id, task.id, file.id); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = file.original_filename; link.click(); URL.revokeObjectURL(url) }
+  return <div className="mt-2 border-t pt-2"><button className="btn btn-ghost btn-xs" onClick={() => setOpen(!open)}>{open ? 'Скрыть работу' : 'Работа и файлы'}</button>{open && <div className="mt-3 space-y-3 text-left">
+    {message && <div className="text-xs text-red-600">{message}</div>}
+    <div className="grid grid-cols-2 gap-2"><select className="select select-bordered select-xs" value={task.assigned_to_id || ''} onChange={(e) => void run(() => objectApi.assignTask(task.object_id, task.id, Number(e.target.value) || null, task.reviewer_id))}><option value="">Исполнитель</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select><select className="select select-bordered select-xs" value={task.reviewer_id || ''} onChange={(e) => void run(() => objectApi.assignTask(task.object_id, task.id, task.assigned_to_id, Number(e.target.value) || null))}><option value="">Проверяющий</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></div>
+    <div className="flex flex-wrap gap-1">{task.status === 'todo' && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.startTask(task.object_id, task.id))}>Начать</button>}{(task.status === 'in_progress' || task.status === 'rejected') && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.submitTask(task.object_id, task.id))}>На проверку</button>}{task.status === 'pending_review' && <><button disabled={busy} className="btn btn-xs btn-success" onClick={() => void run(() => objectApi.acceptTask(task.object_id, task.id))}>Принять</button><button disabled={busy} className="btn btn-xs btn-error" onClick={() => { const reason = window.prompt('Причина возврата'); if (reason) void run(() => objectApi.rejectTask(task.object_id, task.id, reason)) }}>Вернуть</button></>}</div>
+    {task.children_mode === 'single_choice' && task.children.length > 0 && <div><div className="mb-1 text-xs font-semibold">Выберите один вариант</div>{task.children.map(child => <label key={child.id} className="flex gap-2 text-xs"><input type="radio" name={`branch-${task.id}`} checked={task.selected_child_id === child.id} onChange={() => void run(() => objectApi.selectBranch(task.object_id, task.id, child.id, task.version))} />{child.title}</label>)}</div>}
+    <div><label className="btn btn-outline btn-xs">+ Файл<input type="file" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /></label><ul className="mt-2 space-y-1">{attachments.map(file => <li key={file.id} className="flex items-center justify-between gap-2 text-xs"><button className="truncate underline" onClick={() => void download(file)}>{file.original_filename}</button><button className="text-red-600" onClick={() => void run(async () => { await objectApi.deleteAttachment(task.object_id, task.id, file.id); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) })}>Удалить</button></li>)}</ul></div>
+  </div>}</div>
+}
+
 function TaskTreeNode({
   task,
   onToggleTask,
@@ -236,6 +254,7 @@ function TaskTreeNode({
   onEditTask,
   onCreateChild,
   overdueTaskIds,
+  onChanged,
   depth = 0,
 }: {
   task: ObjectTaskTree
@@ -245,6 +264,7 @@ function TaskTreeNode({
   onEditTask: (task: ObjectTaskTree) => void
   onCreateChild: (task: ObjectTaskTree) => void
   overdueTaskIds: Set<number>
+  onChanged: () => Promise<unknown>
   depth?: number
 }) {
   const hasChildren = task.children.length > 0
@@ -343,6 +363,7 @@ function TaskTreeNode({
             + Подзадача
           </button>
         </div>
+        <TaskOperations task={task} onChanged={onChanged} />
       </article>
 
       {shouldShowChildren && (
@@ -357,6 +378,7 @@ function TaskTreeNode({
                 onEditTask={onEditTask}
                 onCreateChild={onCreateChild}
                 overdueTaskIds={overdueTaskIds}
+                onChanged={onChanged}
                 depth={depth + 1}
               />
             </li>
@@ -940,6 +962,7 @@ function ObjectTasksPage() {
                     onEditTask={openEditTask}
                     onCreateChild={(parentTask) => openCreateTask(parentTask)}
                     overdueTaskIds={overdueTaskIds}
+                    onChanged={loadData}
                   />
                 </div>
               </div>

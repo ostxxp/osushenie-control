@@ -10,6 +10,8 @@ import UsersPage from '@pages/UsersPage'
 import NotificationsPage from '@pages/NotificationsPage'
 import AiChatPage from '@pages/AiChatPage'
 import SettingsPage from '@pages/SettingsPage'
+import WorkItemsPage from '@pages/WorkItemsPage'
+import ActivityPage from '@pages/ActivityPage'
 import Layout from './components/Layout'
 import { AUTH_EXPIRED_EVENT, AuthContext, authService } from '@services/auth'
 import type { UserRole } from '@/types'
@@ -65,6 +67,9 @@ function App() {
             <Route path="/objects/:id/tasks" element={<ObjectTasksPage />} />
             <Route path="/objects/:id/tasks/:taskId" element={<ObjectTasksPage />} />
             <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
+            <Route path="/tasks/my" element={<WorkItemsPage />} />
+            <Route path="/tasks/today" element={<WorkItemsPage today />} />
+            <Route path="/activity" element={<ActivityPage />} />
             <Route
               path="/users"
               element={userRole === 'admin' ? <UsersPage /> : <Navigate to="/" replace />}

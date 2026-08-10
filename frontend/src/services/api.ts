@@ -16,6 +16,12 @@ import type {
   NotificationLog,
   AIChatMessage,
   AIChatResponse,
+  CurrentStep,
+  MyTask,
+  Page,
+  ProjectStageSummary,
+  TaskActivity,
+  TaskAttachment,
 } from '@/types'
 
 export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
@@ -270,6 +276,10 @@ const normalizeTask = (task: ObjectTaskTree, options: { hideNotApplicable: boole
 })
 
 export const objectApi = {
+  getStages: async (objectId: number): Promise<ProjectStageSummary[]> =>
+    (await authApi.get(`/objects/${objectId}/stages`)).data,
+  getCurrentStep: async (objectId: number): Promise<CurrentStep> =>
+    (await authApi.get(`/objects/${objectId}/current-step`)).data,
   getAll: async (): Promise<ConstructionObject[]> => {
     const response = await authApi.get('/objects')
     return response.data
@@ -398,9 +408,33 @@ export const objectApi = {
     return response.data
   },
   updateTask: async (objectId: number, taskId: number, task: ObjectTaskUpsertPayload): Promise<ObjectTask> => {
-    const response = await authApi.post(`/objects/${objectId}/tasks/${taskId}`, task)
+    const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}`, task)
     return response.data
   },
+  assignTask: async (objectId: number, taskId: number, assignedToId: number | null, reviewerId: number | null) =>
+    (await authApi.patch(`/objects/${objectId}/tasks/${taskId}/assignment`, { assigned_to_id: assignedToId, reviewer_id: reviewerId })).data as ObjectTask,
+  startTask: async (objectId: number, taskId: number) =>
+    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/start`)).data as ObjectTask,
+  submitTask: async (objectId: number, taskId: number) =>
+    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/submit`)).data as ObjectTask,
+  acceptTask: async (objectId: number, taskId: number) =>
+    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/accept`)).data as ObjectTask,
+  rejectTask: async (objectId: number, taskId: number, reason: string) =>
+    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/reject`, { reason })).data as ObjectTask,
+  selectBranch: async (objectId: number, taskId: number, childId: number, expectedVersion: number) =>
+    (await authApi.put(`/objects/${objectId}/tasks/${taskId}/branch`, { child_id: childId, expected_version: expectedVersion })).data as ObjectTask,
+  clearBranch: async (objectId: number, taskId: number) =>
+    (await authApi.delete(`/objects/${objectId}/tasks/${taskId}/branch`)).data as ObjectTask,
+  getAttachments: async (objectId: number, taskId: number): Promise<TaskAttachment[]> =>
+    (await authApi.get(`/objects/${objectId}/tasks/${taskId}/attachments`)).data,
+  uploadAttachment: async (objectId: number, taskId: number, file: File): Promise<TaskAttachment> => {
+    const data = new FormData(); data.append('file', file)
+    return (await authApi.post(`/objects/${objectId}/tasks/${taskId}/attachments`, data)).data
+  },
+  downloadAttachment: async (objectId: number, taskId: number, attachmentId: number): Promise<Blob> =>
+    (await authApi.get(`/objects/${objectId}/tasks/${taskId}/attachments/${attachmentId}/file`, { responseType: 'blob' })).data,
+  deleteAttachment: async (objectId: number, taskId: number, attachmentId: number) =>
+    authApi.delete(`/objects/${objectId}/tasks/${taskId}/attachments/${attachmentId}`),
   unassignResponsibleFromObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
     const response = await authApi.patch(`/objects/${objectId}/unassign/${userId}/responsible`)
     return response.data
@@ -424,6 +458,18 @@ export const objectApi = {
       return objectApi.toggleTaskStatus(objectId, taskId)
     }
   },
+}
+
+export const workApi = {
+  getMy: async (params: Record<string, string | number | undefined>): Promise<Page<MyTask>> =>
+    (await authApi.get('/tasks/my', { params })).data,
+  getToday: async (params: Record<string, string | number | undefined>): Promise<Page<MyTask>> =>
+    (await authApi.get('/tasks/today', { params })).data,
+}
+
+export const activityApi = {
+  getAll: async (params: Record<string, string | number | undefined>): Promise<Page<TaskActivity>> =>
+    (await authApi.get('/activity', { params })).data,
 }
 
 export const taskApi = {

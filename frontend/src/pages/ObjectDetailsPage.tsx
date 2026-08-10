@@ -4,7 +4,7 @@ import { DatePickerInput, formatDateInputValue } from '@/components'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
 import { formatApiError, formatDateRu, formatTaskCount } from '@/utils'
-import type { ConstructionObject, ObjectTaskStats, User } from '@/types'
+import type { ConstructionObject, CurrentStep, ObjectTaskStats, ProjectStageSummary, User } from '@/types'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
@@ -21,6 +21,8 @@ function ObjectDetailsPage() {
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
   const [progress, setProgress] = useState<number>(0)
+  const [stages, setStages] = useState<ProjectStageSummary[]>([])
+  const [currentStep, setCurrentStep] = useState<CurrentStep | null>(null)
   const [overdueCount, setOverdueCount] = useState(0)
   const [employees, setEmployees] = useState<User[]>([])
   const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
@@ -56,9 +58,11 @@ function ObjectDetailsPage() {
     const fetchData = async () => {
       if (!id) return
       try {
-        const [objData, taskStats] = await Promise.all([
+        const [objData, taskStats, stageData, stepData] = await Promise.all([
           objectApi.getById(Number(id)),
           objectApi.getTaskStats(Number(id)),
+          objectApi.getStages(Number(id)),
+          objectApi.getCurrentStep(Number(id)),
         ])
         setObjectItem(objData)
         setObjectType(localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '')
@@ -74,6 +78,8 @@ function ObjectDetailsPage() {
         setEditStartDateInput(formatDateInputValue(toDateInputValue(objData.start_date)))
         setEditEndDateInput(formatDateInputValue(toDateInputValue(objData.end_date)))
         setStats(taskStats)
+        setStages(stageData)
+        setCurrentStep(stepData)
         try {
           const progressValue = await objectApi.getProgress(Number(id))
           setProgress(progressValue)
@@ -436,6 +442,13 @@ function ObjectDetailsPage() {
 
   return (
     <div className="space-y-6">
+      {currentStep?.task && (
+        <Link to={`/objects/${objectItem.id}/tasks#task-${currentStep.task.id}`} className={`block rounded-3xl border p-5 shadow-sm ${currentStep.flag === 'overdue' || currentStep.flag === 'rejected' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг · {currentStep.stage_title}</div>
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{currentStep.task.title}</h2><div className="mt-1 text-sm text-slate-600">Ответственный: {currentStep.action_required_by?.full_name || currentStep.task.assigned_to?.full_name || 'не назначен'}{currentStep.task.deadline ? ` · Срок: ${formatDateRu(currentStep.task.deadline)}` : ''}</div></div><span className="badge badge-lg">Открыть →</span></div>
+        </Link>
+      )}
+      {stages.length > 0 && <section className="rounded-3xl border bg-white p-5 shadow-sm"><h2 className="text-xl font-semibold">Этапы объекта</h2><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{stages.map((stage) => { const pct = stage.stats.total ? Math.round(stage.stats.done / stage.stats.total * 100) : 0; return <Link key={stage.code} to={`/objects/${objectItem.id}/tasks?stage=${stage.code}`} className="rounded-2xl border p-4 transition hover:border-[#ff4539]/40"><div className="flex justify-between gap-3"><strong>{stage.order}. {stage.title}</strong><span>{pct}%</span></div><progress className="progress progress-success mt-3 w-full" value={pct} max="100" /><div className="mt-2 text-xs text-slate-500">{stage.stats.done} из {stage.stats.total} готово · {stage.stats.overdue} просрочено</div></Link> })}</div></section>}
       <div className="rounded-[1.75rem] border border-slate-200/70 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-5">
         <div className="grid gap-6 lg:grid-cols-[1fr_220px] lg:items-stretch">
           <div className="min-w-0">

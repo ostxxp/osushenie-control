@@ -12,6 +12,9 @@ function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const navItems = [
     { to: '/', label: 'Главная', isActive: location.pathname === '/' },
+    { to: '/tasks/my', label: 'Мои задачи', isActive: location.pathname === '/tasks/my' },
+    { to: '/tasks/today', label: 'На сегодня', isActive: location.pathname === '/tasks/today' },
+    { to: '/activity', label: 'История действий', isActive: location.pathname === '/activity', hidden: userRole !== 'admin' && userRole !== 'chief_engineer' },
     {
       to: '/objects',
       label: 'Объекты',
@@ -99,11 +102,11 @@ function Layout() {
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-dvh w-[min(18rem,86vw)] flex-col border-r border-slate-300 bg-base-100/95 p-5 shadow-2xl shadow-slate-950/10 backdrop-blur transition-transform duration-300 lg:w-72 lg:translate-x-0 lg:p-6 ${
+        className={`fixed left-0 top-0 z-50 flex h-dvh w-[min(18rem,86vw)] flex-col border-r border-slate-300 bg-base-100/95 p-4 shadow-2xl shadow-slate-950/10 backdrop-blur transition-transform duration-300 lg:w-72 lg:translate-x-0 lg:p-5 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="mb-8">
+        <div className="mb-4">
           <div className="flex items-center justify-between gap-4">
             <Link to="/" className="block min-w-0">
               <img
@@ -123,14 +126,13 @@ function Layout() {
           </div>
         </div>
 
-        <nav className="space-y-2 overflow-y-auto">
+        <nav className="min-h-0 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <Link
               key={item.to}
               to={item.to}
               className={[
-                'flex items-center justify-between rounded-2xl border px-4 py-3 text-base font-medium transition-all',
-                item.to === '/ai',
+                'flex items-center justify-between rounded-xl border px-4 py-2.5 text-base font-medium transition-all',
                 item.isActive
                   ? 'border-[#ff4539]/25 bg-[#ff4539]/15 text-[#b42318] shadow-sm'
                   : item.to === '/ai'
@@ -143,11 +145,11 @@ function Layout() {
           ))}
         </nav>
 
-        <div className="mt-auto pt-6 border-t border-slate-200">
+        <div className="mt-auto border-t border-slate-200 pt-3">
           <Link
             to="/settings"
             className={[
-              'flex w-full items-center justify-center rounded-2xl border px-4 py-3 text-center text-base font-medium transition-all',
+              'flex w-full items-center justify-center rounded-xl border px-4 py-2.5 text-center text-base font-medium transition-all',
               location.pathname === '/settings'
                 ? 'border-[#ff4539]/25 bg-[#ff4539]/15 text-[#b42318] shadow-sm'
                 : 'border-transparent text-base-content hover:bg-base-200',
@@ -157,7 +159,7 @@ function Layout() {
           </Link>
           <button
             onClick={handleLogout}
-            className="mt-2 w-full rounded-2xl px-4 py-3 text-center text-base font-medium text-red-600 transition-all hover:bg-red-50 hover:text-red-700"
+            className="mt-1 w-full rounded-xl px-4 py-2.5 text-center text-base font-medium text-red-600 transition-all hover:bg-red-50 hover:text-red-700"
           >
             Выход
           </button>
