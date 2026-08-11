@@ -94,6 +94,7 @@ export interface ObjectTask {
   title: string
   status: ObjectTaskStatus
   children_mode: TaskChildrenMode
+  stage?: string | null
   depth: number
   sort_order: number
   is_active: boolean

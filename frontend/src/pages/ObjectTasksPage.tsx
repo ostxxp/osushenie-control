@@ -14,6 +14,8 @@ import type {
   TaskChildrenMode,
   TaskAttachment,
   User,
+  CurrentStep,
+  ProjectStageSummary,
 } from '@/types'
 
 type FlatTaskOption = {
@@ -402,6 +404,8 @@ function ObjectTasksPage() {
   const [statusTaskGroups, setStatusTaskGroups] = useState<ObjectTaskListGroup[]>([])
   const [overdueCount, setOverdueCount] = useState(0)
   const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
+  const [stages, setStages] = useState<ProjectStageSummary[]>([])
+  const [currentStep, setCurrentStep] = useState<CurrentStep | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
@@ -427,7 +431,7 @@ function ObjectTasksPage() {
       const groupedStatus = taskStatusFilter === 'done' || taskStatusFilter === 'todo' || taskStatusFilter === 'overdue'
         ? taskStatusFilter
         : null
-      const [objData, fullTreeData, overdueGroups, taskStats, filteredGroups] = await Promise.all([
+      const [objData, fullTreeData, overdueGroups, taskStats, filteredGroups, stageData, stepData] = await Promise.all([
         objectApi.getById(objectId),
         objectApi.getFullTasksTree(objectId),
         objectApi.getTaskGroups(objectId, 'overdue', selectedTaskId ?? undefined).catch(() => []),
@@ -435,6 +439,8 @@ function ObjectTasksPage() {
         groupedStatus
           ? objectApi.getTaskGroups(objectId, groupedStatus, selectedTaskId ?? undefined).catch(() => [])
           : Promise.resolve([]),
+        objectApi.getStages(objectId),
+        objectApi.getCurrentStep(objectId),
       ])
       const headersData = selectedTaskId === null
         ? await objectApi.getTasksHeaders(objectId)
@@ -449,6 +455,8 @@ function ObjectTasksPage() {
       setOverdueTasks(overdueGroups.flatMap((group) => group.tasks))
       setStatusTaskGroups(filteredGroups)
       setStats(taskStats)
+      setStages(stageData)
+      setCurrentStep(stepData)
       setOverdueCount(taskStats.overdue)
       setError('')
       return treeData
@@ -794,6 +802,17 @@ function ObjectTasksPage() {
         </div>
       </div>
 
+      {!taskId && currentStep?.task && (() => {
+        const sectionId = taskSectionIds.get(currentStep.task.id)
+        const destination = sectionId
+          ? `/objects/${objectItem.id}/tasks/${sectionId}#task-${currentStep.task.id}`
+          : `/objects/${objectItem.id}/tasks#task-${currentStep.task.id}`
+        return <Link to={destination} className={`block rounded-3xl border p-5 shadow-sm transition hover:shadow-md ${currentStep.flag === 'overdue' || currentStep.flag === 'rejected' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг · {currentStep.stage_title || 'Без этапа'}</div>
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{currentStep.task.title}</h2><div className="mt-1 text-sm text-slate-600">Ответственный: {currentStep.action_required_by?.full_name || currentStep.task.assigned_to?.full_name || 'не назначен'}{currentStep.task.deadline ? ` · Срок: ${formatDateRu(currentStep.task.deadline)}` : ''}</div></div><span className="badge badge-lg">Открыть →</span></div>
+        </Link>
+      })()}
+
       {displayedOverdueCount > 0 && (
         <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -910,7 +929,12 @@ function ObjectTasksPage() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredTaskHeaders.map((header) => (
+            {filteredTaskHeaders.map((header) => {
+              const stageSummary = stages.find((stage) => stage.code === header.stage)
+              const stageProgress = stageSummary?.stats.total
+                ? Math.round(stageSummary.stats.done / stageSummary.stats.total * 100)
+                : 0
+              return (
               <Link
                 key={header.id}
                 to={`/objects/${objectItem.id}/tasks/${header.id}`}
@@ -924,6 +948,20 @@ function ObjectTasksPage() {
                     →
                   </span>
                 </div>
+                {stageSummary && (
+                  <div className="mt-4 border-t border-slate-100 pt-3">
+                    <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                      <span>{stageSummary.title}</span>
+                      <span className="font-semibold text-slate-700">{stageProgress}%</span>
+                    </div>
+                    <progress className="progress progress-success mt-2 w-full" value={stageProgress} max="100" />
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                      <span>{stageSummary.stats.done} из {stageSummary.stats.total} готово</span>
+                      <span>{stageSummary.stats.in_progress} в работе</span>
+                      {stageSummary.stats.overdue > 0 && <span className="text-red-600">{stageSummary.stats.overdue} просрочено</span>}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-5 flex items-center justify-between gap-3 text-sm text-base-content/60">
                   <span>
                     {header.deadline ? `Дедлайн: ${formatDateRu(header.deadline)}` : 'Без дедлайна'}
@@ -938,7 +976,8 @@ function ObjectTasksPage() {
                   </span>
                 </div>
               </Link>
-            ))}
+              )
+            })}
           </div>
         )
       ) : filteredTasks.length === 0 ? (
