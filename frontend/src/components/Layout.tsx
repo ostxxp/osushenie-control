@@ -14,7 +14,6 @@ function Layout() {
     { to: '/', label: 'Главная', isActive: location.pathname === '/' },
     { to: '/tasks/my', label: 'Мои задачи', isActive: location.pathname === '/tasks/my' },
     { to: '/tasks/today', label: 'На сегодня', isActive: location.pathname === '/tasks/today' },
-    { to: '/activity', label: 'История действий', isActive: location.pathname === '/activity', hidden: userRole !== 'admin' && userRole !== 'chief_engineer' },
     {
       to: '/objects',
       label: 'Объекты',

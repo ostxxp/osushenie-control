@@ -3,11 +3,24 @@ import { Link } from 'react-router-dom'
 import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
-import type { ObjectSummary, ObjectTask, User } from '@/types'
+import type { ObjectSummary, ObjectTask, ObjectTaskTree, User } from '@/types'
 import { authService, AuthContext } from '@services/auth'
 import { getCurrentStage } from '@/components/objects/StageStepper'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
+
+const isFinishedTaskTree = (task: ObjectTaskTree): boolean => {
+  if (task.status === 'skipped' || task.status === 'not_applicable') return true
+  if (task.children.length === 0) return task.status === 'done'
+  return task.children.every(isFinishedTaskTree)
+}
+
+const sectionStagesFromTree = (roots: ObjectTaskTree[]): ObjectTask[] => roots.map((root) => {
+  return {
+    ...root,
+    status: root.children.length > 0 && root.children.every(isFinishedTaskTree) ? 'done' : 'todo',
+  }
+})
 
 const getTodayDateValue = (): string => {
   const today = new Date()
@@ -148,11 +161,8 @@ function ObjectsPage() {
         const data = await objectApi.getSummaries()
         const objectDetails = await Promise.all(
           data.map(async (objectItem) => {
-            const [responsibleUsers, stages] = await Promise.all([
-              objectApi.getResponsibleUsers(objectItem.id).catch(() => []),
-              objectApi.getTasksHeaders(objectItem.id).catch(() => []),
-            ])
-            return [objectItem.id, responsibleUsers[0], stages] as const
+            const stages = await objectApi.getFullTasksTree(objectItem.id).then(sectionStagesFromTree).catch(() => [])
+            return [objectItem.id, objectItem.responsible_users[0], stages] as const
           }),
         )
         setResponsibleByObjectId(Object.fromEntries(objectDetails.map(([id, responsible]) => [id, responsible])))
@@ -319,6 +329,8 @@ function ObjectsPage() {
           stats: { total: 0, done: 0, todo: 0, in_progress: 0, overdue: 0 },
           progress: 0,
           photos: [],
+          responsible_users: [],
+          current_step: { task: null, stage: null, stage_title: null, stage_order: null, action_required_by: null, flag: 'normal', days_remaining: null },
         }, ...prev])
       }
       setShowCreateObject(false)

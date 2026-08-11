@@ -50,7 +50,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
           {objects.length === 0 ? (
             <tr><td colSpan={6} className="px-5 py-8 text-center text-base-content/60">Объектов не найдено.</td></tr>
           ) : objects.map((object) => (
-            <tr key={object.id} className="border-b border-slate-100 align-middle transition-colors hover:bg-base-200">
+            <tr key={object.id} className="border-b border-slate-100 align-middle transition-colors last:border-b-0 hover:bg-base-200">
               <td className="px-3 py-3">
                 <Link to={`/objects/${object.id}`} className="font-semibold text-slate-900 hover:text-primary hover:underline">{object.name}</Link>
                 <p className="mt-1 truncate text-xs text-slate-500" title={object.address}>{object.address}</p>

@@ -215,6 +215,8 @@ export interface ObjectSummary extends ConstructionObject {
   }
   progress: number
   photos: ObjectPhotoSummary[]
+  responsible_users: User[]
+  current_step: CurrentStep
 }
 
 export interface ObjectTaskStats {
