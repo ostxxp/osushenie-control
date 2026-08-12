@@ -39,7 +39,7 @@ export default function WorkItemsPage({ today = false }: { today?: boolean }) {
     {error && <div className="alert alert-error">{error}</div>}
     {loading ? <div className="flex justify-center p-16"><span className="loading loading-spinner" /></div> : items.length === 0 ?
       <div className="rounded-3xl border border-dashed bg-white p-12 text-center text-slate-500">Задач не найдено.</div> :
-      <div className="space-y-3">{items.map((task) => <Link key={task.id} to={`/objects/${task.object_id}/tasks/${task.parent_id || task.id}#task-${task.id}`} className="block rounded-2xl border bg-white p-5 shadow-sm transition hover:border-[#ff4539]/40">
+      <div className="space-y-3">{items.map((task) => <Link key={task.id} to={`/objects/${task.object_id}/tasks/${task.main_task_id}#task-${task.id}`} className="block rounded-2xl border bg-white p-5 shadow-sm transition hover:border-[#ff4539]/40">
         <div className="flex flex-wrap justify-between gap-3"><div><div className="text-sm text-slate-500">{task.object_name} · {task.object_address}</div><div className="mt-1 text-lg font-semibold">{task.title}</div></div><span className={`badge ${task.flag === 'overdue' || task.flag === 'rejected' ? 'badge-error' : 'badge-ghost'}`}>{labels[task.status] || task.action_required}</span></div>
         <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-600"><span>{task.action_required}</span>{task.deadline && <span>Срок: {formatDateRu(task.deadline)}</span>}{task.rejection_reason && <span className="text-red-700">Причина: {task.rejection_reason}</span>}</div>
       </Link>)}</div>}

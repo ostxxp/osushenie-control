@@ -86,6 +86,58 @@ const flattenTaskTree = (tasks: ObjectTaskTree[], depth = 0): FlatTaskOption[] =
     ...flattenTaskTree(task.children, depth + 1),
   ])
 
+const findTaskPath = (tasks: ObjectTaskTree[], taskId: number): number[] | null => {
+  for (const task of tasks) {
+    if (task.id === taskId) return [task.id]
+    const childPath = findTaskPath(task.children, taskId)
+    if (childPath) return [task.id, ...childPath]
+  }
+  return null
+}
+
+const findSavedSelectionPath = (task: ObjectTaskTree): number[] => {
+  if (task.selected_child_id) {
+    const selectedChild = task.children.find((child) => child.id === task.selected_child_id)
+    if (selectedChild) return [selectedChild.id, ...findSavedSelectionPath(selectedChild)]
+  }
+
+  for (const child of task.children) {
+    const descendantPath = findSavedSelectionPath(child)
+    if (descendantPath.length > 0) return [child.id, ...descendantPath]
+  }
+
+  return []
+}
+
+const buildProgressiveTaskList = (
+  root: ObjectTaskTree | undefined,
+  focusedPath: number[] = [],
+): FlatTaskOption[] => {
+  if (!root) return []
+
+  const visible: FlatTaskOption[] = [{ task: root, depth: 0 }]
+  let parent = root
+  let depth = 1
+
+  while (parent.children.length > 0) {
+    const activeChildren = parent.children.filter((task) => task.status !== 'not_applicable' && task.status !== 'skipped')
+    const focusedChild = parent.children.find((task) => task.id === focusedPath[depth - 1])
+    const selectedChild = focusedChild
+      || activeChildren.find((task) => task.id === parent.selected_child_id)
+      || activeChildren.find((task) => task.status === 'done')
+    if (!selectedChild) {
+      visible.push(...activeChildren.map((task) => ({ task, depth })))
+      break
+    }
+    visible.push({ task: selectedChild, depth })
+    if (selectedChild.status !== 'done' && !focusedChild) break
+    parent = selectedChild
+    depth += 1
+  }
+
+  return visible
+}
+
 const updateTaskInTree = (
   tasks: ObjectTaskTree[],
   taskId: number,
@@ -93,6 +145,15 @@ const updateTaskInTree = (
 ): ObjectTaskTree[] => tasks.map((task) => {
   const nextTask = task.id === taskId ? update(task) : task
   return { ...nextTask, children: updateTaskInTree(nextTask.children, taskId, update) }
+})
+
+const resetTaskSubtree = (task: ObjectTaskTree): ObjectTaskTree => ({
+  ...task,
+  status: 'todo',
+  completed_at: null,
+  completed_by: undefined,
+  completed_by_id: null,
+  children: task.children.map(resetTaskSubtree),
 })
 
 const visibleTaskTree = (task: ObjectTaskTree): ObjectTaskTree => ({
@@ -436,6 +497,7 @@ function ObjectTasksPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
+  const [selectedTaskPath, setSelectedTaskPath] = useState<number[]>([])
   const [taskEditorOpen, setTaskEditorOpen] = useState(false)
   const [taskEditorTarget, setTaskEditorTarget] = useState<ObjectTask | null>(null)
   const [taskEditorMode, setTaskEditorMode] = useState<'create' | 'edit'>('create')
@@ -508,21 +570,24 @@ function ObjectTasksPage() {
 
   useEffect(() => {
     setExpandedTaskIds([])
+    setSelectedTaskPath([])
     loadData().then((loadedTasks) => {
       setExpandedTaskIds(loadedTasks.map((task) => task.id))
+      const hashTaskId = Number(decodeURIComponent(location.hash).match(/^#task-(\d+)$/)?.[1])
+      if (!Number.isNaN(hashTaskId) && loadedTasks[0]) {
+        const path = findTaskPath(loadedTasks[0].children, hashTaskId)
+        if (path) setSelectedTaskPath(path)
+      } else if (loadedTasks[0]) {
+        setSelectedTaskPath(findSavedSelectionPath(loadedTasks[0]))
+      }
     })
-  }, [id, taskId, taskStatusFilter])
+  }, [id, taskId, taskStatusFilter, location.hash])
 
   useEffect(() => {
     setTaskStatusFilter(parseTaskStatusFilter(searchParams.get('status')))
   }, [searchParams])
 
   const updateTaskStatusFilter = (filter: TaskStatusFilter) => {
-    if (taskId && id) {
-      navigate(`/objects/${id}/tasks${filter === 'all' ? '' : `?status=${filter}`}`)
-      return
-    }
-
     setTaskStatusFilter(filter)
 
     const nextSearchParams = new URLSearchParams(searchParams)
@@ -548,17 +613,19 @@ function ObjectTasksPage() {
     const currentTask = flattenTaskTree(allTasks).find(({ task }) => task.id === taskId)?.task
     if (!currentTask) return
     const optimisticStatus: ObjectTaskStatus = currentTask.status === 'done' ? 'todo' : 'done'
-    const applyOptimisticStatus = (task: ObjectTaskTree) => ({
-      ...task,
-      status: optimisticStatus,
-      completed_at: optimisticStatus === 'done' ? new Date().toISOString() : null,
-    })
+    const applyOptimisticStatus = (task: ObjectTaskTree) => optimisticStatus === 'todo'
+      ? resetTaskSubtree(task)
+      : {
+          ...task,
+          status: optimisticStatus,
+          completed_at: new Date().toISOString(),
+        }
     setPendingTaskIds((current) => [...current, taskId])
     setAllTasks((current) => updateTaskInTree(current, taskId, applyOptimisticStatus))
     setTasks((current) => updateTaskInTree(current, taskId, applyOptimisticStatus))
 
     try {
-      await objectApi.toggleTaskStatus(Number(id), taskId)
+      await objectApi.updateTaskStatus(Number(id), taskId, optimisticStatus)
       await loadData()
       window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
@@ -694,6 +761,17 @@ function ObjectTasksPage() {
     [overdueTaskIds, taskStatusFilter, tasks],
   )
 
+  const progressiveTasks = useMemo(
+    () => buildProgressiveTaskList(filteredTasks[0], selectedTaskPath),
+    [filteredTasks, selectedTaskPath],
+  )
+
+  const handleTaskTextClick = (task: ObjectTaskTree, depth: number) => {
+    if (depth === 0) return
+    if (task.status === 'not_applicable' || task.status === 'skipped') return
+    void handleToggleTask(task.id)
+  }
+
   const filteredTaskHeaders = useMemo(() => {
     if (taskStatusFilter === 'all') return taskHeaders
 
@@ -742,11 +820,14 @@ function ObjectTasksPage() {
     if (!location.hash || tasks.length === 0) return
 
     const elementId = decodeURIComponent(location.hash.slice(1))
-    document.getElementById(elementId)?.scrollIntoView({
-      behavior: 'auto',
-      block: 'center',
-      inline: 'center',
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(elementId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      })
     })
+    return () => window.cancelAnimationFrame(frame)
   }, [expandedTaskIds, location.hash, tasks])
 
   if (loading) {
@@ -1058,21 +1139,29 @@ function ObjectTasksPage() {
                 <tr><th className="px-3 py-3 2xl:px-5">Задача</th><th className="whitespace-nowrap px-3 py-3 2xl:px-5">Дедлайн</th><th className="px-3 py-3 2xl:px-5">Работа и файлы</th><th className="px-3 py-3 text-center 2xl:px-5">Редактировать</th><th className="px-3 py-3 text-center 2xl:px-5">+ Подзадача</th></tr>
               </thead>
               <tbody>
-                {flattenTaskTree(filteredTasks).map(({ task, depth }) => {
+                {progressiveTasks.map(({ task, depth }) => {
                   const overdue = overdueTaskIds.has(task.id)
-                  const canToggle = depth > 0 && task.status !== 'not_applicable' && task.status !== 'skipped'
-                  return <tr key={task.id} id={`task-${task.id}`} className="scroll-mt-6 border-t border-base-200 align-middle transition-colors hover:bg-base-200 target:bg-amber-50">
+                  const isMainTask = depth === 0
+                  const canToggle = !isMainTask && task.status !== 'not_applicable' && task.status !== 'skipped'
+                  const isSelected = selectedTaskPath[depth - 1] === task.id
+                  return <tr key={task.id} id={`task-${task.id}`} className="scroll-mt-6 border-t border-base-200 align-middle transition-colors hover:bg-base-200">
                     <td className="px-3 py-3 2xl:px-5">
-                      <div style={{ paddingLeft: `${Math.min(depth, 5) * 18}px` }}>
-                        {depth === 0 ? (
-                          <div className="font-semibold text-slate-900">{task.title}</div>
-                        ) : (
-                          <button type="button" disabled={!canToggle} onClick={() => void handleToggleTask(task.id)} className="group flex w-full items-start gap-3 rounded-xl text-left transition disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Изменить статус задачи «${task.title}»`}>
-                            <span className="mt-0.5 shrink-0"><TaskStateIcon task={task} /></span>
-                            <span className="min-w-0 font-medium text-slate-900">{task.title}</span>
-                          </button>
-                        )}
-                        <div className={depth === 0 ? '' : 'ml-8'}>{task.assigned_to?.full_name && <div className="mt-1 text-xs text-slate-500">Исполнитель: {task.assigned_to.full_name}</div>}</div>
+                      <div style={{ paddingLeft: `${Math.min(Math.max(depth - 1, 0), 5) * 18}px` }}>
+                        <div className="flex items-start gap-3">
+                          {!isMainTask && (
+                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="mt-0.5 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Выполнить задачу «${task.title}»`}>
+                              <TaskStateIcon task={task} />
+                            </button>
+                          )}
+                          {isMainTask ? (
+                            <div className="min-w-0 flex-1 font-semibold text-slate-900">{task.title}</div>
+                          ) : (
+                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="group flex min-w-0 flex-1 items-start rounded-xl text-left font-medium transition hover:text-[#d9362c] disabled:cursor-not-allowed disabled:opacity-50" aria-expanded={task.children.length > 0 ? isSelected : undefined} aria-label={`Выполнить задачу «${task.title}»`}>
+                              <span className="min-w-0 text-slate-900 group-hover:text-[#d9362c]">{task.title}</span>
+                            </button>
+                          )}
+                        </div>
+                        <div className={isMainTask ? '' : 'ml-8'}>{task.assigned_to?.full_name && <div className="mt-1 text-xs text-slate-500">Исполнитель: {task.assigned_to.full_name}</div>}</div>
                       </div>
                     </td>
                     <td className="px-3 py-3 2xl:px-5"><div className={overdue ? 'font-medium text-red-600' : 'text-slate-600'}>{task.deadline ? formatDateRu(task.deadline) : 'Без срока'}</div>{overdue && <div className="mt-1 text-xs text-red-600">Просрочено</div>}</td>

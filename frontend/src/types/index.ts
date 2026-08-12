@@ -154,6 +154,7 @@ export interface TaskAttachment {
 }
 
 export interface MyTask extends ObjectTask {
+  main_task_id: number
   object_name: string
   object_address: string
   action_required: string

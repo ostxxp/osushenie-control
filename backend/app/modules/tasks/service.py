@@ -1589,6 +1589,7 @@ async def list_user_work_items(
                 "reviewer": task.reviewer,
                 "reviewed_by": task.reviewed_by,
                 "completed_by": None,
+                "main_task_id": await get_main_task_id(db, object_task=task),
                 "object_name": object_item.name,
                 "object_address": object_item.address,
                 "action_required": (
