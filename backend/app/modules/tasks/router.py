@@ -8,6 +8,7 @@ from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
     CurrentStepRead,
     ObjectTaskCreate,
+    ObjectTaskAction,
     ObjectTaskAssignmentUpdate,
     ObjectTaskBranchSelect,
     ObjectTaskListGroupRead,
@@ -258,6 +259,7 @@ async def assign_task_for_object(
     dependencies=[Depends(user_can_access_object)],
 )
 async def start_task_for_object(
+    payload: ObjectTaskAction,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
@@ -266,6 +268,7 @@ async def start_task_for_object(
         db,
         object_task=object_task,
         current_user=current_user,
+        expected_version=payload.expected_version,
     )
 
 
@@ -276,6 +279,7 @@ async def start_task_for_object(
     dependencies=[Depends(user_can_access_object)],
 )
 async def submit_task_for_object(
+    payload: ObjectTaskAction,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
@@ -284,6 +288,7 @@ async def submit_task_for_object(
         db,
         object_task=object_task,
         current_user=current_user,
+        expected_version=payload.expected_version,
     )
 
 
@@ -294,6 +299,7 @@ async def submit_task_for_object(
     dependencies=[Depends(user_can_access_object)],
 )
 async def accept_task_for_object(
+    payload: ObjectTaskAction,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
@@ -303,6 +309,7 @@ async def accept_task_for_object(
         object_task=object_task,
         current_user=current_user,
         accepted=True,
+        expected_version=payload.expected_version,
     )
 
 
@@ -324,6 +331,7 @@ async def reject_task_for_object(
         current_user=current_user,
         accepted=False,
         rejection_reason=payload.reason,
+        expected_version=payload.expected_version,
     )
 
 

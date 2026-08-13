@@ -35,10 +35,16 @@ class ObjectTaskStatusUpdate(BaseModel):
 class ObjectTaskAssignmentUpdate(BaseModel):
     assigned_to_id: int | None = None
     reviewer_id: int | None = None
+    expected_version: int = Field(ge=1)
+
+
+class ObjectTaskAction(BaseModel):
+    expected_version: int = Field(ge=1)
 
 
 class ObjectTaskReject(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
+    expected_version: int = Field(ge=1)
 
 
 class ObjectTaskBranchSelect(BaseModel):

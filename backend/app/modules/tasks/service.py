@@ -261,6 +261,15 @@ async def update_object_task(
             },
         )
 
+    if (
+        task_data.status is not None
+        and (object_task.assigned_to_id is not None or object_task.reviewer_id is not None)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Use the task workflow endpoints to change an assigned task status.",
+        )
+
     if task_data.status is not None:
         if task_data.status == ObjectTaskStatus.DONE:
             await _set_children_status_in_progress(
@@ -391,11 +400,16 @@ def _set_task_status(
     status: ObjectTaskStatus,
     *,
     current_user: User | None = None,
+    completed_by_id: int | None = None,
 ) -> None:
     task.status = status
     if status == ObjectTaskStatus.DONE:
         task.completed_at = datetime.now(UTC)
-        task.completed_by_id = current_user.id if current_user is not None else None
+        task.completed_by_id = (
+            completed_by_id
+            if completed_by_id is not None
+            else current_user.id if current_user is not None else None
+        )
         return
 
     task.completed_at = None
@@ -1176,15 +1190,22 @@ async def _ensure_foreman_has_object_access(
 
 
 def _can_manage_task(task: ObjectTask, user: User) -> bool:
-    return user.role in {UserRole.ADMIN, UserRole.CHIEF_ENGINEER} or (
-        task.assigned_to_id == user.id
-    )
+    return task.assigned_to_id == user.id
 
 
 def _can_review_task(task: ObjectTask, user: User) -> bool:
-    return user.role in {UserRole.ADMIN, UserRole.CHIEF_ENGINEER} or (
-        task.reviewer_id == user.id
-    )
+    return task.reviewer_id == user.id
+
+
+def _require_task_version(task: ObjectTask, expected_version: int) -> None:
+    if task.version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Task was changed by another user",
+                "current_version": task.version,
+            },
+        )
 
 
 def _require_task_status(
@@ -1205,6 +1226,7 @@ async def assign_object_task(
     assignment: ObjectTaskAssignmentUpdate,
     current_user: User,
 ) -> ObjectTask:
+    _require_task_version(object_task, assignment.expected_version)
     assigned_to = None
     reviewer = None
     if assignment.assigned_to_id is not None:
@@ -1263,7 +1285,11 @@ async def start_object_task(
     *,
     object_task: ObjectTask,
     current_user: User,
+    expected_version: int,
 ) -> ObjectTask:
+    _require_task_version(object_task, expected_version)
+    if object_task.assigned_to_id is None:
+        raise HTTPException(status_code=409, detail="Task executor is not assigned.")
     if not _can_manage_task(object_task, current_user):
         raise HTTPException(status_code=403, detail="You cannot start this task.")
     _require_task_status(
@@ -1294,25 +1320,20 @@ async def submit_object_task(
     *,
     object_task: ObjectTask,
     current_user: User,
+    expected_version: int,
 ) -> ObjectTask:
+    _require_task_version(object_task, expected_version)
     if not _can_manage_task(object_task, current_user):
         raise HTTPException(status_code=403, detail="You cannot submit this task.")
     _require_task_status(object_task, {ObjectTaskStatus.IN_PROGRESS})
+    if object_task.reviewer_id is None:
+        raise HTTPException(status_code=409, detail="Task reviewer is not assigned.")
     previous_status = object_task.status
     _set_task_status(object_task, ObjectTaskStatus.PENDING_REVIEW)
     object_task.submitted_at = datetime.now(UTC)
     object_task.version += 1
 
-    recipients = {object_task.reviewer_id} if object_task.reviewer_id else set()
-    if not recipients:
-        recipients = set(
-            await db.scalars(
-                select(User.id).where(
-                    User.is_active.is_(True),
-                    User.role.in_([UserRole.ADMIN, UserRole.CHIEF_ENGINEER]),
-                )
-            )
-        )
+    recipients = {object_task.reviewer_id}
     await create_notification(
         db,
         actor_user_id=current_user.id,
@@ -1341,7 +1362,9 @@ async def review_object_task(
     current_user: User,
     accepted: bool,
     rejection_reason: str | None = None,
+    expected_version: int,
 ) -> ObjectTask:
+    _require_task_version(object_task, expected_version)
     if not _can_review_task(object_task, current_user):
         raise HTTPException(status_code=403, detail="You cannot review this task.")
     _require_task_status(object_task, {ObjectTaskStatus.PENDING_REVIEW})
@@ -1355,7 +1378,7 @@ async def review_object_task(
         _set_task_status(
             object_task,
             ObjectTaskStatus.DONE,
-            current_user=current_user,
+            completed_by_id=object_task.assigned_to_id,
         )
         object_task.rejection_reason = None
         notification_type = NotificationType.TASK_ACCEPTED

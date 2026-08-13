@@ -43,14 +43,19 @@ async def test_task_activity_is_recorded_filtered_and_paginated(
             headers=auth_headers(admin_token),
         )
     ).json()[0]
-    await client.patch(
+    assignment_response = await client.patch(
         f"/api/v1/objects/{object_id}/tasks/{task['id']}/assignment",
         headers=auth_headers(admin_token),
-        json={"assigned_to_id": foreman.id, "reviewer_id": admin.id},
+        json={
+            "assigned_to_id": foreman.id,
+            "reviewer_id": admin.id,
+            "expected_version": task["version"],
+        },
     )
     await client.post(
         f"/api/v1/objects/{object_id}/tasks/{task['id']}/start",
         headers=auth_headers(foreman_token),
+        json={"expected_version": assignment_response.json()["version"]},
     )
 
     first_page = await client.get(
