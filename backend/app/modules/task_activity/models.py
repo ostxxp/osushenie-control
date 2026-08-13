@@ -14,6 +14,7 @@ class TaskActivityAction(StrEnum):
     STATUS_CHANGED = "status_changed"
     ASSIGNED = "assigned"
     STARTED = "started"
+    COMPLETED = "completed"
     SUBMITTED = "submitted"
     ACCEPTED = "accepted"
     REJECTED = "rejected"

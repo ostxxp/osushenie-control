@@ -12,7 +12,6 @@ from app.modules.tasks.schemas import (
     ObjectTaskAssignmentUpdate,
     ObjectTaskBranchSelect,
     ObjectTaskListGroupRead,
-    ObjectTaskReject,
     ObjectTaskRead,
     ObjectTaskStatsRead,
     ObjectTaskStatusUpdate,
@@ -41,10 +40,9 @@ from app.modules.tasks.service import (
     group_object_tasks_by_main_task,
     list_done_object_tasks,
     list_overdue_object_tasks,
-    review_object_task,
     select_object_task_branch,
     start_object_task,
-    submit_object_task,
+    complete_object_task,
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -235,7 +233,7 @@ async def update_task_for_object_post(
 @router.patch(
     "/{object_id}/tasks/{task_id}/assignment",
     response_model=ObjectTaskRead,
-    summary="Assign task executor and reviewer",
+    summary="Assign task executor",
     dependencies=[Depends(user_can_access_object), Depends(require_chief_engineer_or_admin)],
 )
 async def assign_task_for_object(
@@ -273,64 +271,21 @@ async def start_task_for_object(
 
 
 @router.post(
-    "/{object_id}/tasks/{task_id}/submit",
+    "/{object_id}/tasks/{task_id}/complete",
     response_model=ObjectTaskRead,
-    summary="Submit task for review",
+    summary="Complete assigned task",
     dependencies=[Depends(user_can_access_object)],
 )
-async def submit_task_for_object(
+async def complete_task_for_object(
     payload: ObjectTaskAction,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_auth_user),
     object_task: ObjectTask = Depends(get_object_task_or_404),
 ) -> ObjectTask:
-    return await submit_object_task(
+    return await complete_object_task(
         db,
         object_task=object_task,
         current_user=current_user,
-        expected_version=payload.expected_version,
-    )
-
-
-@router.post(
-    "/{object_id}/tasks/{task_id}/accept",
-    response_model=ObjectTaskRead,
-    summary="Accept submitted task",
-    dependencies=[Depends(user_can_access_object)],
-)
-async def accept_task_for_object(
-    payload: ObjectTaskAction,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_auth_user),
-    object_task: ObjectTask = Depends(get_object_task_or_404),
-) -> ObjectTask:
-    return await review_object_task(
-        db,
-        object_task=object_task,
-        current_user=current_user,
-        accepted=True,
-        expected_version=payload.expected_version,
-    )
-
-
-@router.post(
-    "/{object_id}/tasks/{task_id}/reject",
-    response_model=ObjectTaskRead,
-    summary="Reject submitted task",
-    dependencies=[Depends(user_can_access_object)],
-)
-async def reject_task_for_object(
-    payload: ObjectTaskReject,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_auth_user),
-    object_task: ObjectTask = Depends(get_object_task_or_404),
-) -> ObjectTask:
-    return await review_object_task(
-        db,
-        object_task=object_task,
-        current_user=current_user,
-        accepted=False,
-        rejection_reason=payload.reason,
         expected_version=payload.expected_version,
     )
 

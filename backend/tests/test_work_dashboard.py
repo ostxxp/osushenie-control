@@ -65,7 +65,6 @@ async def test_summary_and_current_step_include_actionable_task(
         headers=auth_headers(token),
         json={
             "assigned_to_id": foreman.id,
-            "reviewer_id": admin.id,
             "expected_version": child["version"],
         },
     )
@@ -118,7 +117,6 @@ async def test_my_and_today_tasks_return_only_current_user_work(
         headers=auth_headers(token),
         json={
             "assigned_to_id": foreman.id,
-            "reviewer_id": admin.id,
             "expected_version": task["version"],
         },
     )

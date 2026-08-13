@@ -48,7 +48,6 @@ async def test_task_activity_is_recorded_filtered_and_paginated(
         headers=auth_headers(admin_token),
         json={
             "assigned_to_id": foreman.id,
-            "reviewer_id": admin.id,
             "expected_version": task["version"],
         },
     )

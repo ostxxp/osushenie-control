@@ -17,7 +17,7 @@ def object_payload() -> dict:
     }
 
 
-async def test_assigned_task_can_be_submitted_rejected_and_accepted(
+async def test_assigned_task_can_be_started_and_completed(
     client: AsyncClient,
     create_test_user,
     create_task_template,
@@ -55,7 +55,6 @@ async def test_assigned_task_can_be_submitted_rejected_and_accepted(
         headers=auth_headers(admin_token),
         json={
             "assigned_to_id": foreman.id,
-            "reviewer_id": admin.id,
             "expected_version": 1,
         },
     )
@@ -64,56 +63,27 @@ async def test_assigned_task_can_be_submitted_rejected_and_accepted(
         headers=auth_headers(foreman_token),
         json={"expected_version": assignment_response.json()["version"]},
     )
-    submit_response = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task_id}/submit",
+    complete_response = await client.post(
+        f"/api/v1/objects/{object_id}/tasks/{task_id}/complete",
         headers=auth_headers(foreman_token),
         json={"expected_version": start_response.json()["version"]},
     )
-    reject_response = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task_id}/reject",
-        headers=auth_headers(admin_token),
-        json={
-            "reason": "Нужно приложить акт проверки",
-            "expected_version": submit_response.json()["version"],
-        },
-    )
-    restart_response = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task_id}/start",
-        headers=auth_headers(foreman_token),
-        json={"expected_version": reject_response.json()["version"]},
-    )
-    resubmit_response = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task_id}/submit",
-        headers=auth_headers(foreman_token),
-        json={"expected_version": restart_response.json()["version"]},
-    )
-    accept_response = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task_id}/accept",
-        headers=auth_headers(admin_token),
-        json={"expected_version": resubmit_response.json()["version"]},
-    )
     notifications_response = await client.get(
         "/api/v1/notifications",
-        headers=auth_headers(foreman_token),
+        headers=auth_headers(admin_token),
     )
 
     assert assignment_response.status_code == 200
     assert assignment_response.json()["assigned_to_id"] == foreman.id
-    assert assignment_response.json()["reviewer_id"] == admin.id
     assert start_response.json()["status"] == "in_progress"
-    assert submit_response.json()["status"] == "pending_review"
-    assert submit_response.json()["submitted_at"] is not None
-    assert reject_response.json()["status"] == "rejected"
-    assert reject_response.json()["rejection_reason"] == "Нужно приложить акт проверки"
-    assert restart_response.json()["status"] == "in_progress"
-    assert accept_response.json()["status"] == "done"
-    assert accept_response.json()["reviewed_by_id"] == admin.id
-    assert accept_response.json()["completed_by_id"] == foreman.id
+    assert complete_response.status_code == 200
+    assert complete_response.json()["status"] == "done"
+    assert complete_response.json()["completed_by_id"] == foreman.id
     assert notifications_response.status_code == 200
     assert {
         notification["type"]
         for notification in notifications_response.json()
-    } >= {"task_assigned", "task_rejected", "task_accepted"}
+    } >= {"task_status_changed"}
 
 
 async def test_assigned_task_workflow_cannot_be_bypassed(
@@ -122,9 +92,9 @@ async def test_assigned_task_workflow_cannot_be_bypassed(
     create_task_template,
 ) -> None:
     admin = await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
-    chief = await create_test_user(
+    other_foreman = await create_test_user(
         email="chief@example.com",
-        role=UserRole.CHIEF_ENGINEER,
+        role=UserRole.FOREMAN,
     )
     foreman = await create_test_user(
         email="foreman@example.com",
@@ -132,7 +102,7 @@ async def test_assigned_task_workflow_cannot_be_bypassed(
     )
     await create_task_template(title="Protected task", source_id="protected-task")
     admin_token = await login(client, email=admin.email)
-    chief_token = await login(client, email=chief.email)
+    other_foreman_token = await login(client, email=other_foreman.email)
     foreman_token = await login(client, email=foreman.email)
     object_id = (
         await client.post(
@@ -143,6 +113,10 @@ async def test_assigned_task_workflow_cannot_be_bypassed(
     ).json()["id"]
     await client.post(
         f"/api/v1/objects/{object_id}/assign/{foreman.id}",
+        headers=auth_headers(admin_token),
+    )
+    await client.post(
+        f"/api/v1/objects/{object_id}/assign/{other_foreman.id}",
         headers=auth_headers(admin_token),
     )
     task = (
@@ -156,7 +130,6 @@ async def test_assigned_task_workflow_cannot_be_bypassed(
         headers=auth_headers(admin_token),
         json={
             "assigned_to_id": foreman.id,
-            "reviewer_id": admin.id,
             "expected_version": task["version"],
         },
     )
@@ -176,23 +149,18 @@ async def test_assigned_task_workflow_cannot_be_bypassed(
         headers=auth_headers(foreman_token),
         json={"expected_version": assigned.json()["version"]},
     )
-    submitted = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task['id']}/submit",
-        headers=auth_headers(foreman_token),
+    wrong_executor = await client.post(
+        f"/api/v1/objects/{object_id}/tasks/{task['id']}/complete",
+        headers=auth_headers(other_foreman_token),
         json={"expected_version": started.json()["version"]},
-    )
-    wrong_reviewer = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task['id']}/accept",
-        headers=auth_headers(chief_token),
-        json={"expected_version": submitted.json()["version"]},
     )
 
     assert direct_done.status_code == 409
     assert stale_start.status_code == 409
-    assert wrong_reviewer.status_code == 403
+    assert wrong_executor.status_code == 403
 
 
-async def test_task_cannot_be_submitted_without_reviewer(
+async def test_task_cannot_be_completed_before_start(
     client: AsyncClient,
     create_test_user,
     create_task_template,
@@ -227,22 +195,16 @@ async def test_task_cannot_be_submitted_without_reviewer(
         headers=auth_headers(admin_token),
         json={
             "assigned_to_id": foreman.id,
-            "reviewer_id": None,
             "expected_version": task["version"],
         },
     )
-    started = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task['id']}/start",
+    completed = await client.post(
+        f"/api/v1/objects/{object_id}/tasks/{task['id']}/complete",
         headers=auth_headers(foreman_token),
         json={"expected_version": assigned.json()["version"]},
     )
-    submitted = await client.post(
-        f"/api/v1/objects/{object_id}/tasks/{task['id']}/submit",
-        headers=auth_headers(foreman_token),
-        json={"expected_version": started.json()["version"]},
-    )
 
-    assert submitted.status_code == 409
+    assert completed.status_code == 409
 
 
 async def test_single_choice_branch_can_be_selected_switched_and_cleared(
