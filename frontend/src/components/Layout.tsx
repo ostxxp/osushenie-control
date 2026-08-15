@@ -13,7 +13,6 @@ function Layout() {
   const navItems = [
     { to: '/', label: 'Главная', isActive: location.pathname === '/' },
     { to: '/tasks/my', label: 'Мои задачи', isActive: location.pathname === '/tasks/my' },
-    { to: '/tasks/today', label: 'На сегодня', isActive: location.pathname === '/tasks/today' },
     {
       to: '/objects',
       label: 'Объекты',

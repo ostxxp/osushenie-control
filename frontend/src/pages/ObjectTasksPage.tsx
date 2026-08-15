@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi, userApi } from '@services/api'
-import { DatePickerInput, formatDateInputValue } from '@/components'
+import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
+import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
 import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
   ConstructionObject,
@@ -13,7 +13,6 @@ import type {
   ObjectTaskUpsertPayload,
   TaskChildrenMode,
   TaskAttachment,
-  User,
   CurrentStep,
   ProjectStageSummary,
 } from '@/types'
@@ -321,16 +320,42 @@ function UserAvatar({ userId, name }: { userId: number; name: string }) {
 
 function TaskOperations({ task, onChanged }: { task: ObjectTaskTree; onChanged: () => Promise<unknown> }) {
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('')
-  const [users, setUsers] = useState<User[]>([]); const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const run = async (action: () => Promise<unknown>) => { setBusy(true); setMessage(''); try { await action(); await onChanged() } catch (error: unknown) { const status = (error as { response?: { status?: number } })?.response?.status; setMessage(status === 409 ? 'Задача уже изменилась. Данные обновлены — повторите действие.' : 'Не удалось выполнить действие.'); if (status === 409) await onChanged() } finally { setBusy(false) } }
-  useEffect(() => { if (!open) return; Promise.all([userApi.getAll().catch(() => []), objectApi.getAttachments(task.object_id, task.id).catch(() => [])]).then(([u, a]) => { setUsers(u); setAttachments(a) }) }, [open, task.id, task.object_id])
+  useEffect(() => { if (!open) return; objectApi.getAttachments(task.object_id, task.id).then(setAttachments).catch(() => setAttachments([])) }, [open, task.id, task.object_id])
   const upload = async (file?: File) => { if (!file) return; await run(async () => { await objectApi.uploadAttachment(task.object_id, task.id, file); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) }) }
-  const download = async (file: TaskAttachment) => { const blob = await objectApi.downloadAttachment(task.object_id, task.id, file.id); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = file.original_filename; link.click(); URL.revokeObjectURL(url) }
-  return <div><button className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white hover:text-[#d9362c] hover:shadow-sm" onClick={() => setOpen(!open)}>{open ? 'Скрыть работу' : 'Открыть'}</button>{open && <div className="mt-3 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm">
+  const openPreview = async (file: TaskAttachment) => {
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) { setMessage('Браузер заблокировал новую вкладку. Разрешите всплывающие окна.'); return }
+    previewWindow.document.title = file.original_filename
+    previewWindow.document.body.textContent = 'Загрузка файла…'
+    try {
+      const blob = await objectApi.downloadAttachment(task.object_id, task.id, file.id)
+      const url = URL.createObjectURL(blob)
+      previewWindow.location.replace(url)
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      previewWindow.close()
+      setMessage('Не удалось открыть файл.')
+    }
+  }
+  const download = async (file: TaskAttachment) => {
+    try {
+      const blob = await objectApi.downloadAttachment(task.object_id, task.id, file.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = file.original_filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch { setMessage('Не удалось скачать файл.') }
+  }
+  return <div><button className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white hover:text-[#d9362c] hover:shadow-sm" onClick={() => setOpen(!open)}>{open ? 'Скрыть файлы' : 'Открыть'}</button>{open && <div className="mt-3 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm">
     {message && <div className="text-xs text-red-600">{message}</div>}
-    <div className="grid grid-cols-2 gap-2"><select className="select select-bordered select-xs" value={task.assigned_to_id || ''} onChange={(e) => void run(() => objectApi.assignTask(task.object_id, task.id, Number(e.target.value) || null, task.reviewer_id))}><option value="">Исполнитель</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select><select className="select select-bordered select-xs" value={task.reviewer_id || ''} onChange={(e) => void run(() => objectApi.assignTask(task.object_id, task.id, task.assigned_to_id, Number(e.target.value) || null))}><option value="">Проверяющий</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></div>
-    <div className="flex flex-wrap gap-1">{task.status === 'todo' && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.startTask(task.object_id, task.id))}>Начать</button>}{(task.status === 'in_progress' || task.status === 'rejected') && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.submitTask(task.object_id, task.id))}>На проверку</button>}{task.status === 'pending_review' && <><button disabled={busy} className="btn btn-xs btn-success" onClick={() => void run(() => objectApi.acceptTask(task.object_id, task.id))}>Принять</button><button disabled={busy} className="btn btn-xs btn-error" onClick={() => { const reason = window.prompt('Причина возврата'); if (reason) void run(() => objectApi.rejectTask(task.object_id, task.id, reason)) }}>Вернуть</button></>}</div>
-    <div><label className="btn btn-outline btn-xs">+ Файл<input type="file" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /></label><ul className="mt-2 space-y-1">{attachments.map(file => <li key={file.id} className="flex items-center justify-between gap-2 text-xs"><button className="truncate underline" onClick={() => void download(file)}>{file.original_filename}</button><button className="text-red-600" onClick={() => void run(async () => { await objectApi.deleteAttachment(task.object_id, task.id, file.id); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) })}>Удалить</button></li>)}</ul></div>
+    <div className="flex flex-wrap gap-1">{(task.status === 'in_progress' || task.status === 'rejected') && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.submitTask(task.object_id, task.id))}>На проверку</button>}{task.status === 'pending_review' && <><button disabled={busy} className="btn btn-xs btn-success" onClick={() => void run(() => objectApi.acceptTask(task.object_id, task.id))}>Принять</button><button disabled={busy} className="btn btn-xs btn-error" onClick={() => { const reason = window.prompt('Причина возврата'); if (reason) void run(() => objectApi.rejectTask(task.object_id, task.id, reason)) }}>Вернуть</button></>}</div>
+    <div><label className="btn btn-outline btn-xs">+ Файл<input type="file" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /></label><ul className="mt-2 space-y-2">{attachments.map(file => <li key={file.id} className="rounded-lg border border-base-200 p-2 text-xs"><button type="button" className="block max-w-full truncate font-medium text-primary hover:underline" title={file.original_filename} onClick={() => void openPreview(file)}>{file.original_filename}</button><div className="mt-1 flex flex-wrap gap-3"><button type="button" className="text-slate-600 hover:text-primary hover:underline" onClick={() => void download(file)}>Скачать</button><button type="button" className="text-red-600 hover:underline" onClick={() => void run(async () => { await objectApi.deleteAttachment(task.object_id, task.id, file.id); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) })}>Удалить</button></div></li>)}</ul></div>
   </div>}</div>
 }
 
@@ -769,6 +794,9 @@ function ObjectTasksPage() {
   const handleTaskTextClick = (task: ObjectTaskTree, depth: number) => {
     if (depth === 0) return
     if (task.status === 'not_applicable' || task.status === 'skipped') return
+    if (task.status === 'done') {
+      setSelectedTaskPath((currentPath) => currentPath.slice(0, Math.max(0, depth - 1)))
+    }
     void handleToggleTask(task.id)
   }
 
@@ -1136,7 +1164,7 @@ function ObjectTasksPage() {
             <table className="min-w-[980px] w-full table-fixed text-left">
               <colgroup><col className="w-[35%]" /><col className="w-[14%]" /><col className="w-[25%]" /><col className="w-[13%]" /><col className="w-[13%]" /></colgroup>
               <thead className="bg-base-200">
-                <tr><th className="px-3 py-3 2xl:px-5">Задача</th><th className="whitespace-nowrap px-3 py-3 2xl:px-5">Дедлайн</th><th className="px-3 py-3 2xl:px-5">Работа и файлы</th><th className="px-3 py-3 text-center 2xl:px-5">Редактировать</th><th className="px-3 py-3 text-center 2xl:px-5">+ Подзадача</th></tr>
+                <tr><th className="px-3 py-3 2xl:px-5">Задача</th><th className="whitespace-nowrap px-3 py-3 2xl:px-5">Дедлайн</th><th className="px-3 py-3 2xl:px-5">Файлы</th><th className="px-3 py-3 text-center 2xl:px-5">Редактировать</th><th className="px-3 py-3 text-center 2xl:px-5">+ Подзадача</th></tr>
               </thead>
               <tbody>
                 {progressiveTasks.map(({ task, depth }) => {
@@ -1161,7 +1189,6 @@ function ObjectTasksPage() {
                             </button>
                           )}
                         </div>
-                        <div className={isMainTask ? '' : 'ml-8'}>{task.assigned_to?.full_name && <div className="mt-1 text-xs text-slate-500">Исполнитель: {task.assigned_to.full_name}</div>}</div>
                       </div>
                     </td>
                     <td className="px-3 py-3 2xl:px-5"><div className={overdue ? 'font-medium text-red-600' : 'text-slate-600'}>{task.deadline ? formatDateRu(task.deadline) : 'Без срока'}</div>{overdue && <div className="mt-1 text-xs text-red-600">Просрочено</div>}</td>
@@ -1207,18 +1234,12 @@ function ObjectTasksPage() {
                 {taskEditorMode === 'create' && !taskEditorTarget ? (
                   <label className="space-y-3">
                     <span className="text-sm font-medium">Родительская задача</span>
-                    <select
-                      className={`select ${taskEditorFieldClass}`}
+                    <StyledSelect
+                      className="w-full"
                       value={taskForm.parentId}
-                      onChange={(event) => setTaskForm((prev) => ({ ...prev, parentId: event.target.value }))}
-                    >
-                      <option value="">Корневая задача</option>
-                      {flatTaskOptions.map(({ task, depth }) => (
-                        <option key={task.id} value={task.id}>
-                          {`${'— '.repeat(depth)}${task.title}`}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setTaskForm((prev) => ({ ...prev, parentId: value }))}
+                      options={[{ value: '', label: 'Корневая задача' }, ...flatTaskOptions.map(({ task, depth }) => ({ value: String(task.id), label: `${'— '.repeat(depth)}${task.title}` }))]}
+                    />
                   </label>
                 ) : null}
 

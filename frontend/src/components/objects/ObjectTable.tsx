@@ -4,15 +4,12 @@ import type { ObjectSummary, ObjectTask, User } from '@/types'
 import CurrentStepCell from './CurrentStepCell'
 import ResponsibleBadge from './ResponsibleBadge'
 import StageStepper from './StageStepper'
-import StatusFlag from './StatusFlag'
 
 type ObjectTableProps = {
   objects: ObjectSummary[]
   responsibleByObjectId: Record<number, User | undefined>
   stagesByObjectId: Record<number, ObjectTask[]>
 }
-
-const isWaiting = (object: ObjectSummary) => object.stats.todo > 0 && object.stats.in_progress === 0 && object.stats.overdue === 0
 
 function DeadlineCell({ object }: { object: ObjectSummary }) {
   if (!object.end_date) return <span className="text-sm text-base-content/50">Не указан</span>
@@ -43,7 +40,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
             <th className="px-3 py-3 font-semibold">Текущий шаг</th>
             <th className="px-3 py-3 font-semibold">Прогресс</th>
             <th className="px-3 py-3 font-semibold">Срок</th>
-            <th className="px-3 py-3 font-semibold">Флаг</th>
+            <th className="px-3 py-3 font-semibold">Статусве</th>
           </tr>
         </thead>
         <tbody>
@@ -69,7 +66,15 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
                 </div>
               </td>
               <td className="px-3 py-3"><DeadlineCell object={object} /></td>
-              <td className="px-3 py-3"><StatusFlag overdueCount={object.stats.overdue} waiting={isWaiting(object)} /></td>
+              <td className="px-3 py-3">
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  object.is_active
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 bg-slate-100 text-slate-600'
+                }`}>
+                  {object.is_active ? 'Активен' : 'Неактивен'}
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { getStoredAvatarUrl, photoApi, userApi } from '@services/api'
+import { StyledSelect } from '@/components'
 import type { User, UserRole } from '@/types'
 
 type UserFormState = {
@@ -514,14 +515,12 @@ function UsersPage() {
               </label>
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Должность</span>
-                <select
-                  className="select w-full focus:border-[#ff4539] focus:outline-none"
+                <StyledSelect
+                  className="w-full"
                   value={userForm.role}
-                  onChange={(e) => handleChange('role', e.target.value as UserRole)}
-                >
-                  <option value="chief_engineer">Инженер</option>
-                  <option value="foreman">Прораб</option>
-                </select>
+                  onChange={(value) => handleChange('role', value as UserRole)}
+                  options={[{ value: 'chief_engineer', label: 'Инженер' }, { value: 'foreman', label: 'Прораб' }]}
+                />
               </label>
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Статус</span>

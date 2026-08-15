@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue } from '@/components'
+import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
 import { formatApiError, formatDateRu, formatTaskCount } from '@/utils'
@@ -537,24 +537,17 @@ function ObjectDetailsPage() {
                   </label>
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Ответственный</span>
-                    <select
-                      className="select w-full focus:border-[#ff4539] focus:outline-none"
+                    <StyledSelect
+                      className="w-full"
                       value={editForm.responsible_user_id}
-                      onChange={(e) => updateEditForm('responsible_user_id', e.target.value)}
-                    >
-                      <option value="">Не назначен</option>
-                      {employees
+                      onChange={(value) => updateEditForm('responsible_user_id', value)}
+                      options={[{ value: '', label: 'Не назначен' }, ...employees
                         .filter(
                           (user) =>
                             user.is_active || responsibleUsers.some((responsible) => responsible.id === user.id),
                         )
-                        .map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.full_name} — {user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}
-                            {!user.is_active ? ' (неактивен)' : ''}
-                          </option>
-                        ))}
-                    </select>
+                        .map((user) => ({ value: String(user.id), label: `${user.full_name} — ${user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}${!user.is_active ? ' (неактивен)' : ''}` }))]}
+                    />
                     {employees.length === 0 && (
                       <span className="text-xs text-amber-700">
                         Сначала добавьте сотрудника на объект в разделе «Пользователи».

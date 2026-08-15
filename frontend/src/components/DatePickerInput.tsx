@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import StyledSelect from './StyledSelect'
 
 type DatePickerInputProps = {
   value: string
@@ -218,20 +219,15 @@ function DatePickerInput({
             </button>
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <span>{calendarMonthLabel}</span>
-              <select
-                className="rounded-lg border border-base-300 bg-white px-2 py-1 text-sm font-semibold outline-none transition focus:border-[#ff4539]"
-                value={calendarMonth.getFullYear()}
-                onChange={(event) => setCalendarMonth((month) => (
-                  new Date(Number(event.target.value), month.getMonth(), 1)
+              <StyledSelect
+                className="w-28"
+                value={String(calendarMonth.getFullYear())}
+                onChange={(value) => setCalendarMonth((month) => (
+                  new Date(Number(value), month.getMonth(), 1)
                 ))}
                 aria-label="Выберите год"
-              >
-                {yearOptions.map((year) => (
-                  <option key={year} value={year}>
-                    {year} г.
-                  </option>
-                ))}
-              </select>
+                options={yearOptions.map((year) => ({ value: String(year), label: `${year} г.` }))}
+              />
             </div>
             <button
               type="button"

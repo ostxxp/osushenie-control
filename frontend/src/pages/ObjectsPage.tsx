@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable } from '@/components'
+import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable, StyledSelect } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
 import type { ObjectSummary, ObjectTask, ObjectTaskTree, User } from '@/types'
@@ -441,16 +441,8 @@ function ObjectsPage() {
               <input type="checkbox" className="checkbox checkbox-sm" checked={onlyMine} onChange={(event) => setOnlyMine(event.target.checked)} />
               Мои задачи
             </label>
-            <select className="select select-sm border-base-300 focus:border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/15" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as 'all' | User['role'])}>
-              <option value="all">Все роли</option>
-              <option value="admin">Администратор</option>
-              <option value="chief_engineer">Главный инженер</option>
-              <option value="foreman">Прораб</option>
-            </select>
-            <select className="select select-sm border-base-300 focus:border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/15" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}>
-              <option value="all">Все этапы</option>
-              {stageOptions.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
-            </select>
+            <StyledSelect className="min-w-44" value={roleFilter} onChange={(value) => setRoleFilter(value as 'all' | User['role'])} ariaLabel="Фильтр по роли" options={[{ value: 'all', label: 'Все роли' }, { value: 'admin', label: 'Администратор' }, { value: 'chief_engineer', label: 'Главный инженер' }, { value: 'foreman', label: 'Прораб' }]} />
+            <StyledSelect className="min-w-44" value={stageFilter} onChange={setStageFilter} ariaLabel="Фильтр по этапу" options={[{ value: 'all', label: 'Все этапы' }, ...stageOptions]} />
             <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
               <input type="checkbox" className="checkbox checkbox-sm" checked={onlyOverdue} onChange={(event) => setOnlyOverdue(event.target.checked)} />
               Просроченные

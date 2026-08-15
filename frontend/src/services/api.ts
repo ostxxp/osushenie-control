@@ -463,8 +463,6 @@ export const objectApi = {
 export const workApi = {
   getMy: async (params: Record<string, string | number | undefined>): Promise<Page<MyTask>> =>
     (await authApi.get('/tasks/my', { params })).data,
-  getToday: async (params: Record<string, string | number | undefined>): Promise<Page<MyTask>> =>
-    (await authApi.get('/tasks/today', { params })).data,
 }
 
 export const activityApi = {
