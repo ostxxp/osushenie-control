@@ -36,6 +36,18 @@ select {
   font: inherit;
 }
 
+/* Keep dropdowns visually neutral: native and DaisyUI arrows are intentionally hidden. */
+select,
+.select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: none !important;
+}
+
+select::-ms-expand {
+  display: none;
+}
+
 #root {
   min-height: 100%;
   min-width: 0;

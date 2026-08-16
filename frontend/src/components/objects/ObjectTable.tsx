@@ -4,15 +4,12 @@ import type { ObjectSummary, ObjectTask, User } from '@/types'
 import CurrentStepCell from './CurrentStepCell'
 import ResponsibleBadge from './ResponsibleBadge'
 import StageStepper from './StageStepper'
-import StatusFlag from './StatusFlag'
 
 type ObjectTableProps = {
   objects: ObjectSummary[]
   responsibleByObjectId: Record<number, User | undefined>
   stagesByObjectId: Record<number, ObjectTask[]>
 }
-
-const isWaiting = (object: ObjectSummary) => object.stats.todo > 0 && object.stats.in_progress === 0 && object.stats.overdue === 0
 
 function DeadlineCell({ object }: { object: ObjectSummary }) {
   if (!object.end_date) return <span className="text-sm text-base-content/50">Не указан</span>
@@ -43,14 +40,14 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
             <th className="px-3 py-3 font-semibold">Текущий шаг</th>
             <th className="px-3 py-3 font-semibold">Прогресс</th>
             <th className="px-3 py-3 font-semibold">Срок</th>
-            <th className="px-3 py-3 font-semibold">Флаг</th>
+            <th className="px-3 py-3 font-semibold">Статусве</th>
           </tr>
         </thead>
         <tbody>
           {objects.length === 0 ? (
             <tr><td colSpan={6} className="px-5 py-8 text-center text-base-content/60">Объектов не найдено.</td></tr>
           ) : objects.map((object) => (
-            <tr key={object.id} className="border-b border-slate-100 align-middle transition-colors hover:bg-base-200">
+            <tr key={object.id} className="border-b border-slate-100 align-middle transition-colors last:border-b-0 hover:bg-base-200">
               <td className="px-3 py-3">
                 <Link to={`/objects/${object.id}`} className="font-semibold text-slate-900 hover:text-primary hover:underline">{object.name}</Link>
                 <p className="mt-1 truncate text-xs text-slate-500" title={object.address}>{object.address}</p>
@@ -69,7 +66,15 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
                 </div>
               </td>
               <td className="px-3 py-3"><DeadlineCell object={object} /></td>
-              <td className="px-3 py-3"><StatusFlag overdueCount={object.stats.overdue} waiting={isWaiting(object)} /></td>
+              <td className="px-3 py-3">
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  object.is_active
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 bg-slate-100 text-slate-600'
+                }`}>
+                  {object.is_active ? 'Активен' : 'Неактивен'}
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>

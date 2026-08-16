@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
-import { DatePickerInput, formatDateInputValue } from '@/components'
+import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
 import { formatDateTimeRu, formatDateRu, formatTaskCountAccusative } from '@/utils'
 import type {
   ConstructionObject,
@@ -12,6 +12,9 @@ import type {
   ObjectTaskTree,
   ObjectTaskUpsertPayload,
   TaskChildrenMode,
+  TaskAttachment,
+  CurrentStep,
+  ProjectStageSummary,
 } from '@/types'
 
 type FlatTaskOption = {
@@ -81,6 +84,93 @@ const flattenTaskTree = (tasks: ObjectTaskTree[], depth = 0): FlatTaskOption[] =
     { task, depth },
     ...flattenTaskTree(task.children, depth + 1),
   ])
+
+const findTaskPath = (tasks: ObjectTaskTree[], taskId: number): number[] | null => {
+  for (const task of tasks) {
+    if (task.id === taskId) return [task.id]
+    const childPath = findTaskPath(task.children, taskId)
+    if (childPath) return [task.id, ...childPath]
+  }
+  return null
+}
+
+const findSavedSelectionPath = (task: ObjectTaskTree): number[] => {
+  if (task.selected_child_id) {
+    const selectedChild = task.children.find((child) => child.id === task.selected_child_id)
+    if (selectedChild) return [selectedChild.id, ...findSavedSelectionPath(selectedChild)]
+  }
+
+  for (const child of task.children) {
+    const descendantPath = findSavedSelectionPath(child)
+    if (descendantPath.length > 0) return [child.id, ...descendantPath]
+  }
+
+  return []
+}
+
+const buildProgressiveTaskList = (
+  root: ObjectTaskTree | undefined,
+  focusedPath: number[] = [],
+): FlatTaskOption[] => {
+  if (!root) return []
+
+  const visible: FlatTaskOption[] = [{ task: root, depth: 0 }]
+  let parent = root
+  let depth = 1
+
+  while (parent.children.length > 0) {
+    const activeChildren = parent.children.filter((task) => task.status !== 'not_applicable' && task.status !== 'skipped')
+    const focusedChild = parent.children.find((task) => task.id === focusedPath[depth - 1])
+    const selectedChild = focusedChild
+      || activeChildren.find((task) => task.id === parent.selected_child_id)
+      || activeChildren.find((task) => task.status === 'done')
+    if (!selectedChild) {
+      visible.push(...activeChildren.map((task) => ({ task, depth })))
+      break
+    }
+    visible.push({ task: selectedChild, depth })
+    if (selectedChild.status !== 'done' && !focusedChild) break
+    parent = selectedChild
+    depth += 1
+  }
+
+  return visible
+}
+
+const updateTaskInTree = (
+  tasks: ObjectTaskTree[],
+  taskId: number,
+  update: (task: ObjectTaskTree) => ObjectTaskTree,
+): ObjectTaskTree[] => tasks.map((task) => {
+  const nextTask = task.id === taskId ? update(task) : task
+  return { ...nextTask, children: updateTaskInTree(nextTask.children, taskId, update) }
+})
+
+const resetTaskSubtree = (task: ObjectTaskTree): ObjectTaskTree => ({
+  ...task,
+  status: 'todo',
+  completed_at: null,
+  completed_by: undefined,
+  completed_by_id: null,
+  children: task.children.map(resetTaskSubtree),
+})
+
+const visibleTaskTree = (task: ObjectTaskTree): ObjectTaskTree => ({
+  ...task,
+  children: task.children
+    .filter((child) => child.status !== 'not_applicable')
+    .map(visibleTaskTree),
+})
+
+const isTaskSectionComplete = (task: ObjectTaskTree | undefined): boolean => {
+  if (!task || task.children.length === 0) return false
+  const subtreeComplete = (item: ObjectTaskTree): boolean => {
+    if (item.status === 'skipped' || item.status === 'not_applicable') return true
+    if (item.children.length === 0) return item.status === 'done'
+    return item.children.every(subtreeComplete)
+  }
+  return task.children.every(subtreeComplete)
+}
 
 const isBlockingStatus = (status: ObjectTaskStatus): boolean =>
   status === 'skipped' || status === 'not_applicable'
@@ -228,6 +318,47 @@ function UserAvatar({ userId, name }: { userId: number; name: string }) {
   )
 }
 
+function TaskOperations({ task, onChanged }: { task: ObjectTaskTree; onChanged: () => Promise<unknown> }) {
+  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('')
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  const run = async (action: () => Promise<unknown>) => { setBusy(true); setMessage(''); try { await action(); await onChanged() } catch (error: unknown) { const status = (error as { response?: { status?: number } })?.response?.status; setMessage(status === 409 ? 'Задача уже изменилась. Данные обновлены — повторите действие.' : 'Не удалось выполнить действие.'); if (status === 409) await onChanged() } finally { setBusy(false) } }
+  useEffect(() => { if (!open) return; objectApi.getAttachments(task.object_id, task.id).then(setAttachments).catch(() => setAttachments([])) }, [open, task.id, task.object_id])
+  const upload = async (file?: File) => { if (!file) return; await run(async () => { await objectApi.uploadAttachment(task.object_id, task.id, file); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) }) }
+  const openPreview = async (file: TaskAttachment) => {
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) { setMessage('Браузер заблокировал новую вкладку. Разрешите всплывающие окна.'); return }
+    previewWindow.document.title = file.original_filename
+    previewWindow.document.body.textContent = 'Загрузка файла…'
+    try {
+      const blob = await objectApi.downloadAttachment(task.object_id, task.id, file.id)
+      const url = URL.createObjectURL(blob)
+      previewWindow.location.replace(url)
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      previewWindow.close()
+      setMessage('Не удалось открыть файл.')
+    }
+  }
+  const download = async (file: TaskAttachment) => {
+    try {
+      const blob = await objectApi.downloadAttachment(task.object_id, task.id, file.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = file.original_filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch { setMessage('Не удалось скачать файл.') }
+  }
+  return <div><button className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white hover:text-[#d9362c] hover:shadow-sm" onClick={() => setOpen(!open)}>{open ? 'Скрыть файлы' : 'Открыть'}</button>{open && <div className="mt-3 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm">
+    {message && <div className="text-xs text-red-600">{message}</div>}
+    <div className="flex flex-wrap gap-1">{(task.status === 'in_progress' || task.status === 'rejected') && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.submitTask(task.object_id, task.id))}>На проверку</button>}{task.status === 'pending_review' && <><button disabled={busy} className="btn btn-xs btn-success" onClick={() => void run(() => objectApi.acceptTask(task.object_id, task.id))}>Принять</button><button disabled={busy} className="btn btn-xs btn-error" onClick={() => { const reason = window.prompt('Причина возврата'); if (reason) void run(() => objectApi.rejectTask(task.object_id, task.id, reason)) }}>Вернуть</button></>}</div>
+    <div><label className="btn btn-outline btn-xs">+ Файл<input type="file" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /></label><ul className="mt-2 space-y-2">{attachments.map(file => <li key={file.id} className="rounded-lg border border-base-200 p-2 text-xs"><button type="button" className="block max-w-full truncate font-medium text-primary hover:underline" title={file.original_filename} onClick={() => void openPreview(file)}>{file.original_filename}</button><div className="mt-1 flex flex-wrap gap-3"><button type="button" className="text-slate-600 hover:text-primary hover:underline" onClick={() => void download(file)}>Скачать</button><button type="button" className="text-red-600 hover:underline" onClick={() => void run(async () => { await objectApi.deleteAttachment(task.object_id, task.id, file.id); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) })}>Удалить</button></div></li>)}</ul></div>
+  </div>}</div>
+}
+
 function TaskTreeNode({
   task,
   onToggleTask,
@@ -236,6 +367,7 @@ function TaskTreeNode({
   onEditTask,
   onCreateChild,
   overdueTaskIds,
+  onChanged,
   depth = 0,
 }: {
   task: ObjectTaskTree
@@ -245,6 +377,7 @@ function TaskTreeNode({
   onEditTask: (task: ObjectTaskTree) => void
   onCreateChild: (task: ObjectTaskTree) => void
   overdueTaskIds: Set<number>
+  onChanged: () => Promise<unknown>
   depth?: number
 }) {
   const hasChildren = task.children.length > 0
@@ -343,6 +476,7 @@ function TaskTreeNode({
             + Подзадача
           </button>
         </div>
+        <TaskOperations task={task} onChanged={onChanged} />
       </article>
 
       {shouldShowChildren && (
@@ -357,6 +491,7 @@ function TaskTreeNode({
                 onEditTask={onEditTask}
                 onCreateChild={onCreateChild}
                 overdueTaskIds={overdueTaskIds}
+                onChanged={onChanged}
                 depth={depth + 1}
               />
             </li>
@@ -368,6 +503,8 @@ function TaskTreeNode({
 }
 
 function ObjectTasksPage() {
+  // Keep the former renderer available while old deep links are migrated to the list view.
+  void TaskTreeNode
   const { id, taskId } = useParams<{ id: string; taskId?: string }>()
   const location = useLocation()
   const navigate = useNavigate()
@@ -380,14 +517,18 @@ function ObjectTasksPage() {
   const [statusTaskGroups, setStatusTaskGroups] = useState<ObjectTaskListGroup[]>([])
   const [overdueCount, setOverdueCount] = useState(0)
   const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
+  const [stages, setStages] = useState<ProjectStageSummary[]>([])
+  const [currentStep, setCurrentStep] = useState<CurrentStep | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
+  const [selectedTaskPath, setSelectedTaskPath] = useState<number[]>([])
   const [taskEditorOpen, setTaskEditorOpen] = useState(false)
   const [taskEditorTarget, setTaskEditorTarget] = useState<ObjectTask | null>(null)
   const [taskEditorMode, setTaskEditorMode] = useState<'create' | 'edit'>('create')
   const [taskForm, setTaskForm] = useState<TaskFormState>(emptyTaskForm())
   const [savingTask, setSavingTask] = useState(false)
+  const [pendingTaskIds, setPendingTaskIds] = useState<number[]>([])
   const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>(() =>
     parseTaskStatusFilter(searchParams.get('status')),
   )
@@ -405,7 +546,7 @@ function ObjectTasksPage() {
       const groupedStatus = taskStatusFilter === 'done' || taskStatusFilter === 'todo' || taskStatusFilter === 'overdue'
         ? taskStatusFilter
         : null
-      const [objData, fullTreeData, overdueGroups, taskStats, filteredGroups] = await Promise.all([
+      const [objData, fullTreeData, overdueGroups, taskStats, filteredGroups, stageData, stepData] = await Promise.all([
         objectApi.getById(objectId),
         objectApi.getFullTasksTree(objectId),
         objectApi.getTaskGroups(objectId, 'overdue', selectedTaskId ?? undefined).catch(() => []),
@@ -413,13 +554,23 @@ function ObjectTasksPage() {
         groupedStatus
           ? objectApi.getTaskGroups(objectId, groupedStatus, selectedTaskId ?? undefined).catch(() => [])
           : Promise.resolve([]),
+        objectApi.getStages(objectId),
+        objectApi.getCurrentStep(objectId),
       ])
-      const headersData = selectedTaskId === null
-        ? await objectApi.getTasksHeaders(objectId)
-        : []
+      const headersData = selectedTaskId === null ? fullTreeData : []
+      if (selectedTaskId !== null) {
+        const selectedIndex = fullTreeData.findIndex((task) => task.id === selectedTaskId)
+        const previousSectionsComplete = selectedIndex <= 0 || fullTreeData
+          .slice(0, selectedIndex)
+          .every((task) => isTaskSectionComplete(task))
+        if (!previousSectionsComplete) {
+          navigate(`/objects/${objectId}/tasks`, { replace: true })
+          return []
+        }
+      }
       const treeData = selectedTaskId === null
         ? []
-        : [await objectApi.getAvailableTaskTree(objectId, selectedTaskId)]
+        : fullTreeData.filter((task) => task.id === selectedTaskId).map(visibleTaskTree)
       setObjectItem(objData)
       setTasks(treeData)
       setTaskHeaders(headersData)
@@ -427,6 +578,8 @@ function ObjectTasksPage() {
       setOverdueTasks(overdueGroups.flatMap((group) => group.tasks))
       setStatusTaskGroups(filteredGroups)
       setStats(taskStats)
+      setStages(stageData)
+      setCurrentStep(stepData)
       setOverdueCount(taskStats.overdue)
       setError('')
       return treeData
@@ -442,21 +595,24 @@ function ObjectTasksPage() {
 
   useEffect(() => {
     setExpandedTaskIds([])
+    setSelectedTaskPath([])
     loadData().then((loadedTasks) => {
       setExpandedTaskIds(loadedTasks.map((task) => task.id))
+      const hashTaskId = Number(decodeURIComponent(location.hash).match(/^#task-(\d+)$/)?.[1])
+      if (!Number.isNaN(hashTaskId) && loadedTasks[0]) {
+        const path = findTaskPath(loadedTasks[0].children, hashTaskId)
+        if (path) setSelectedTaskPath(path)
+      } else if (loadedTasks[0]) {
+        setSelectedTaskPath(findSavedSelectionPath(loadedTasks[0]))
+      }
     })
-  }, [id, taskId, taskStatusFilter])
+  }, [id, taskId, taskStatusFilter, location.hash])
 
   useEffect(() => {
     setTaskStatusFilter(parseTaskStatusFilter(searchParams.get('status')))
   }, [searchParams])
 
   const updateTaskStatusFilter = (filter: TaskStatusFilter) => {
-    if (taskId && id) {
-      navigate(`/objects/${id}/tasks${filter === 'all' ? '' : `?status=${filter}`}`)
-      return
-    }
-
     setTaskStatusFilter(filter)
 
     const nextSearchParams = new URLSearchParams(searchParams)
@@ -474,16 +630,34 @@ function ObjectTasksPage() {
       prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],
     )
   }
+  void toggleExpand
 
   const handleToggleTask = async (taskId: number): Promise<void> => {
-    if (!id) return
+    if (!id || pendingTaskIds.includes(taskId)) return
+
+    const currentTask = flattenTaskTree(allTasks).find(({ task }) => task.id === taskId)?.task
+    if (!currentTask) return
+    const optimisticStatus: ObjectTaskStatus = currentTask.status === 'done' ? 'todo' : 'done'
+    const applyOptimisticStatus = (task: ObjectTaskTree) => optimisticStatus === 'todo'
+      ? resetTaskSubtree(task)
+      : {
+          ...task,
+          status: optimisticStatus,
+          completed_at: new Date().toISOString(),
+        }
+    setPendingTaskIds((current) => [...current, taskId])
+    setAllTasks((current) => updateTaskInTree(current, taskId, applyOptimisticStatus))
+    setTasks((current) => updateTaskInTree(current, taskId, applyOptimisticStatus))
 
     try {
-      await objectApi.toggleTaskStatus(Number(id), taskId)
+      await objectApi.updateTaskStatus(Number(id), taskId, optimisticStatus)
       await loadData()
       window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
       console.error('Ошибка обновления статуса:', err)
+      await loadData()
+    } finally {
+      setPendingTaskIds((current) => current.filter((pendingId) => pendingId !== taskId))
     }
   }
 
@@ -542,8 +716,8 @@ function ObjectTasksPage() {
           title: taskForm.title.trim(),
           sort_order: taskForm.sortOrder === '' ? null : Number(taskForm.sortOrder),
           children_mode: taskForm.childrenMode,
-          status: taskForm.status,
           deadline,
+          expected_version: taskEditorTarget.version,
         }
         await objectApi.updateTask(Number(id), taskEditorTarget.id, payload)
       }
@@ -551,7 +725,12 @@ function ObjectTasksPage() {
       closeTaskEditor()
       await loadData()
       window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
-    } catch (err) {
+    } catch (err: unknown) {
+      const responseStatus = (err as { response?: { status?: number } }).response?.status
+      if (responseStatus === 409) {
+        await loadData()
+        setTaskEditorOpen(false)
+      }
       console.error('Ошибка сохранения задачи:', err)
     } finally {
       setSavingTask(false)
@@ -607,6 +786,20 @@ function ObjectTasksPage() {
     [overdueTaskIds, taskStatusFilter, tasks],
   )
 
+  const progressiveTasks = useMemo(
+    () => buildProgressiveTaskList(filteredTasks[0], selectedTaskPath),
+    [filteredTasks, selectedTaskPath],
+  )
+
+  const handleTaskTextClick = (task: ObjectTaskTree, depth: number) => {
+    if (depth === 0) return
+    if (task.status === 'not_applicable' || task.status === 'skipped') return
+    if (task.status === 'done') {
+      setSelectedTaskPath((currentPath) => currentPath.slice(0, Math.max(0, depth - 1)))
+    }
+    void handleToggleTask(task.id)
+  }
+
   const filteredTaskHeaders = useMemo(() => {
     if (taskStatusFilter === 'all') return taskHeaders
 
@@ -655,11 +848,14 @@ function ObjectTasksPage() {
     if (!location.hash || tasks.length === 0) return
 
     const elementId = decodeURIComponent(location.hash.slice(1))
-    document.getElementById(elementId)?.scrollIntoView({
-      behavior: 'auto',
-      block: 'center',
-      inline: 'center',
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(elementId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      })
     })
+    return () => window.cancelAnimationFrame(frame)
   }, [expandedTaskIds, location.hash, tasks])
 
   if (loading) {
@@ -771,6 +967,17 @@ function ObjectTasksPage() {
           </button>
         </div>
       </div>
+
+      {!taskId && currentStep?.task && (() => {
+        const sectionId = taskSectionIds.get(currentStep.task.id)
+        const destination = sectionId
+          ? `/objects/${objectItem.id}/tasks/${sectionId}#task-${currentStep.task.id}`
+          : `/objects/${objectItem.id}/tasks#task-${currentStep.task.id}`
+        return <Link to={destination} className={`block rounded-3xl border p-5 shadow-sm transition hover:shadow-md ${currentStep.flag === 'overdue' || currentStep.flag === 'rejected' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг · {currentStep.stage_title || 'Без этапа'}</div>
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{currentStep.task.title}</h2><div className="mt-1 text-sm text-slate-600">Ответственный: {currentStep.action_required_by?.full_name || currentStep.task.assigned_to?.full_name || 'не назначен'}{currentStep.task.deadline ? ` · Срок: ${formatDateRu(currentStep.task.deadline)}` : ''}</div></div><span className="badge badge-lg">Открыть →</span></div>
+        </Link>
+      })()}
 
       {displayedOverdueCount > 0 && (
         <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm">
@@ -888,35 +1095,63 @@ function ObjectTasksPage() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredTaskHeaders.map((header) => (
+            {filteredTaskHeaders.map((header) => {
+              const stageSummary = stages.find((stage) => stage.code === header.stage)
+              const sectionComplete = isTaskSectionComplete(allTasks.find((task) => task.id === header.id))
+              const headerIndex = taskHeaders.findIndex((item) => item.id === header.id)
+              const sectionUnlocked = taskHeaders.slice(0, Math.max(0, headerIndex)).every((previous) =>
+                isTaskSectionComplete(allTasks.find((task) => task.id === previous.id)),
+              )
+              const stageProgress = stageSummary?.stats.total
+                ? Math.round(stageSummary.stats.done / stageSummary.stats.total * 100)
+                : 0
+              return (
               <Link
                 key={header.id}
                 to={`/objects/${objectItem.id}/tasks/${header.id}`}
-                className="group flex min-h-36 flex-col justify-between rounded-3xl border border-base-200 bg-base-100 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#ff4539]/30 hover:shadow-md"
+                onClick={(event) => { if (!sectionUnlocked) event.preventDefault() }}
+                aria-disabled={!sectionUnlocked}
+                className={`group flex min-h-36 flex-col justify-between rounded-3xl border border-base-200 bg-base-100 p-5 shadow-sm transition ${sectionUnlocked ? 'hover:-translate-y-0.5 hover:border-[#ff4539]/30 hover:shadow-md' : 'cursor-not-allowed opacity-55'}`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <h2 className="text-lg font-semibold leading-6 text-base-content">
                     {header.title}
                   </h2>
                   <span className="text-xl text-base-content/35 transition group-hover:translate-x-1 group-hover:text-[#ff4539]">
-                    →
+                    {sectionUnlocked ? '→' : '🔒'}
                   </span>
                 </div>
+                {!sectionUnlocked && <div className="mt-3 text-xs font-medium text-amber-700">Сначала завершите предыдущий раздел</div>}
+                {stageSummary && (
+                  <div className="mt-4 border-t border-slate-100 pt-3">
+                    <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                      <span>{stageSummary.title}</span>
+                      <span className="font-semibold text-slate-700">{stageProgress}%</span>
+                    </div>
+                    <progress className="progress progress-success mt-2 w-full" value={stageProgress} max="100" />
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                      <span>{stageSummary.stats.done} из {stageSummary.stats.total} готово</span>
+                      <span>{stageSummary.stats.in_progress} в работе</span>
+                      {stageSummary.stats.overdue > 0 && <span className="text-red-600">{stageSummary.stats.overdue} просрочено</span>}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-5 flex items-center justify-between gap-3 text-sm text-base-content/60">
                   <span>
                     {header.deadline ? `Дедлайн: ${formatDateRu(header.deadline)}` : 'Без дедлайна'}
                   </span>
                   <span className={[
                     'rounded-full px-2.5 py-1 text-xs font-medium',
-                    header.status === 'done'
+                    sectionComplete
                       ? 'bg-emerald-50 text-emerald-700'
                       : 'bg-slate-100 text-slate-600',
                   ].join(' ')}>
-                    {header.status === 'done' ? 'Завершён' : 'Открыть'}
+                    {sectionComplete ? 'Завершён' : 'Открыть'}
                   </span>
                 </div>
               </Link>
-            ))}
+              )
+            })}
           </div>
         )
       ) : filteredTasks.length === 0 ? (
@@ -924,27 +1159,47 @@ function ObjectTasksPage() {
           Задачи с выбранным статусом не найдены.
         </div>
       ) : (
-        <div className="space-y-4">
-          {filteredTasks.map((task) => (
-            <section
-              key={task.id}
-              className="overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-sm"
-            >
-              <div className="overflow-x-auto p-3 sm:p-6">
-                <div className="flex min-w-0 justify-center pb-2 sm:min-w-max sm:px-4">
-                  <TaskTreeNode
-                    task={task}
-                    onToggleTask={handleToggleTask}
-                    expandedTaskIds={expandedTaskIds}
-                    onToggleExpand={toggleExpand}
-                    onEditTask={openEditTask}
-                    onCreateChild={(parentTask) => openCreateTask(parentTask)}
-                    overdueTaskIds={overdueTaskIds}
-                  />
-                </div>
-              </div>
-            </section>
-          ))}
+        <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
+          <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full table-fixed text-left">
+              <colgroup><col className="w-[35%]" /><col className="w-[14%]" /><col className="w-[25%]" /><col className="w-[13%]" /><col className="w-[13%]" /></colgroup>
+              <thead className="bg-base-200">
+                <tr><th className="px-3 py-3 2xl:px-5">Задача</th><th className="whitespace-nowrap px-3 py-3 2xl:px-5">Дедлайн</th><th className="px-3 py-3 2xl:px-5">Файлы</th><th className="px-3 py-3 text-center 2xl:px-5">Редактировать</th><th className="px-3 py-3 text-center 2xl:px-5">+ Подзадача</th></tr>
+              </thead>
+              <tbody>
+                {progressiveTasks.map(({ task, depth }) => {
+                  const overdue = overdueTaskIds.has(task.id)
+                  const isMainTask = depth === 0
+                  const canToggle = !isMainTask && task.status !== 'not_applicable' && task.status !== 'skipped'
+                  const isSelected = selectedTaskPath[depth - 1] === task.id
+                  return <tr key={task.id} id={`task-${task.id}`} className="scroll-mt-6 border-t border-base-200 align-middle transition-colors hover:bg-base-200">
+                    <td className="px-3 py-3 2xl:px-5">
+                      <div style={{ paddingLeft: `${Math.min(Math.max(depth - 1, 0), 5) * 18}px` }}>
+                        <div className="flex items-start gap-3">
+                          {!isMainTask && (
+                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="mt-0.5 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Выполнить задачу «${task.title}»`}>
+                              <TaskStateIcon task={task} />
+                            </button>
+                          )}
+                          {isMainTask ? (
+                            <div className="min-w-0 flex-1 font-semibold text-slate-900">{task.title}</div>
+                          ) : (
+                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="group flex min-w-0 flex-1 items-start rounded-xl text-left font-medium transition hover:text-[#d9362c] disabled:cursor-not-allowed disabled:opacity-50" aria-expanded={task.children.length > 0 ? isSelected : undefined} aria-label={`Выполнить задачу «${task.title}»`}>
+                              <span className="min-w-0 text-slate-900 group-hover:text-[#d9362c]">{task.title}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 2xl:px-5"><div className={overdue ? 'font-medium text-red-600' : 'text-slate-600'}>{task.deadline ? formatDateRu(task.deadline) : 'Без срока'}</div>{overdue && <div className="mt-1 text-xs text-red-600">Просрочено</div>}</td>
+                    <td className="px-3 py-3 2xl:px-5"><TaskOperations task={task} onChanged={loadData} /></td>
+                    <td className="px-3 py-3 text-center 2xl:px-5"><button type="button" className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white hover:text-[#d9362c] hover:shadow-sm" onClick={() => openEditTask(task)} aria-label="Редактировать задачу">Редактировать</button></td>
+                    <td className="px-3 py-3 text-center 2xl:px-5"><button type="button" className="whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white hover:text-[#d9362c] hover:shadow-sm" onClick={() => openCreateTask(task)} aria-label="Добавить подзадачу">+ Подзадача</button></td>
+                  </tr>
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -979,18 +1234,12 @@ function ObjectTasksPage() {
                 {taskEditorMode === 'create' && !taskEditorTarget ? (
                   <label className="space-y-3">
                     <span className="text-sm font-medium">Родительская задача</span>
-                    <select
-                      className={`select ${taskEditorFieldClass}`}
+                    <StyledSelect
+                      className="w-full"
                       value={taskForm.parentId}
-                      onChange={(event) => setTaskForm((prev) => ({ ...prev, parentId: event.target.value }))}
-                    >
-                      <option value="">Корневая задача</option>
-                      {flatTaskOptions.map(({ task, depth }) => (
-                        <option key={task.id} value={task.id}>
-                          {`${'— '.repeat(depth)}${task.title}`}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setTaskForm((prev) => ({ ...prev, parentId: value }))}
+                      options={[{ value: '', label: 'Корневая задача' }, ...flatTaskOptions.map(({ task, depth }) => ({ value: String(task.id), label: `${'— '.repeat(depth)}${task.title}` }))]}
+                    />
                   </label>
                 ) : null}
 

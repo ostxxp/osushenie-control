@@ -613,7 +613,7 @@ function ObjectEmployeesPage() {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-sm btn-primary"
+                      className="btn btn-sm border-0 bg-[#ff4539] text-white hover:bg-[#cc372e] focus:ring-2 focus:ring-[#ff4539]/30"
                       disabled={assigningUserId === user.id}
                       onClick={() => handleAssign(user.id)}
                     >

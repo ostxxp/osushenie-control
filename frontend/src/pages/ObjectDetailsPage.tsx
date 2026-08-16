@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue } from '@/components'
+import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
 import { objectApi, photoApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
 import { formatApiError, formatDateRu, formatTaskCount } from '@/utils'
@@ -51,14 +51,18 @@ function ObjectDetailsPage() {
   const [photosVersion, setPhotosVersion] = useState(0)
   const [photosSuccess, setPhotosSuccess] = useState('')
   const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null)
+  const [photoPendingDelete, setPhotoPendingDelete] = useState<{ id: number; name: string } | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
       if (!id) return
       try {
-        const [objData, taskStats] = await Promise.all([
+        const [objData, taskStats, progressValue, users, responsible] = await Promise.all([
           objectApi.getById(Number(id)),
           objectApi.getTaskStats(Number(id)),
+          objectApi.getProgress(Number(id)).catch(() => 0),
+          objectApi.getAssignedUsers(Number(id)).catch(() => []),
+          objectApi.getResponsibleUsers(Number(id)).catch(() => []),
         ])
         setObjectItem(objData)
         setObjectType(localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '')
@@ -74,25 +78,10 @@ function ObjectDetailsPage() {
         setEditStartDateInput(formatDateInputValue(toDateInputValue(objData.start_date)))
         setEditEndDateInput(formatDateInputValue(toDateInputValue(objData.end_date)))
         setStats(taskStats)
-        try {
-          const progressValue = await objectApi.getProgress(Number(id))
-          setProgress(progressValue)
-          setOverdueCount(taskStats.overdue)
-        } catch (e) {
-          console.warn('Failed to load object progress', e)
-          setProgress(0)
-          setOverdueCount(0)
-        }
-        try {
-          const [users, responsible] = await Promise.all([
-            objectApi.getAssignedUsers(Number(id)),
-            objectApi.getResponsibleUsers(Number(id)).catch(() => []),
-          ])
-          setEmployees(users)
-          setResponsibleUsers(responsible)
-        } catch (e) {
-          console.warn('Failed to load object users', e)
-        }
+        setProgress(progressValue)
+        setOverdueCount(taskStats.overdue)
+        setEmployees(users)
+        setResponsibleUsers(responsible)
       } catch (err: unknown) {
         const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         setError(detail || 'Ошибка загрузки данных')
@@ -382,7 +371,6 @@ function ObjectDetailsPage() {
     setPhotosSuccess('')
     try {
       await Promise.all(files.map((file) => photoApi.uploadObjectPhoto(objectItem.id, file)))
-      setPhotosSuccess(`Добавлено фотографий: ${files.length}.`)
     } catch (err: unknown) {
       setPhotosError(formatApiError(err, 'Не удалось добавить фотографии объекта.'))
     } finally {
@@ -392,14 +380,12 @@ function ObjectDetailsPage() {
   }
 
   const deleteObjectPhoto = async (photoId: number) => {
-    if (!window.confirm('Удалить эту фотографию объекта?')) return
-
     setPhotosSaving(true)
     setPhotosError('')
     setPhotosSuccess('')
     try {
       await photoApi.deletePhoto(photoId)
-      setPhotosSuccess('Фотография удалена.')
+      setPhotoPendingDelete(null)
       setPhotosVersion((version) => version + 1)
     } catch (err: unknown) {
       setPhotosError(formatApiError(err, 'Не удалось удалить фотографию объекта.'))
@@ -551,24 +537,17 @@ function ObjectDetailsPage() {
                   </label>
                   <label className="flex flex-col gap-2 md:col-span-2">
                     <span className="text-xs uppercase tracking-wide text-base-content/50">Ответственный</span>
-                    <select
-                      className="select w-full focus:border-[#ff4539] focus:outline-none"
+                    <StyledSelect
+                      className="w-full"
                       value={editForm.responsible_user_id}
-                      onChange={(e) => updateEditForm('responsible_user_id', e.target.value)}
-                    >
-                      <option value="">Не назначен</option>
-                      {employees
+                      onChange={(value) => updateEditForm('responsible_user_id', value)}
+                      options={[{ value: '', label: 'Не назначен' }, ...employees
                         .filter(
                           (user) =>
                             user.is_active || responsibleUsers.some((responsible) => responsible.id === user.id),
                         )
-                        .map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.full_name} — {user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}
-                            {!user.is_active ? ' (неактивен)' : ''}
-                          </option>
-                        ))}
-                    </select>
+                        .map((user) => ({ value: String(user.id), label: `${user.full_name} — ${user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}${!user.is_active ? ' (неактивен)' : ''}` }))]}
+                    />
                     {employees.length === 0 && (
                       <span className="text-xs text-amber-700">
                         Сначала добавьте сотрудника на объект в разделе «Пользователи».
@@ -862,7 +841,7 @@ function ObjectDetailsPage() {
                   <button
                     type="button"
                     className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-slate-950/65 text-lg text-white opacity-0 shadow-sm backdrop-blur transition hover:bg-red-600 group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => deleteObjectPhoto(photo.id)}
+                    onClick={() => setPhotoPendingDelete({ id: photo.id, name: photo.name })}
                     disabled={photosSaving}
                     aria-label={`Удалить ${photo.name}`}
                   >
@@ -874,6 +853,22 @@ function ObjectDetailsPage() {
           </div>
         )}
       </section>
+
+      {photoPendingDelete && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="delete-photo-title">
+          <button type="button" className="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]" onClick={() => !photosSaving && setPhotoPendingDelete(null)} aria-label="Закрыть окно подтверждения" />
+          <div className="relative w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.28)]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-2xl text-red-600" aria-hidden="true">!</div>
+            <h2 id="delete-photo-title" className="mt-4 text-xl font-semibold text-slate-950">Удалить фотографию?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Файл «{photoPendingDelete.name}» будет удалён <span className="whitespace-nowrap">без возможности восстановления.</span></p>
+            {photosError && <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{photosError}</div>}
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" className="btn btn-ghost" onClick={() => setPhotoPendingDelete(null)} disabled={photosSaving}>Отмена</button>
+              <button type="button" className="btn border-0 bg-red-600 text-white hover:bg-red-700" onClick={() => void deleteObjectPhoto(photoPendingDelete.id)} disabled={photosSaving}>{photosSaving ? 'Удаление…' : 'Удалить'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activePhotoIndex !== null && objectPhotos[activePhotoIndex] && (
         <div

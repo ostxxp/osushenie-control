@@ -1,13 +1,26 @@
 import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable } from '@/components'
+import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable, StyledSelect } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
-import type { ObjectSummary, ObjectTask, User } from '@/types'
+import type { ObjectSummary, ObjectTask, ObjectTaskTree, User } from '@/types'
 import { authService, AuthContext } from '@services/auth'
 import { getCurrentStage } from '@/components/objects/StageStepper'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
+
+const isFinishedTaskTree = (task: ObjectTaskTree): boolean => {
+  if (task.status === 'skipped' || task.status === 'not_applicable') return true
+  if (task.children.length === 0) return task.status === 'done'
+  return task.children.every(isFinishedTaskTree)
+}
+
+const sectionStagesFromTree = (roots: ObjectTaskTree[]): ObjectTask[] => roots.map((root) => {
+  return {
+    ...root,
+    status: root.children.length > 0 && root.children.every(isFinishedTaskTree) ? 'done' : 'todo',
+  }
+})
 
 const getTodayDateValue = (): string => {
   const today = new Date()
@@ -148,11 +161,8 @@ function ObjectsPage() {
         const data = await objectApi.getSummaries()
         const objectDetails = await Promise.all(
           data.map(async (objectItem) => {
-            const [responsibleUsers, stages] = await Promise.all([
-              objectApi.getResponsibleUsers(objectItem.id).catch(() => []),
-              objectApi.getTasksHeaders(objectItem.id).catch(() => []),
-            ])
-            return [objectItem.id, responsibleUsers[0], stages] as const
+            const stages = await objectApi.getFullTasksTree(objectItem.id).then(sectionStagesFromTree).catch(() => [])
+            return [objectItem.id, objectItem.responsible_users[0], stages] as const
           }),
         )
         setResponsibleByObjectId(Object.fromEntries(objectDetails.map(([id, responsible]) => [id, responsible])))
@@ -319,6 +329,8 @@ function ObjectsPage() {
           stats: { total: 0, done: 0, todo: 0, in_progress: 0, overdue: 0 },
           progress: 0,
           photos: [],
+          responsible_users: [],
+          current_step: { task: null, stage: null, stage_title: null, stage_order: null, action_required_by: null, flag: 'normal', days_remaining: null },
         }, ...prev])
       }
       setShowCreateObject(false)
@@ -429,16 +441,8 @@ function ObjectsPage() {
               <input type="checkbox" className="checkbox checkbox-sm" checked={onlyMine} onChange={(event) => setOnlyMine(event.target.checked)} />
               Мои задачи
             </label>
-            <select className="select select-sm border-base-300 focus:border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/15" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as 'all' | User['role'])}>
-              <option value="all">Все роли</option>
-              <option value="admin">Администратор</option>
-              <option value="chief_engineer">Главный инженер</option>
-              <option value="foreman">Прораб</option>
-            </select>
-            <select className="select select-sm border-base-300 focus:border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/15" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}>
-              <option value="all">Все этапы</option>
-              {stageOptions.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
-            </select>
+            <StyledSelect className="min-w-44" value={roleFilter} onChange={(value) => setRoleFilter(value as 'all' | User['role'])} ariaLabel="Фильтр по роли" options={[{ value: 'all', label: 'Все роли' }, { value: 'admin', label: 'Администратор' }, { value: 'chief_engineer', label: 'Главный инженер' }, { value: 'foreman', label: 'Прораб' }]} />
+            <StyledSelect className="min-w-44" value={stageFilter} onChange={setStageFilter} ariaLabel="Фильтр по этапу" options={[{ value: 'all', label: 'Все этапы' }, ...stageOptions]} />
             <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
               <input type="checkbox" className="checkbox checkbox-sm" checked={onlyOverdue} onChange={(event) => setOnlyOverdue(event.target.checked)} />
               Просроченные

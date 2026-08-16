@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select
@@ -1527,6 +1527,9 @@ async def list_user_work_items(
     user: User,
     object_id: int | None = None,
     task_status: ObjectTaskStatus | None = None,
+    search: str | None = None,
+    deadline_from: date | None = None,
+    deadline_to: date | None = None,
     today_only: bool = False,
     limit: int = 50,
     offset: int = 0,
@@ -1550,6 +1553,16 @@ async def list_user_work_items(
         query = query.where(ObjectTask.object_id == object_id)
     if task_status is not None:
         query = query.where(ObjectTask.status == task_status)
+    if search and search.strip():
+        query = query.where(ObjectTask.title.ilike(f"%{search.strip()}%"))
+    if deadline_from is not None:
+        query = query.where(
+            ObjectTask.deadline >= datetime.combine(deadline_from, time.min, tzinfo=UTC)
+        )
+    if deadline_to is not None:
+        query = query.where(
+            ObjectTask.deadline < datetime.combine(deadline_to + timedelta(days=1), time.min, tzinfo=UTC)
+        )
 
     result = await db.execute(
         query.order_by(
@@ -1589,6 +1602,7 @@ async def list_user_work_items(
                 "reviewer": task.reviewer,
                 "reviewed_by": task.reviewed_by,
                 "completed_by": None,
+                "main_task_id": await get_main_task_id(db, object_task=task),
                 "object_name": object_item.name,
                 "object_address": object_item.address,
                 "action_required": (

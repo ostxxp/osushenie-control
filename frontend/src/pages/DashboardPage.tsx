@@ -84,6 +84,13 @@ function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-3xl border border-base-200 bg-base-100 p-4 shadow-sm sm:p-6">
+        <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Главная</h1>
+        <p className="mt-2 text-sm text-base-content/65 sm:text-base">
+          Здесь представлены объекты и основная информация о ходе работ по ним
+        </p>
+      </div>
+
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {!error && (

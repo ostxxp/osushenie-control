@@ -135,6 +135,7 @@ class CurrentStepRead(BaseModel):
 
 
 class MyTaskRead(ObjectTaskRead):
+    main_task_id: int
     object_name: str
     object_address: str
     action_required: str
