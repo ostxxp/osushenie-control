@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
@@ -551,6 +551,7 @@ function ObjectTasksPage() {
   const [taskForm, setTaskForm] = useState<TaskFormState>(emptyTaskForm())
   const [savingTask, setSavingTask] = useState(false)
   const [pendingTaskIds, setPendingTaskIds] = useState<number[]>([])
+  const handledScrollLocationRef = useRef('')
   const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>(() =>
     parseTaskStatusFilter(searchParams.get('status')),
   )
@@ -867,11 +868,21 @@ function ObjectTasksPage() {
   }, [filteredTaskList, statusTaskGroups, taskHeaders, taskSectionIds, taskStatusFilter])
 
   useLayoutEffect(() => {
-    if (!location.hash || tasks.length === 0) return
+    if (!location.hash) {
+      handledScrollLocationRef.current = ''
+      return
+    }
+    if (tasks.length === 0) return
+
+    const scrollLocation = `${location.pathname}${location.hash}`
+    if (handledScrollLocationRef.current === scrollLocation) return
 
     const elementId = decodeURIComponent(location.hash.slice(1))
     const frame = window.requestAnimationFrame(() => {
-      document.getElementById(elementId)?.scrollIntoView({
+      const element = document.getElementById(elementId)
+      if (!element) return
+      handledScrollLocationRef.current = scrollLocation
+      element.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
         inline: 'nearest',
