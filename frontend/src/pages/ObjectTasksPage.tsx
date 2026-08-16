@@ -115,36 +115,31 @@ const buildProgressiveTaskList = (
   if (!root) return []
 
   const visible: FlatTaskOption[] = [{ task: root, depth: 0 }]
-  let parent = root
-  let depth = 1
-
-  while (parent.children.length > 0) {
+  const appendChildren = (parent: ObjectTaskTree, depth: number) => {
     const activeChildren = parent.children.filter((task) => task.status !== 'not_applicable' && task.status !== 'skipped')
+    if (parent.children_mode === 'all') {
+      activeChildren.forEach((child) => {
+        visible.push({ task: child, depth })
+        if (child.status === 'done') appendChildren(child, depth + 1)
+      })
+      return
+    }
+
     const focusedChild = parent.children.find((task) => task.id === focusedPath[depth - 1])
     const selectedChild = focusedChild
       || activeChildren.find((task) => task.id === parent.selected_child_id)
       || activeChildren.find((task) => task.status === 'done')
     if (!selectedChild) {
       visible.push(...activeChildren.map((task) => ({ task, depth })))
-      break
+      return
     }
     visible.push({ task: selectedChild, depth })
-    if (selectedChild.status !== 'done' && !focusedChild) break
-    parent = selectedChild
-    depth += 1
+    if (selectedChild.status === 'done' || focusedChild) appendChildren(selectedChild, depth + 1)
   }
+  appendChildren(root, 1)
 
   return visible
 }
-
-const updateTaskInTree = (
-  tasks: ObjectTaskTree[],
-  taskId: number,
-  update: (task: ObjectTaskTree) => ObjectTaskTree,
-): ObjectTaskTree[] => tasks.map((task) => {
-  const nextTask = task.id === taskId ? update(task) : task
-  return { ...nextTask, children: updateTaskInTree(nextTask.children, taskId, update) }
-})
 
 const resetTaskSubtree = (task: ObjectTaskTree): ObjectTaskTree => ({
   ...task,
@@ -155,22 +150,49 @@ const resetTaskSubtree = (task: ObjectTaskTree): ObjectTaskTree => ({
   children: task.children.map(resetTaskSubtree),
 })
 
+const applyOptimisticTaskStatus = (
+  tasks: ObjectTaskTree[],
+  taskId: number,
+  status: 'todo' | 'done',
+): ObjectTaskTree[] => tasks.map((task) => {
+  const isChoiceParent = task.children_mode === 'single_choice'
+    && task.children.some((child) => child.id === taskId)
+
+  if (isChoiceParent) {
+    return {
+      ...task,
+      selected_child_id: status === 'done' ? taskId : null,
+      children: task.children.map((child) => {
+        if (child.id === taskId) {
+          return status === 'todo'
+            ? resetTaskSubtree(child)
+            : { ...child, status: 'done', completed_at: new Date().toISOString() }
+        }
+
+        if (status === 'done') {
+          return { ...child, status: 'not_applicable', completed_at: null, completed_by: undefined, completed_by_id: null }
+        }
+
+        return child.status === 'not_applicable' ? { ...child, status: 'todo' } : child
+      }),
+    }
+  }
+
+  const nextTask = task.id === taskId
+    ? status === 'todo'
+      ? resetTaskSubtree(task)
+      : { ...task, status: 'done' as const, completed_at: new Date().toISOString() }
+    : task
+
+  return { ...nextTask, children: applyOptimisticTaskStatus(nextTask.children, taskId, status) }
+})
+
 const visibleTaskTree = (task: ObjectTaskTree): ObjectTaskTree => ({
   ...task,
   children: task.children
     .filter((child) => child.status !== 'not_applicable')
     .map(visibleTaskTree),
 })
-
-const isTaskSectionComplete = (task: ObjectTaskTree | undefined): boolean => {
-  if (!task || task.children.length === 0) return false
-  const subtreeComplete = (item: ObjectTaskTree): boolean => {
-    if (item.status === 'skipped' || item.status === 'not_applicable') return true
-    if (item.children.length === 0) return item.status === 'done'
-    return item.children.every(subtreeComplete)
-  }
-  return task.children.every(subtreeComplete)
-}
 
 const isBlockingStatus = (status: ObjectTaskStatus): boolean =>
   status === 'skipped' || status === 'not_applicable'
@@ -186,7 +208,7 @@ const buildLogicalTaskEntries = (roots: ObjectTaskTree[]): LogicalTaskEntry[] =>
   }
 
   const childrenAsDone = (parent: ObjectTaskTree) => {
-    if (parent.children.length === 2) {
+    if (parent.children_mode === 'single_choice') {
       add(parent, 'done')
       parent.children.forEach(childrenAsDone)
       return
@@ -202,7 +224,7 @@ const buildLogicalTaskEntries = (roots: ObjectTaskTree[]): LogicalTaskEntry[] =>
     childrenAsDone(task)
   }
   const children = (parent: ObjectTaskTree) => {
-    if (parent.children.length === 2) {
+    if (parent.children_mode === 'single_choice') {
       const active = parent.children.filter((task) => !isBlockingStatus(task.status))
       const representative = active.find((task) => task.status === 'done')
         || active.find((task) => task.status === 'in_progress')
@@ -319,9 +341,9 @@ function UserAvatar({ userId, name }: { userId: number; name: string }) {
 }
 
 function TaskOperations({ task, onChanged }: { task: ObjectTaskTree; onChanged: () => Promise<unknown> }) {
-  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('')
+  const [open, setOpen] = useState(false); const [message, setMessage] = useState('')
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
-  const run = async (action: () => Promise<unknown>) => { setBusy(true); setMessage(''); try { await action(); await onChanged() } catch (error: unknown) { const status = (error as { response?: { status?: number } })?.response?.status; setMessage(status === 409 ? 'Задача уже изменилась. Данные обновлены — повторите действие.' : 'Не удалось выполнить действие.'); if (status === 409) await onChanged() } finally { setBusy(false) } }
+  const run = async (action: () => Promise<unknown>) => { setMessage(''); try { await action(); await onChanged() } catch (error: unknown) { const status = (error as { response?: { status?: number } })?.response?.status; setMessage(status === 409 ? 'Задача уже изменилась. Данные обновлены — повторите действие.' : 'Не удалось выполнить действие.'); if (status === 409) await onChanged() } }
   useEffect(() => { if (!open) return; objectApi.getAttachments(task.object_id, task.id).then(setAttachments).catch(() => setAttachments([])) }, [open, task.id, task.object_id])
   const upload = async (file?: File) => { if (!file) return; await run(async () => { await objectApi.uploadAttachment(task.object_id, task.id, file); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) }) }
   const openPreview = async (file: TaskAttachment) => {
@@ -354,7 +376,6 @@ function TaskOperations({ task, onChanged }: { task: ObjectTaskTree; onChanged: 
   }
   return <div><button className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white hover:text-[#d9362c] hover:shadow-sm" onClick={() => setOpen(!open)}>{open ? 'Скрыть файлы' : 'Открыть'}</button>{open && <div className="mt-3 space-y-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm">
     {message && <div className="text-xs text-red-600">{message}</div>}
-    <div className="flex flex-wrap gap-1">{(task.status === 'in_progress' || task.status === 'rejected') && <button disabled={busy} className="btn btn-xs btn-primary" onClick={() => void run(() => objectApi.submitTask(task.object_id, task.id))}>На проверку</button>}{task.status === 'pending_review' && <><button disabled={busy} className="btn btn-xs btn-success" onClick={() => void run(() => objectApi.acceptTask(task.object_id, task.id))}>Принять</button><button disabled={busy} className="btn btn-xs btn-error" onClick={() => { const reason = window.prompt('Причина возврата'); if (reason) void run(() => objectApi.rejectTask(task.object_id, task.id, reason)) }}>Вернуть</button></>}</div>
     <div><label className="btn btn-outline btn-xs">+ Файл<input type="file" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /></label><ul className="mt-2 space-y-2">{attachments.map(file => <li key={file.id} className="rounded-lg border border-base-200 p-2 text-xs"><button type="button" className="block max-w-full truncate font-medium text-primary hover:underline" title={file.original_filename} onClick={() => void openPreview(file)}>{file.original_filename}</button><div className="mt-1 flex flex-wrap gap-3"><button type="button" className="text-slate-600 hover:text-primary hover:underline" onClick={() => void download(file)}>Скачать</button><button type="button" className="text-red-600 hover:underline" onClick={() => void run(async () => { await objectApi.deleteAttachment(task.object_id, task.id, file.id); setAttachments(await objectApi.getAttachments(task.object_id, task.id)) })}>Удалить</button></div></li>)}</ul></div>
   </div>}</div>
 }
@@ -517,6 +538,7 @@ function ObjectTasksPage() {
   const [statusTaskGroups, setStatusTaskGroups] = useState<ObjectTaskListGroup[]>([])
   const [overdueCount, setOverdueCount] = useState(0)
   const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
+  const [sectionStats, setSectionStats] = useState<Record<number, ObjectTaskStats>>({})
   const [stages, setStages] = useState<ProjectStageSummary[]>([])
   const [currentStep, setCurrentStep] = useState<CurrentStep | null>(null)
   const [loading, setLoading] = useState(true)
@@ -558,11 +580,17 @@ function ObjectTasksPage() {
         objectApi.getCurrentStep(objectId),
       ])
       const headersData = selectedTaskId === null ? fullTreeData : []
+      const statsBySection = Object.fromEntries(await Promise.all(
+        fullTreeData.map(async (header) => [header.id, await objectApi.getTaskStats(objectId, header.id)] as const),
+      ))
       if (selectedTaskId !== null) {
         const selectedIndex = fullTreeData.findIndex((task) => task.id === selectedTaskId)
         const previousSectionsComplete = selectedIndex <= 0 || fullTreeData
           .slice(0, selectedIndex)
-          .every((task) => isTaskSectionComplete(task))
+          .every((task) => {
+            const section = statsBySection[task.id]
+            return section.total > 0 && section.done === section.total
+          })
         if (!previousSectionsComplete) {
           navigate(`/objects/${objectId}/tasks`, { replace: true })
           return []
@@ -578,6 +606,7 @@ function ObjectTasksPage() {
       setOverdueTasks(overdueGroups.flatMap((group) => group.tasks))
       setStatusTaskGroups(filteredGroups)
       setStats(taskStats)
+      setSectionStats(statsBySection)
       setStages(stageData)
       setCurrentStep(stepData)
       setOverdueCount(taskStats.overdue)
@@ -638,16 +667,9 @@ function ObjectTasksPage() {
     const currentTask = flattenTaskTree(allTasks).find(({ task }) => task.id === taskId)?.task
     if (!currentTask) return
     const optimisticStatus: ObjectTaskStatus = currentTask.status === 'done' ? 'todo' : 'done'
-    const applyOptimisticStatus = (task: ObjectTaskTree) => optimisticStatus === 'todo'
-      ? resetTaskSubtree(task)
-      : {
-          ...task,
-          status: optimisticStatus,
-          completed_at: new Date().toISOString(),
-        }
     setPendingTaskIds((current) => [...current, taskId])
-    setAllTasks((current) => updateTaskInTree(current, taskId, applyOptimisticStatus))
-    setTasks((current) => updateTaskInTree(current, taskId, applyOptimisticStatus))
+    setAllTasks((current) => applyOptimisticTaskStatus(current, taskId, optimisticStatus))
+    setTasks((current) => applyOptimisticTaskStatus(current, taskId, optimisticStatus))
 
     try {
       await objectApi.updateTaskStatus(Number(id), taskId, optimisticStatus)
@@ -973,7 +995,7 @@ function ObjectTasksPage() {
         const destination = sectionId
           ? `/objects/${objectItem.id}/tasks/${sectionId}#task-${currentStep.task.id}`
           : `/objects/${objectItem.id}/tasks#task-${currentStep.task.id}`
-        return <Link to={destination} className={`block rounded-3xl border p-5 shadow-sm transition hover:shadow-md ${currentStep.flag === 'overdue' || currentStep.flag === 'rejected' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+        return <Link to={destination} className={`block rounded-3xl border p-5 shadow-sm transition hover:shadow-md ${currentStep.flag === 'overdue' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг · {currentStep.stage_title || 'Без этапа'}</div>
           <div className="mt-2 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{currentStep.task.title}</h2><div className="mt-1 text-sm text-slate-600">Ответственный: {currentStep.action_required_by?.full_name || currentStep.task.assigned_to?.full_name || 'не назначен'}{currentStep.task.deadline ? ` · Срок: ${formatDateRu(currentStep.task.deadline)}` : ''}</div></div><span className="badge badge-lg">Открыть →</span></div>
         </Link>
@@ -1097,13 +1119,15 @@ function ObjectTasksPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredTaskHeaders.map((header) => {
               const stageSummary = stages.find((stage) => stage.code === header.stage)
-              const sectionComplete = isTaskSectionComplete(allTasks.find((task) => task.id === header.id))
+              const headerStats = sectionStats[header.id]
+              const sectionComplete = Boolean(headerStats?.total) && headerStats.done === headerStats.total
               const headerIndex = taskHeaders.findIndex((item) => item.id === header.id)
               const sectionUnlocked = taskHeaders.slice(0, Math.max(0, headerIndex)).every((previous) =>
-                isTaskSectionComplete(allTasks.find((task) => task.id === previous.id)),
+                Boolean(sectionStats[previous.id]?.total)
+                  && sectionStats[previous.id].done === sectionStats[previous.id].total,
               )
-              const stageProgress = stageSummary?.stats.total
-                ? Math.round(stageSummary.stats.done / stageSummary.stats.total * 100)
+              const sectionProgress = headerStats?.total
+                ? Math.round(headerStats.done / headerStats.total * 100)
                 : 0
               return (
               <Link
@@ -1122,17 +1146,17 @@ function ObjectTasksPage() {
                   </span>
                 </div>
                 {!sectionUnlocked && <div className="mt-3 text-xs font-medium text-amber-700">Сначала завершите предыдущий раздел</div>}
-                {stageSummary && (
+                {headerStats && (
                   <div className="mt-4 border-t border-slate-100 pt-3">
                     <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
-                      <span>{stageSummary.title}</span>
-                      <span className="font-semibold text-slate-700">{stageProgress}%</span>
+                      <span>{stageSummary?.title || header.title}</span>
+                      <span className="font-semibold text-slate-700">{sectionProgress}%</span>
                     </div>
-                    <progress className="progress progress-success mt-2 w-full" value={stageProgress} max="100" />
+                    <progress className="progress progress-success mt-2 w-full" value={sectionProgress} max="100" />
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-                      <span>{stageSummary.stats.done} из {stageSummary.stats.total} готово</span>
-                      <span>{stageSummary.stats.in_progress} в работе</span>
-                      {stageSummary.stats.overdue > 0 && <span className="text-red-600">{stageSummary.stats.overdue} просрочено</span>}
+                      <span>{headerStats.done} из {headerStats.total} готово</span>
+                      <span>{headerStats.inProgress} в работе</span>
+                      {headerStats.overdue > 0 && <span className="text-red-600">{headerStats.overdue} просрочено</span>}
                     </div>
                   </div>
                 )}
@@ -1177,7 +1201,7 @@ function ObjectTasksPage() {
                       <div style={{ paddingLeft: `${Math.min(Math.max(depth - 1, 0), 5) * 18}px` }}>
                         <div className="flex items-start gap-3">
                           {!isMainTask && (
-                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="mt-0.5 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Выполнить задачу «${task.title}»`}>
+                            <button type="button" disabled={!canToggle} onClick={() => void handleToggleTask(task.id)} className="mt-0.5 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50" aria-label={task.status === 'done' ? `Отменить выполнение задачи «${task.title}»` : `Выполнить задачу «${task.title}»`}>
                               <TaskStateIcon task={task} />
                             </button>
                           )}
@@ -1255,6 +1279,7 @@ function ObjectTasksPage() {
                     )}
                   />
                 </label>
+
               </div>
 
               <div className="flex flex-col gap-2 border-t border-base-200 pt-5 sm:flex-row sm:justify-end">

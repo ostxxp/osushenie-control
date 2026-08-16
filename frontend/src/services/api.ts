@@ -411,16 +411,6 @@ export const objectApi = {
     const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}`, task)
     return response.data
   },
-  assignTask: async (objectId: number, taskId: number, assignedToId: number | null, reviewerId: number | null) =>
-    (await authApi.patch(`/objects/${objectId}/tasks/${taskId}/assignment`, { assigned_to_id: assignedToId, reviewer_id: reviewerId })).data as ObjectTask,
-  startTask: async (objectId: number, taskId: number) =>
-    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/start`)).data as ObjectTask,
-  submitTask: async (objectId: number, taskId: number) =>
-    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/submit`)).data as ObjectTask,
-  acceptTask: async (objectId: number, taskId: number) =>
-    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/accept`)).data as ObjectTask,
-  rejectTask: async (objectId: number, taskId: number, reason: string) =>
-    (await authApi.post(`/objects/${objectId}/tasks/${taskId}/reject`, { reason })).data as ObjectTask,
   selectBranch: async (objectId: number, taskId: number, childId: number, expectedVersion: number) =>
     (await authApi.put(`/objects/${objectId}/tasks/${taskId}/branch`, { child_id: childId, expected_version: expectedVersion })).data as ObjectTask,
   clearBranch: async (objectId: number, taskId: number) =>

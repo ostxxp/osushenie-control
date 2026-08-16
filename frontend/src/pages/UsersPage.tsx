@@ -36,12 +36,27 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
   )
 }
 
+function normalizeErrorMessage(message: string): string {
+  const normalized = message.replace(/^value error,\s*/i, '').trim()
+
+  if (/^value is not a valid email address/i.test(normalized)) {
+    return 'Введите корректный email в формате name@example.com.'
+  }
+
+  const translations: Record<string, string> = {
+    'User with this email already exists.': 'Пользователь с таким email уже существует.',
+    'Field required': 'Заполните обязательное поле.',
+  }
+
+  return translations[normalized] || normalized
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   const detail = (error as { response?: { data?: { detail?: unknown } }; message?: unknown })?.response?.data?.detail
     ?? (error as { message?: unknown })?.message
 
   if (typeof detail === 'string') {
-    return detail
+    return normalizeErrorMessage(detail)
   }
 
   if (Array.isArray(detail)) {
@@ -50,14 +65,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
         if (typeof item === 'string') return item
         if (item && typeof item === 'object' && 'msg' in item) {
           const maybeMsg = (item as { msg?: unknown }).msg
-          return typeof maybeMsg === 'string' ? maybeMsg : JSON.stringify(item)
+          return typeof maybeMsg === 'string' ? normalizeErrorMessage(maybeMsg) : JSON.stringify(item)
         }
         return JSON.stringify(item)
       })
       .filter(Boolean)
 
     if (messages.length > 0) {
-      return messages.join(', ')
+      return messages.join('\n')
     }
   }
 
@@ -388,9 +403,9 @@ function UsersPage() {
         <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
           <table className="w-full table-fixed text-left">
             <colgroup>
-              <col className="w-[22%]" />
+              <col className="w-[20%]" />
               <col className="w-[16%]" />
-              <col className="w-[14%]" />
+              <col className="w-[16%]" />
               <col className="w-[18%]" />
               <col className="w-[13%]" />
               <col className="w-[17%]" />
@@ -399,7 +414,7 @@ function UsersPage() {
               <tr>
                 <th className="px-3 py-3 2xl:px-5">Имя</th>
                 <th className="whitespace-nowrap px-3 py-3 2xl:px-5">Должность</th>
-                <th className="px-3 py-3 2xl:px-5">Телефон</th>
+                <th className="whitespace-nowrap px-3 py-3 2xl:px-5">Телефон</th>
                 <th className="px-3 py-3 2xl:px-5">Email</th>
                 <th className="px-3 py-3 2xl:px-5">Статус</th>
                 <th className="px-3 py-3 text-right 2xl:px-5">Действие</th>
@@ -434,7 +449,7 @@ function UsersPage() {
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm 2xl:px-5">{roleLabel[user.role]}</td>
-                  <td className="break-words px-3 py-3 2xl:px-5">{user.phone_number || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-sm 2xl:px-5">{user.phone_number || '—'}</td>
                   <td className="break-words px-3 py-3 2xl:px-5">{user.email}</td>
                   <td className="px-3 py-3 2xl:px-5">
                     <span
@@ -472,7 +487,15 @@ function UsersPage() {
             <h2 className="text-xl font-semibold">
               {modalMode === 'create' ? 'Создать пользователя' : 'Редактировать пользователя'}
             </h2>
-            {formError && <div className="alert alert-error">{formError}</div>}
+            {formError && (
+              <div role="alert" className="flex gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-100 font-bold" aria-hidden="true">!</span>
+                <div className="min-w-0">
+                  <div className="font-semibold">Не удалось сохранить пользователя</div>
+                  <div className="mt-1 whitespace-pre-line text-sm text-red-700">{formError}</div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Ф.И.О. *</span>
