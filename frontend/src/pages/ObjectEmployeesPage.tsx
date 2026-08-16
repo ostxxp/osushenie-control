@@ -588,7 +588,7 @@ function ObjectEmployeesPage() {
             </div>
             {assignError && <div className="alert alert-error">{assignError}</div>}
             <input
-              className="input w-full"
+              className="input w-full border-base-300 focus:!border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/20"
               placeholder="Поиск по имени, email или телефону..."
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
@@ -623,7 +623,7 @@ function ObjectEmployeesPage() {
                 ))
               )}
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end pr-4">
               <button type="button" className="btn" onClick={() => setShowAddUser(false)}>
                 Закрыть
               </button>
