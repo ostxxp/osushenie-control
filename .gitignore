@@ -13,6 +13,7 @@ env/
 .env.local
 backend/.env
 frontend/.env
+deploy/.env.production
 
 # Test / lint cache
 .pytest_cache/
