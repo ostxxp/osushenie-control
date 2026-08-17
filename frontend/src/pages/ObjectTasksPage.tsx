@@ -674,6 +674,11 @@ function ObjectTasksPage() {
 
     try {
       await objectApi.updateTaskStatus(Number(id), taskId, optimisticStatus)
+      if (currentTask.children.length > 0) {
+        setExpandedTaskIds((current) => optimisticStatus === 'done'
+          ? (current.includes(taskId) ? current : [...current, taskId])
+          : current.filter((expandedId) => expandedId !== taskId))
+      }
       await loadData()
       window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
     } catch (err: unknown) {
@@ -841,6 +846,17 @@ function ObjectTasksPage() {
     ))
   }, [allTasks, taskId, taskStatusFilter, tasks])
 
+  const taskPaths = useMemo(() => {
+    const paths = new Map<number, string[]>()
+    const registerPath = (task: ObjectTaskTree, parentPath: string[]) => {
+      const path = [...parentPath, task.title]
+      paths.set(task.id, path)
+      task.children.forEach((child) => registerPath(child, path))
+    }
+    allTasks.forEach((task) => registerPath(task, []))
+    return paths
+  }, [allTasks])
+
   const displayedStatusGroups = useMemo(() => {
     if (taskStatusFilter !== 'in_progress') return statusTaskGroups
 
@@ -849,6 +865,7 @@ function ObjectTasksPage() {
 
     filteredTaskList.forEach(({ task }) => {
       const mainTaskId = taskSectionIds.get(task.id) ?? task.id
+      if (task.id === mainTaskId) return
       const mainTaskTitle = headerNames.get(mainTaskId) ?? task.title
       const group = groups.get(mainTaskId) ?? {
         main_task_id: mainTaskId,
@@ -859,13 +876,13 @@ function ObjectTasksPage() {
         ...task,
         main_task_id: mainTaskId,
         main_task_title: mainTaskTitle,
-        path: task.id === mainTaskId ? [mainTaskTitle] : [mainTaskTitle, task.title],
+        path: taskPaths.get(task.id) ?? [mainTaskTitle, task.title],
       })
       groups.set(mainTaskId, group)
     })
 
     return Array.from(groups.values())
-  }, [filteredTaskList, statusTaskGroups, taskHeaders, taskSectionIds, taskStatusFilter])
+  }, [filteredTaskList, statusTaskGroups, taskHeaders, taskPaths, taskSectionIds, taskStatusFilter])
 
   useLayoutEffect(() => {
     if (!location.hash) {
@@ -879,7 +896,8 @@ function ObjectTasksPage() {
 
     const elementId = decodeURIComponent(location.hash.slice(1))
     const frame = window.requestAnimationFrame(() => {
-      const element = document.getElementById(elementId)
+      const element = Array.from(document.querySelectorAll<HTMLElement>(`[data-task-anchor="${elementId}"]`))
+        .find((candidate) => candidate.offsetParent !== null)
       if (!element) return
       handledScrollLocationRef.current = scrollLocation
       element.scrollIntoView({
@@ -890,6 +908,70 @@ function ObjectTasksPage() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [expandedTaskIds, location.hash, tasks])
+
+  const linkedTaskId = Number(decodeURIComponent(location.hash).match(/^#task-(\d+)$/)?.[1])
+  const containsTask = (task: ObjectTaskTree, targetId: number): boolean => (
+    task.id === targetId || task.children.some((child) => containsTask(child, targetId))
+  )
+  const renderMobileTask = (task: ObjectTaskTree, depth = 0, isRoot = false): ReactNode => {
+    const children = task.children.filter((child) => child.status !== 'not_applicable' && child.status !== 'skipped')
+    const canToggle = !isRoot && task.status !== 'not_applicable' && task.status !== 'skipped'
+    const canRevealChildren = isRoot || task.status === 'done'
+    const overdue = overdueTaskIds.has(task.id)
+    const shouldOpen = isRoot
+      || expandedTaskIds.includes(task.id)
+      || (!Number.isNaN(linkedTaskId) && containsTask(task, linkedTaskId))
+
+    return (
+      <article key={task.id} data-task-anchor={`task-${task.id}`} className={`scroll-mt-6 rounded-2xl border bg-white p-4 shadow-sm ${isRoot ? 'border-base-200' : 'border-base-200 border-l-4 border-l-[#ff4539]/70'}`}>
+        <div className="flex items-start gap-3">
+          {!isRoot && <button type="button" disabled={!canToggle} onClick={() => void handleToggleTask(task.id)} className="mt-0.5 shrink-0 rounded-full disabled:opacity-50" aria-label={task.status === 'done' ? `Отменить выполнение задачи «${task.title}»` : `Выполнить задачу «${task.title}»`}><TaskStateIcon task={task} /></button>}
+          <div className="min-w-0 flex-1">
+            {isRoot ? <div className="break-words font-semibold text-slate-900">{task.title}</div> : <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="break-words text-left font-medium text-slate-900 disabled:opacity-50">{task.title}</button>}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-base-content/55">
+              <span>{task.deadline ? `Дедлайн: ${formatDateRu(task.deadline)}` : 'Без срока'}</span>
+              {overdue && <span className="badge badge-error badge-sm">Просрочено</span>}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3"><TaskOperations task={task} onChanged={loadData} /></div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button type="button" className="rounded-xl border border-base-200 px-3 py-2 text-sm font-medium" onClick={() => openEditTask(task)}>Редактировать</button>
+          <button type="button" className="rounded-xl border border-base-200 px-3 py-2 text-sm font-medium" onClick={() => openCreateTask(task)}>+ Подзадача</button>
+        </div>
+
+        {children.length > 0 && (canRevealChildren ? (
+          <details
+            className="group mt-4 border-t border-base-200 pt-3"
+            open={shouldOpen}
+            onToggle={(event) => {
+              if (isRoot) return
+              const isOpen = event.currentTarget.open
+              setExpandedTaskIds((current) => isOpen
+                ? (current.includes(task.id) ? current : [...current, task.id])
+                : current.filter((expandedId) => expandedId !== task.id))
+            }}
+          >
+            <summary className="cursor-pointer list-none rounded-xl bg-base-200 px-3 py-2 text-sm font-semibold text-slate-800">
+              <span className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span aria-hidden="true" className="inline-block text-base transition-transform group-open:rotate-90">›</span>
+                  <span>Подзадачи</span>
+                </span>
+                <span className="badge badge-ghost badge-sm">{children.length}</span>
+              </span>
+            </summary>
+            <div className="mt-3 space-y-3 border-l-2 border-slate-200 pl-3">
+              {children.map((child) => renderMobileTask(child, depth + 1))}
+            </div>
+          </details>
+        ) : (
+          <div className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">Подзадачи откроются после выполнения этой задачи.</div>
+        ))}
+      </article>
+    )
+  }
 
   if (loading) {
     return (
@@ -1066,24 +1148,12 @@ function ObjectTasksPage() {
           <div className="space-y-4">
             {displayedStatusGroups.map((group) => (
               <section key={group.main_task_id} className="overflow-hidden rounded-3xl border border-base-200 bg-base-100 shadow-sm">
-                <div className="flex items-center justify-between gap-4 border-b border-base-200 bg-base-200/45 px-4 py-3 sm:px-5">
-                  <Link
-                    to={`/objects/${objectItem.id}/tasks/${group.main_task_id}?returnStatus=${taskStatusFilter}`}
-                    className="min-w-0 font-semibold text-slate-900 transition hover:text-[#ff4539]"
-                  >
-                    {group.main_task_title}
-                  </Link>
-                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-base-content/60 shadow-sm">
-                    {group.tasks.length}
-                  </span>
-                </div>
-
                 <ul className="divide-y divide-base-200">
                   {group.tasks.map((task) => {
                     const isDone = taskStatusFilter === 'done'
                     const isOverdue = taskStatusFilter === 'overdue'
                     const taskDestination = `/objects/${objectItem.id}/tasks/${group.main_task_id}?returnStatus=${taskStatusFilter}#task-${task.id}`
-                    const taskPath = task.path.filter((part) => part !== group.main_task_title && part !== task.title)
+                    const taskPath = task.path.slice(0, -1)
 
                     return (
                       <li key={task.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -1195,7 +1265,11 @@ function ObjectTasksPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
-          <div className="overflow-x-auto">
+          <div className="space-y-3 p-3 lg:hidden">
+            {tasks[0] && renderMobileTask(tasks[0], 0, true)}
+          </div>
+
+          <div className="hidden overflow-x-auto lg:block">
             <table className="min-w-[980px] w-full table-fixed text-left">
               <colgroup><col className="w-[35%]" /><col className="w-[14%]" /><col className="w-[25%]" /><col className="w-[13%]" /><col className="w-[13%]" /></colgroup>
               <thead className="bg-base-200">
@@ -1207,7 +1281,7 @@ function ObjectTasksPage() {
                   const isMainTask = depth === 0
                   const canToggle = !isMainTask && task.status !== 'not_applicable' && task.status !== 'skipped'
                   const isSelected = selectedTaskPath[depth - 1] === task.id
-                  return <tr key={task.id} id={`task-${task.id}`} className="scroll-mt-6 border-t border-base-200 align-middle transition-colors hover:bg-base-200">
+                  return <tr key={task.id} id={`task-${task.id}`} data-task-anchor={`task-${task.id}`} className="scroll-mt-6 border-t border-base-200 align-middle transition-colors hover:bg-base-200">
                     <td className="px-3 py-3 2xl:px-5">
                       <div style={{ paddingLeft: `${Math.min(Math.max(depth - 1, 0), 5) * 18}px` }}>
                         <div className="flex items-start gap-3">

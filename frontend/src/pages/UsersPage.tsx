@@ -400,7 +400,52 @@ function UsersPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
+        <div className="space-y-3 lg:hidden">
+          {filteredUsers.map((user) => (
+            <article key={user.id} className="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                {avatarUrls[user.id] ? (
+                  <span className="h-12 w-12 shrink-0 overflow-hidden rounded-full">
+                    <img src={avatarUrls[user.id]} alt={`Фото ${user.full_name}`} className="h-full w-full object-cover" />
+                  </span>
+                ) : (
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-base-200 font-semibold text-base-content/70" aria-hidden="true">
+                    {user.full_name.trim().charAt(0).toUpperCase() || '?'}
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="break-words font-semibold text-slate-900">{user.full_name}</div>
+                  <div className="mt-1 text-sm text-base-content/60">{roleLabel[user.role]}</div>
+                </div>
+                <span className={`badge h-auto shrink-0 border px-2 py-1 text-xs ${user.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'badge-ghost'}`}>
+                  {user.is_active ? 'Работает' : 'Не активен'}
+                </span>
+              </div>
+
+              <dl className="mt-4 grid gap-3 border-t border-base-200 pt-4 text-sm">
+                <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
+                  <dt className="text-base-content/55">Телефон</dt>
+                  <dd className="whitespace-nowrap font-medium text-slate-800">{user.phone_number || '—'}</dd>
+                </div>
+                <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
+                  <dt className="text-base-content/55">Email</dt>
+                  <dd className="min-w-0 break-all font-medium text-slate-800">{user.email}</dd>
+                </div>
+              </dl>
+
+              <button type="button" className="btn btn-ghost mt-4 w-full border border-base-200" onClick={() => openEditModal(user)}>
+                Редактировать
+              </button>
+            </article>
+          ))}
+          {filteredUsers.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/70">
+              Пользователей не найдено.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100 lg:block">
           <table className="w-full table-fixed text-left">
             <colgroup>
               <col className="w-[20%]" />
