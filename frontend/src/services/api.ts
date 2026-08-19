@@ -45,6 +45,8 @@ type PhotoMetadata = {
 const avatarCacheName = 'user-avatars-v1'
 const avatarCacheKey = (userId: number) => `/__avatar-cache/users/${userId}`
 const avatarStorageKey = (userId: number) => `user-avatar:${userId}`
+const avatarMemoryCache = new Map<number, Blob | null>()
+const avatarRequests = new Map<number, Promise<Blob | null>>()
 
 export const getStoredAvatarUrl = (userId: number): string => {
   try {
@@ -103,6 +105,8 @@ export const getAllStoredAvatarUrls = (): Record<number, string> => {
 }
 
 const deleteCachedAvatar = async (userId: number): Promise<void> => {
+  avatarMemoryCache.delete(userId)
+  avatarRequests.delete(userId)
   try {
     localStorage.removeItem(avatarStorageKey(userId))
   } catch {
@@ -246,25 +250,41 @@ export const photoApi = {
     await authApi.delete(`/photos/${photoId}`)
   },
   getUserAvatar: async (userId: number): Promise<Blob | null> => {
-    if (!('caches' in window)) return fetchUserAvatar(userId)
+    if (avatarMemoryCache.has(userId)) return avatarMemoryCache.get(userId) ?? null
 
-    const cache = await caches.open(avatarCacheName)
-    const cachedResponse = await cache.match(avatarCacheKey(userId))
-    if (cachedResponse) {
-      const avatar = await cachedResponse.blob()
-      if (!getStoredAvatarUrl(userId)) await storeAvatarUrl(userId, avatar)
+    const pendingRequest = avatarRequests.get(userId)
+    if (pendingRequest) return pendingRequest
+
+    const request = (async () => {
+      if (!('caches' in window)) return fetchUserAvatar(userId)
+
+      const cache = await caches.open(avatarCacheName)
+      const cachedResponse = await cache.match(avatarCacheKey(userId))
+      if (cachedResponse) {
+        const avatar = await cachedResponse.blob()
+        if (!getStoredAvatarUrl(userId)) await storeAvatarUrl(userId, avatar)
+        return avatar
+      }
+
+      const avatar = await fetchUserAvatar(userId)
+      if (avatar) {
+        await storeAvatarUrl(userId, avatar)
+        await cache.put(
+          avatarCacheKey(userId),
+          new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
+        )
+      }
       return avatar
-    }
+    })()
 
-    const avatar = await fetchUserAvatar(userId)
-    if (avatar) {
-      await storeAvatarUrl(userId, avatar)
-      await cache.put(
-        avatarCacheKey(userId),
-        new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
-      )
+    avatarRequests.set(userId, request)
+    try {
+      const avatar = await request
+      if (avatarRequests.get(userId) === request) avatarMemoryCache.set(userId, avatar)
+      return avatar
+    } finally {
+      if (avatarRequests.get(userId) === request) avatarRequests.delete(userId)
     }
-    return avatar
   },
 }
 

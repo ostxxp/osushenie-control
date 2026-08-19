@@ -292,6 +292,12 @@ async def assign_user_to_object(
     user: User = Depends(get_user_or_404),
     db: AsyncSession = Depends(get_db_session)
 ):
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неактивного пользователя нельзя назначить на объект.",
+        )
+
     existing_association = await db.execute(
         select(ObjectToUser).where(
             ObjectToUser.object_id == object.id,

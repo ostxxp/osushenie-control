@@ -69,7 +69,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
             <th className="px-3 py-3 font-semibold">Текущий шаг</th>
             <th className="px-3 py-3 font-semibold">Прогресс</th>
             <th className="px-3 py-3 font-semibold">Срок</th>
-            <th className="px-3 py-3 font-semibold">Статусве</th>
+            <th className="px-3 py-3 font-semibold">Статус</th>
           </tr>
         </thead>
         <tbody>

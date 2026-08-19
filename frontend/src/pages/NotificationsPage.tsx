@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { DatePickerInput } from '@/components'
+import { DatePickerInput, SearchableSelect } from '@/components'
 import { getAllStoredAvatarUrls, getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, notificationApi, objectApi, photoApi } from '@services/api'
 import { AuthContext } from '@services/auth'
 import { formatApiError } from '@/utils'
@@ -44,10 +44,8 @@ function NotificationsPage() {
   const [error, setError] = useState('')
   const [actorFilter, setActorFilter] = useState('')
   const [actorSearch, setActorSearch] = useState('')
-  const [actorDropdownOpen, setActorDropdownOpen] = useState(false)
   const [objectFilter, setObjectFilter] = useState('')
   const [objectSearch, setObjectSearch] = useState('')
-  const [objectDropdownOpen, setObjectDropdownOpen] = useState(false)
   const [dateFromFilter, setDateFromFilter] = useState('')
   const [dateFromSearch, setDateFromSearch] = useState('')
   const [dateToFilter, setDateToFilter] = useState('')
@@ -229,10 +227,8 @@ function NotificationsPage() {
   const clearFilters = () => {
     setActorFilter('')
     setActorSearch('')
-    setActorDropdownOpen(false)
     setObjectFilter('')
     setObjectSearch('')
-    setObjectDropdownOpen(false)
     setDateFromFilter('')
     setDateFromSearch('')
     setDateToFilter('')
@@ -342,97 +338,33 @@ function NotificationsPage() {
         )}
 
         <div className={`${error ? 'mt-4 ' : ''}grid gap-2 lg:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(260px,1.45fr)_minmax(190px,1.15fr)_auto] lg:items-center`}>
-          <div className="relative">
-            <input
-              type="text"
-              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
-              value={actorSearch}
-              onChange={(event) => {
-                setActorSearch(event.target.value)
-                setActorFilter('')
-                setActorDropdownOpen(true)
-              }}
-              onFocus={() => setActorDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setActorDropdownOpen(false), 150)}
-              placeholder="Пользователь"
-              aria-label="Фильтр по пользователю"
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-base-content/50">
-              ▾
-            </span>
-            {actorDropdownOpen && (
-              <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
-                {filteredActorOptions.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-base-content/60">Пользователи не найдены</div>
-                ) : (
-                  filteredActorOptions.map((actor) => (
-                    <button
-                      type="button"
-                      key={actor.id}
-                      className={[
-                        'flex w-full items-center justify-between gap-3 border-b border-base-200 px-4 py-3 text-left text-sm transition last:border-b-0',
-                        actorFilter === String(actor.id) ? 'bg-primary/10' : 'hover:bg-base-200',
-                      ].join(' ')}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setActorFilter(String(actor.id))
-                        setActorSearch(actor.name)
-                        setActorDropdownOpen(false)
-                      }}
-                    >
-                      <span className="font-medium text-slate-900">{actor.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <SearchableSelect
+            searchValue={actorSearch}
+            onSearchChange={(value) => { setActorSearch(value); setActorFilter('') }}
+            onSelect={(value) => {
+              setActorFilter(value)
+              setActorSearch(actorOptions.find((actor) => String(actor.id) === value)?.name || '')
+            }}
+            selectedValues={actorFilter ? [actorFilter] : []}
+            options={filteredActorOptions.map((actor) => ({ value: String(actor.id), label: actor.name }))}
+            placeholder="Пользователь"
+            ariaLabel="Фильтр по пользователю"
+            emptyMessage="Пользователи не найдены"
+          />
 
-          <div className="relative">
-            <input
-              type="text"
-              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pr-9 text-sm text-slate-900 placeholder:text-base-content/50 focus:border-[#ff4539] focus:outline-none"
-              value={objectSearch}
-              onChange={(event) => {
-                setObjectSearch(event.target.value)
-                setObjectFilter('')
-                setObjectDropdownOpen(true)
-              }}
-              onFocus={() => setObjectDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setObjectDropdownOpen(false), 150)}
-              placeholder="Объект"
-              aria-label="Фильтр по объекту"
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-base-content/50">
-              ▾
-            </span>
-            {objectDropdownOpen && (
-              <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
-                {filteredObjectOptions.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-base-content/60">Объекты не найдены</div>
-                ) : (
-                  filteredObjectOptions.map((objectItem) => (
-                    <button
-                      type="button"
-                      key={objectItem.id}
-                      className={[
-                        'flex w-full items-center justify-between gap-3 border-b border-base-200 px-4 py-3 text-left text-sm transition last:border-b-0',
-                        objectFilter === String(objectItem.id) ? 'bg-primary/10' : 'hover:bg-base-200',
-                      ].join(' ')}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setObjectFilter(String(objectItem.id))
-                        setObjectSearch(objectItem.name)
-                        setObjectDropdownOpen(false)
-                      }}
-                    >
-                      <span className="font-medium text-slate-900">{objectItem.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <SearchableSelect
+            searchValue={objectSearch}
+            onSearchChange={(value) => { setObjectSearch(value); setObjectFilter('') }}
+            onSelect={(value) => {
+              setObjectFilter(value)
+              setObjectSearch(objectOptions.find((objectItem) => String(objectItem.id) === value)?.name || '')
+            }}
+            selectedValues={objectFilter ? [objectFilter] : []}
+            options={filteredObjectOptions.map((objectItem) => ({ value: String(objectItem.id), label: objectItem.name }))}
+            placeholder="Объект"
+            ariaLabel="Фильтр по объекту"
+            emptyMessage="Объекты не найдены"
+          />
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <DatePickerInput

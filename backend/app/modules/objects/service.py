@@ -18,6 +18,12 @@ async def set_responsible_status(
     db: AsyncSession,
     is_responsible: bool,
 ):
+    if is_responsible and not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неактивного пользователя нельзя назначить ответственным.",
+        )
+
     result = await db.execute(
         select(ObjectToUser).where(
             ObjectToUser.object_id == object.id,

@@ -624,6 +624,8 @@ function ObjectTasksPage() {
   }
 
   useEffect(() => {
+    setLoading(true)
+    setError('')
     setExpandedTaskIds([])
     setSelectedTaskPath([])
     loadData().then((loadedTasks) => {

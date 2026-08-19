@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
+import { DatePickerInput, formatDateInputValue, SearchableSelect, StyledSelect } from '@/components'
 import { objectApi } from '@services/api'
 import { formatApiError, formatDateRu } from '@/utils'
 import type { ConstructionObject, MyTask, ObjectTaskTree } from '@/types'
@@ -80,7 +80,6 @@ export default function WorkItemsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [objectSearch, setObjectSearch] = useState('')
-  const [objectDropdownOpen, setObjectDropdownOpen] = useState(false)
   const [dateFromInput, setDateFromInput] = useState(() => formatDateInputValue(params.get('dateFrom') || ''))
   const [dateToInput, setDateToInput] = useState(() => formatDateInputValue(params.get('dateTo') || ''))
   const limit = 20
@@ -159,7 +158,6 @@ export default function WorkItemsPage() {
   const clearFilters = () => {
     setParams(new URLSearchParams())
     setObjectSearch('')
-    setObjectDropdownOpen(false)
     setDateFromInput('')
     setDateToInput('')
   }
@@ -167,11 +165,11 @@ export default function WorkItemsPage() {
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm sm:p-4">
-        <div className="mb-4">
+        <div className="mb-4 px-4">
           <h1 className="text-2xl font-semibold sm:text-3xl">Мои задачи</h1>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(180px,1.1fr)_minmax(150px,.9fr)_minmax(170px,1fr)_minmax(250px,1.35fr)_minmax(145px,.8fr)_auto] xl:items-center">
+        <div className="grid gap-2 px-4 md:grid-cols-2 xl:grid-cols-[minmax(180px,1.1fr)_minmax(150px,.9fr)_minmax(170px,1fr)_minmax(250px,1.35fr)_minmax(145px,.8fr)_auto] xl:items-center">
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-base-content/50">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-3.35-3.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
@@ -179,26 +177,19 @@ export default function WorkItemsPage() {
             <input className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pl-9 text-sm focus:border-[#ff4539] focus:outline-none" value={search} onChange={(event) => update('search', event.target.value)} placeholder="Название задачи" aria-label="Поиск по названию задачи" />
           </div>
 
-          <div className="relative">
-            <input
-              className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white text-sm focus:border-[#ff4539] focus:outline-none"
-              value={objectSearch}
-              onChange={(event) => { setObjectSearch(event.target.value); update('objectId', ''); setObjectDropdownOpen(true) }}
-              onFocus={() => setObjectDropdownOpen(true)}
-              onBlur={() => window.setTimeout(() => setObjectDropdownOpen(false), 150)}
-              placeholder="Объект"
-              aria-label="Фильтр по объекту"
-            />
-            {objectDropdownOpen && (
-              <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
-                {filteredObjects.length === 0 ? <div className="px-4 py-3 text-sm text-base-content/60">Объекты не найдены</div> : filteredObjects.map((objectItem) => (
-                  <button type="button" key={objectItem.id} className={`w-full border-b border-base-200 px-4 py-3 text-left text-sm transition last:border-b-0 ${objectId === String(objectItem.id) ? 'bg-primary/10' : 'hover:bg-base-200'}`} onMouseDown={(event) => event.preventDefault()} onClick={() => { setObjectSearch(objectItem.name); update('objectId', String(objectItem.id)); setObjectDropdownOpen(false) }}>
-                    <span className="font-medium text-slate-900">{objectItem.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <SearchableSelect
+            searchValue={objectSearch}
+            onSearchChange={(value) => { setObjectSearch(value); update('objectId', '') }}
+            onSelect={(value) => {
+              setObjectSearch(objects.find((objectItem) => String(objectItem.id) === value)?.name || '')
+              update('objectId', value)
+            }}
+            selectedValues={objectId ? [objectId] : []}
+            options={filteredObjects.map((objectItem) => ({ value: String(objectItem.id), label: objectItem.name }))}
+            placeholder="Объект"
+            ariaLabel="Фильтр по объекту"
+            emptyMessage="Объекты не найдены"
+          />
 
           <StyledSelect
             value={sectionId}

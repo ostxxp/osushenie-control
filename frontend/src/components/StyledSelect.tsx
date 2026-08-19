@@ -34,7 +34,14 @@ export default function StyledSelect({ value, options, onChange, ariaLabel, clas
         aria-expanded={open}
       >
         <span className="truncate">{selected?.label ?? ''}</span>
-        <span className={`shrink-0 text-base-content/45 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">⌄</span>
+        <svg
+          className={`h-4 w-4 shrink-0 text-base-content/45 transition-transform ${open ? 'rotate-180' : ''}`}
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
       {open && (
         <div className="absolute left-0 right-0 z-50 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-base-200 bg-white p-1.5 shadow-xl" role="listbox">

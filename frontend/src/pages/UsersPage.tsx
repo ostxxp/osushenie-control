@@ -115,7 +115,9 @@ function UsersPage() {
             roleLabel[user.role].toLowerCase().includes(query)
           )
         })
-        .sort((first, second) => second.id - first.id),
+        .sort((first, second) => (
+          Number(second.is_active) - Number(first.is_active) || second.id - first.id
+        )),
     [search, users],
   )
 
@@ -348,13 +350,13 @@ function UsersPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold sm:text-3xl">Пользователи</h1>
-      </div>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm sm:p-4">
+        <div className="px-4 lg:px-3 2xl:px-5">
+          <h1 className="text-2xl font-semibold sm:text-3xl">Пользователи</h1>
+        </div>
 
-      <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 px-[calc(0.75rem+1px)] sm:flex-row sm:items-center sm:justify-between 2xl:px-[calc(1.25rem+1px)]">
+        <div className="flex flex-col gap-3 px-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-start lg:px-3 2xl:px-5">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
@@ -384,7 +386,7 @@ function UsersPage() {
             </div>
             <p className="mt-2 text-sm text-base-content/70">Поиск по имени, должности, телефону или email.</p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-start">
             {search && (
               <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
                 Найдено {filteredUsers.length}
@@ -497,15 +499,11 @@ function UsersPage() {
                   <td className="whitespace-nowrap px-3 py-3 text-sm 2xl:px-5">{user.phone_number || '—'}</td>
                   <td className="break-words px-3 py-3 2xl:px-5">{user.email}</td>
                   <td className="px-3 py-3 2xl:px-5">
-                    <span
-                      className={`badge border ${
-                        user.is_active
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'badge-ghost'
-                      }`}
-                    >
-                      {user.is_active ? 'Работает' : 'Не активен'}
-                    </span>
+                    {user.is_active ? (
+                      <span className="badge border border-emerald-200 bg-emerald-50 text-emerald-700">Работает</span>
+                    ) : (
+                      <span className="text-sm text-base-content/70">Не активен</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right 2xl:px-5">
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => openEditModal(user)}>
