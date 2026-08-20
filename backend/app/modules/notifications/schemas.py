@@ -1,12 +1,10 @@
 from app.modules.notifications.models import NotificationType
 from pydantic import BaseModel, Field
-from datetime import date, datetime
-
-from app.db.base import Base
+from datetime import datetime
 
 class NotificationBase(BaseModel):
     user_id: int
-    actor_user_id: int
+    actor_user_id: int | None
     actor_full_name: str | None = None
     object_id: int
     message: str = Field(min_length=1, max_length=255)

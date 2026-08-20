@@ -1,8 +1,8 @@
-from datetime import date, datetime
+from datetime import datetime
 from enum import StrEnum
 
 from app.db.base import Base
-from sqlalchemy import Boolean, Date, DateTime, String, func, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 class NotificationType(StrEnum):
@@ -14,15 +14,17 @@ class NotificationType(StrEnum):
     TASK_SUBMITTED = "task_submitted"
     TASK_ACCEPTED = "task_accepted"
     TASK_REJECTED = "task_rejected"
+    TASK_DEADLINE_DUE_SOON = "task_deadline_due_soon"
+    TASK_DEADLINE_OVERDUE = "task_deadline_overdue"
 
 class Notifications(Base):
     __tablename__ = "notifications"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     object_id: Mapped[int] = mapped_column(
         ForeignKey("objects.id", ondelete="CASCADE"),
@@ -45,7 +47,40 @@ class Notifications(Base):
         cascade="all, delete-orphan",
     )
 
-    actor: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    actor: Mapped["User | None"] = relationship("User", foreign_keys=[user_id])
+
+
+class TaskDeadlineAlert(Base):
+    __tablename__ = "task_deadline_alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("object_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alert_type: Mapped[NotificationType] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    deadline: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id",
+            "alert_type",
+            "deadline",
+            name="uq_task_deadline_alert_task_type_deadline",
+        ),
+    )
 
 class NotificationReads(Base):
     __tablename__ = "notification_reads"
