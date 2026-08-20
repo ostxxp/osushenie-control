@@ -458,7 +458,7 @@ function ObjectsPage() {
           >
             Сбросить
           </button>
-          <div className="flex self-start rounded-xl bg-base-200 p-1 xl:self-auto">
+          <div className="flex self-end rounded-xl bg-base-200 p-1 xl:ml-auto xl:self-auto">
             <button type="button" className={`btn btn-sm border-0 ${view === 'table' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('table')}>Таблица</button>
             <button type="button" className={`btn btn-sm border-0 ${view === 'kanban' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('kanban')}>Канбан</button>
           </div>

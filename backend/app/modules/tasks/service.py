@@ -1476,34 +1476,38 @@ async def get_current_object_step(
         }
 
     logical_todo = await list_logical_todo_object_tasks(db, object_id=object_id)
-    candidate_ids = {task.id for task in logical_todo}
-    candidates = [
+    workflow_candidates = [
         task
         for task in tasks
-        if task.id in candidate_ids
-        or task.status in {
+        if task.status in {
             ObjectTaskStatus.IN_PROGRESS,
             ObjectTaskStatus.PENDING_REVIEW,
             ObjectTaskStatus.REJECTED,
         }
     ]
-    stage_order = {item.code: item.order for item in PROJECT_STAGES}
     status_order = {
         ObjectTaskStatus.REJECTED: 0,
         ObjectTaskStatus.PENDING_REVIEW: 1,
         ObjectTaskStatus.IN_PROGRESS: 2,
-        ObjectTaskStatus.TODO: 3,
     }
-    candidates.sort(
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    traversal_order: dict[int, int] = {}
+
+    def index_subtree(task: ObjectTask) -> None:
+        traversal_order[task.id] = len(traversal_order)
+        for child in children_by_parent_id.get(task.id, []):
+            index_subtree(child)
+
+    for root in children_by_parent_id.get(None, []):
+        index_subtree(root)
+
+    workflow_candidates.sort(
         key=lambda task: (
-            stage_order.get(task.stage, len(PROJECT_STAGES) + 1),
-            status_order.get(task.status, 4),
-            task.depth,
-            task.sort_order,
-            task.id,
+            status_order[task.status],
+            traversal_order.get(task.id, len(traversal_order)),
         )
     )
-    task = candidates[0] if candidates else None
+    task = workflow_candidates[0] if workflow_candidates else next(iter(logical_todo), None)
     title, order = _task_stage_details(task)
     flag, days_remaining = (
         _task_deadline_details(task)
@@ -1541,11 +1545,18 @@ async def list_user_work_items(
             ObjectTask.is_active.is_(True),
             ObjectTask.status.notin_(BLOCKING_STATUSES),
             or_(
+                ObjectTask.completed_by_id == user.id,
                 ObjectTask.assigned_to_id == user.id,
                 and_(
                     ObjectTask.reviewer_id == user.id,
                     ObjectTask.status == ObjectTaskStatus.PENDING_REVIEW,
                 ),
+                select(ObjectToUser.id)
+                .where(
+                    ObjectToUser.object_id == ObjectTask.object_id,
+                    ObjectToUser.user_id == user.id,
+                )
+                .exists(),
             ),
         )
     )
@@ -1590,6 +1601,10 @@ async def list_user_work_items(
 
     total = len(rows)
     items = []
+    completed_by_map = await _build_completed_by_map(
+        db,
+        [row.ObjectTask for row in rows[offset:offset + limit]],
+    )
     for task, object_item in rows[offset:offset + limit]:
         flag, days_remaining = _task_deadline_details(task)
         task_data = {
@@ -1601,7 +1616,7 @@ async def list_user_work_items(
                 "assigned_to": task.assigned_to,
                 "reviewer": task.reviewer,
                 "reviewed_by": task.reviewed_by,
-                "completed_by": None,
+                "completed_by": completed_by_map.get(task.completed_by_id),
                 "main_task_id": await get_main_task_id(db, object_task=task),
                 "object_name": object_item.name,
                 "object_address": object_item.address,

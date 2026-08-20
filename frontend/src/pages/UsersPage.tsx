@@ -263,6 +263,11 @@ function UsersPage() {
       return 'Пароль должен содержать минимум 8 символов.'
     }
 
+    const phoneNumber = userForm.phone_number.trim()
+    if (phoneNumber && (phoneNumber.match(/\d/g)?.length ?? 0) !== 11) {
+      return 'Номер телефона должен содержать ровно 11 цифр.'
+    }
+
     return ''
   }
 
@@ -563,6 +568,7 @@ function UsersPage() {
                 <input
                   className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="+7 999 123-45-67"
+                  inputMode="tel"
                   value={userForm.phone_number}
                   onChange={(e) => handleChange('phone_number', e.target.value)}
                 />

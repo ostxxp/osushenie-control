@@ -123,7 +123,7 @@ async def update_user_endpoint(
         _raise_if_self_target(
             current_user,
             user,
-            "You cannot deactivate your own account.",
+            "Нельзя деактивировать собственную учётную запись.",
         )
 
     if "email" in update_data:
@@ -175,7 +175,7 @@ async def deactivate_user_endpoint(
     _raise_if_self_target(
         current_user,
         user,
-        "You cannot deactivate your own account.",
+        "Нельзя деактивировать собственную учётную запись.",
     )
 
     user.is_active = False
