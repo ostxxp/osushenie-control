@@ -3,12 +3,15 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.db.session import get_db_session
-from app.modules.objects.dependencies import user_can_access_object
+from app.modules.objects.dependencies import get_object_or_404, user_can_access_object
+from app.modules.objects.models import ConstructionObject
 from app.modules.task_attachments.schemas import TaskAttachmentRead
 from app.modules.task_attachments.service import (
     create_task_attachment,
+    create_object_documents_archive,
     deactivate_task_attachment,
     get_task_attachment_or_404,
     list_task_attachments,
@@ -21,6 +24,25 @@ from app.modules.users.models import User
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/{object_id}/documents/archive",
+    dependencies=[Depends(user_can_access_object)],
+    summary="Download all object task documents as ZIP",
+)
+async def download_object_documents_archive(
+    obj: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> FileResponse:
+    archive_path = await create_object_documents_archive(db, object_id=obj.id)
+    filename = f"object-{obj.id}-documents.zip"
+    return FileResponse(
+        path=archive_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+    )
 
 
 @router.post(
@@ -115,4 +137,3 @@ async def delete_task_attachment(
         attachment=attachment,
         current_user=current_user,
     )
-
