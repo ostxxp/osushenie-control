@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatDateRu } from '@/utils'
-import type { ObjectSummary, ObjectTask, User } from '@/types'
+import type { ObjectSummary, ProjectStageSummary, User } from '@/types'
 import CurrentStepCell from './CurrentStepCell'
 import ResponsibleBadge from './ResponsibleBadge'
 import StageStepper from './StageStepper'
@@ -8,7 +8,7 @@ import StageStepper from './StageStepper'
 type ObjectTableProps = {
   objects: ObjectSummary[]
   responsibleByObjectId: Record<number, User | undefined>
-  stagesByObjectId: Record<number, ObjectTask[]>
+  stagesByObjectId: Record<number, ProjectStageSummary[]>
 }
 
 function DeadlineCell({ object }: { object: ObjectSummary }) {
@@ -83,7 +83,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
               </td>
               <td className="px-3 py-3"><StageStepper stages={stagesByObjectId[object.id] || []} /></td>
               <td className="px-3 py-3">
-                <CurrentStepCell />
+                <CurrentStepCell step={object.current_step.task?.title || 'Нет доступных задач'} />
                 <div className="mt-2 border-t border-slate-100 pt-2">
                   <ResponsibleBadge user={responsibleByObjectId[object.id]} />
                 </div>

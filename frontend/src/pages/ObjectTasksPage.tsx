@@ -94,6 +94,15 @@ const findTaskPath = (tasks: ObjectTaskTree[], taskId: number): number[] | null 
   return null
 }
 
+const findTaskParent = (tasks: ObjectTaskTree[], taskId: number): ObjectTaskTree | null => {
+  for (const task of tasks) {
+    if (task.children.some((child) => child.id === taskId)) return task
+    const parent = findTaskParent(task.children, taskId)
+    if (parent) return parent
+  }
+  return null
+}
+
 const findSavedSelectionPath = (task: ObjectTaskTree): number[] => {
   if (task.selected_child_id) {
     const selectedChild = task.children.find((child) => child.id === task.selected_child_id)
@@ -108,6 +117,10 @@ const findSavedSelectionPath = (task: ObjectTaskTree): number[] => {
   return []
 }
 
+const hasAlternativeChildren = (task: ObjectTaskTree): boolean =>
+  task.children_mode === 'single_choice'
+  && task.children.length > 1
+
 const buildProgressiveTaskList = (
   root: ObjectTaskTree | undefined,
   focusedPath: number[] = [],
@@ -117,10 +130,12 @@ const buildProgressiveTaskList = (
   const visible: FlatTaskOption[] = [{ task: root, depth: 0 }]
   const appendChildren = (parent: ObjectTaskTree, depth: number) => {
     const activeChildren = parent.children.filter((task) => task.status !== 'not_applicable' && task.status !== 'skipped')
-    if (parent.children_mode === 'all') {
+    if (!hasAlternativeChildren(parent)) {
       activeChildren.forEach((child) => {
         visible.push({ task: child, depth })
-        if (child.status === 'done') appendChildren(child, depth + 1)
+        if (child.status === 'done') {
+          appendChildren(child, depth + 1)
+        }
       })
       return
     }
@@ -134,11 +149,59 @@ const buildProgressiveTaskList = (
       return
     }
     visible.push({ task: selectedChild, depth })
-    if (selectedChild.status === 'done' || focusedChild) appendChildren(selectedChild, depth + 1)
+    if (selectedChild.status === 'done') {
+      appendChildren(selectedChild, depth + 1)
+    }
   }
   appendChildren(root, 1)
 
   return visible
+}
+
+const buildAvailableCurrentTasks = (roots: ObjectTaskTree[]): ObjectTask[] => {
+  const available: ObjectTask[] = []
+  const activeWorkflow: ObjectTask[] = []
+
+  const registerWorkflowTasks = (tasks: ObjectTaskTree[]) => {
+    tasks.forEach((task) => {
+      if (task.status === 'in_progress' || task.status === 'pending_review' || task.status === 'rejected') {
+        activeWorkflow.push(task)
+      }
+      registerWorkflowTasks(task.children)
+    })
+  }
+
+  const collectTask = (task: ObjectTaskTree) => {
+    if (isBlockingStatus(task.status)) return
+    if (task.status === 'todo' || task.status === 'rejected') available.push(task)
+    if (task.status === 'done') collectChildren(task)
+  }
+
+  const collectChildren = (parent: ObjectTaskTree) => {
+    const children = parent.children.filter((task) => !isBlockingStatus(task.status))
+    if (!hasAlternativeChildren(parent)) {
+      children.forEach(collectTask)
+      return
+    }
+
+    const selected = children.find((task) => task.id === parent.selected_child_id)
+      || children.find((task) => task.status === 'done')
+    if (selected) collectTask(selected)
+    else children.forEach(collectTask)
+  }
+
+  registerWorkflowTasks(roots)
+  roots.forEach((root) => {
+    if (root.children.length > 0) collectChildren(root)
+    else collectTask(root)
+  })
+
+  const seen = new Set<number>()
+  return [...activeWorkflow, ...available].filter((task) => {
+    if (seen.has(task.id)) return false
+    seen.add(task.id)
+    return true
+  })
 }
 
 const resetTaskSubtree = (task: ObjectTaskTree): ObjectTaskTree => ({
@@ -195,12 +258,24 @@ const replaceTaskInTree = (
   return { ...nextTask, children: replaceTaskInTree(nextTask.children, updatedTask) }
 })
 
-const visibleTaskTree = (task: ObjectTaskTree): ObjectTaskTree => ({
-  ...task,
-  children: task.children
-    .filter((child) => child.status !== 'not_applicable')
-    .map(visibleTaskTree),
-})
+const visibleTaskTree = (task: ObjectTaskTree): ObjectTaskTree => {
+  const completedAlternativeSelected = hasAlternativeChildren(task)
+    && task.children.some((child) => child.status === 'done')
+
+  return {
+    ...task,
+    selected_child_id: hasAlternativeChildren(task) && !completedAlternativeSelected
+      ? null
+      : task.selected_child_id,
+    children: task.children
+      .filter((child) => child.status !== 'not_applicable' || !completedAlternativeSelected)
+      .map((child) => visibleTaskTree(
+        child.status === 'not_applicable' && !completedAlternativeSelected
+          ? { ...child, status: 'todo' }
+          : child,
+      )),
+  }
+}
 
 const isBlockingStatus = (status: ObjectTaskStatus): boolean =>
   status === 'skipped' || status === 'not_applicable'
@@ -279,6 +354,9 @@ const calculateTaskStats = (roots: ObjectTaskTree[]): ObjectTaskStats => {
     overdue: entries.filter((entry) => entry.overdue).length,
   }
 }
+
+const isSectionStarted = (stats: ObjectTaskStats | undefined): boolean =>
+  Boolean(stats && (stats.done > 0 || stats.inProgress > 0))
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -555,11 +633,11 @@ function ObjectTasksPage() {
   const [allTasks, setAllTasks] = useState<ObjectTaskTree[]>([])
   const [overdueTasks, setOverdueTasks] = useState<ObjectTask[]>([])
   const [statusTaskGroups, setStatusTaskGroups] = useState<ObjectTaskListGroup[]>([])
-  const [overdueCount, setOverdueCount] = useState(0)
   const [stats, setStats] = useState<ObjectTaskStats>({ total: 0, done: 0, todo: 0, inProgress: 0, overdue: 0 })
   const [sectionStats, setSectionStats] = useState<Record<number, ObjectTaskStats>>({})
   const [stages, setStages] = useState<ProjectStageSummary[]>([])
   const [currentStep, setCurrentStep] = useState<CurrentStep | null>(null)
+  const [showAllCurrentTasks, setShowAllCurrentTasks] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedTaskIds, setExpandedTaskIds] = useState<number[]>([])
@@ -578,6 +656,34 @@ function ObjectTasksPage() {
 
   const flatTaskOptions = useMemo(() => flattenTaskTree(allTasks), [allTasks])
   const overdueTaskIds = useMemo(() => new Set(overdueTasks.map((task) => task.id)), [overdueTasks])
+  const availableCurrentTasks = useMemo(() => buildAvailableCurrentTasks(allTasks), [allTasks])
+  const availableCurrentTaskIds = useMemo(
+    () => new Set(availableCurrentTasks.map((task) => task.id)),
+    [availableCurrentTasks],
+  )
+  const currentStepTasks = useMemo(() => {
+    const tasksToSort = availableCurrentTasks.length > 0
+      ? availableCurrentTasks
+      : currentStep?.task
+        ? [currentStep.task]
+        : []
+    const treeOrder = new Map(flatTaskOptions.map(({ task }, index) => [task.id, index]))
+
+    return [...tasksToSort].sort((left, right) => {
+      if (Boolean(left.deadline) !== Boolean(right.deadline)) return left.deadline ? -1 : 1
+
+      if (left.deadline && right.deadline) {
+        const deadlineDifference = new Date(left.deadline).getTime() - new Date(right.deadline).getTime()
+        if (deadlineDifference !== 0) return deadlineDifference
+      }
+
+      return (treeOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (treeOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    })
+  }, [availableCurrentTasks, currentStep, flatTaskOptions])
+  const displayedCurrentStepTasks = showAllCurrentTasks
+    ? currentStepTasks
+    : currentStepTasks.slice(0, 2)
 
   const loadData = async (): Promise<ObjectTaskTree[]> => {
     if (!id) return []
@@ -605,13 +711,14 @@ function ObjectTasksPage() {
       ))
       if (selectedTaskId !== null) {
         const selectedIndex = fullTreeData.findIndex((task) => task.id === selectedTaskId)
+        const selectedSectionStarted = isSectionStarted(statsBySection[selectedTaskId])
         const previousSectionsComplete = selectedIndex <= 0 || fullTreeData
           .slice(0, selectedIndex)
           .every((task) => {
             const section = statsBySection[task.id]
             return section.total > 0 && section.done === section.total
           })
-        if (!previousSectionsComplete) {
+        if (!previousSectionsComplete && !selectedSectionStarted) {
           navigate(`/objects/${objectId}/tasks`, { replace: true })
           return []
         }
@@ -629,7 +736,6 @@ function ObjectTasksPage() {
       setSectionStats(statsBySection)
       setStages(stageData)
       setCurrentStep(stepData)
-      setOverdueCount(taskStats.overdue)
       setError('')
       return treeData
     } catch (err: unknown) {
@@ -689,15 +795,24 @@ function ObjectTasksPage() {
     const currentTask = flattenTaskTree(allTasks).find(({ task }) => task.id === clickedTaskId)?.task
     if (!currentTask) return
     const optimisticStatus: ObjectTaskStatus = currentTask.status === 'done' ? 'todo' : 'done'
+    const choiceParent = findTaskParent(allTasks, clickedTaskId)
+    const clearsSelectedBranch = optimisticStatus === 'todo'
+      && choiceParent?.children_mode === 'single_choice'
     setPendingTaskIds((current) => [...current, clickedTaskId])
     const optimisticTree = applyOptimisticTaskStatus(allTasks, clickedTaskId, optimisticStatus)
     setAllTasks(optimisticTree)
-    setTasks((current) => applyOptimisticTaskStatus(current, clickedTaskId, optimisticStatus))
+    const selectedTaskId = taskId ? Number(taskId) : null
+    setTasks(selectedTaskId === null
+      ? []
+      : optimisticTree
+        .filter((task) => task.id === selectedTaskId)
+        .map(visibleTaskTree))
 
     try {
-      const updatedTask = await objectApi.updateTaskStatus(Number(id), clickedTaskId, optimisticStatus)
+      const updatedTask = clearsSelectedBranch
+        ? await objectApi.clearBranch(Number(id), choiceParent.id)
+        : await objectApi.updateTaskStatus(Number(id), clickedTaskId, optimisticStatus)
       const updatedTree = replaceTaskInTree(optimisticTree, updatedTask)
-      const selectedTaskId = taskId ? Number(taskId) : null
       const selectedTree = selectedTaskId === null
         ? updatedTree
         : updatedTree.filter((task) => task.id === selectedTaskId)
@@ -706,7 +821,6 @@ function ObjectTasksPage() {
       setAllTasks(updatedTree)
       setTasks(selectedTaskId === null ? [] : selectedTree.map(visibleTaskTree))
       setStats(nextStats)
-      setOverdueCount(nextStats.overdue)
       setOverdueTasks(
         flattenTaskTree(updatedTree)
           .map(({ task }) => task)
@@ -826,10 +940,11 @@ function ObjectTasksPage() {
     () => new Set(flattenTaskTree(tasks).map(({ task }) => task.id)),
     [tasks],
   )
-  const displayedOverdueTasks = taskId
+  const overdueTasksInScope = taskId
     ? overdueTasks.filter((task) => sectionTaskIds.has(task.id))
     : overdueTasks
-  const displayedOverdueCount = taskId ? displayedOverdueTasks.length : overdueCount
+  const displayedOverdueTasks = overdueTasksInScope.filter((task) => availableCurrentTaskIds.has(task.id))
+  const displayedOverdueCount = displayedOverdueTasks.length
   const taskSectionIds = useMemo(() => {
     const sectionIds = new Map<number, number>()
 
@@ -915,6 +1030,14 @@ function ObjectTasksPage() {
   }, [allTasks])
 
   const displayedStatusGroups = useMemo(() => {
+    if (taskStatusFilter === 'todo' || taskStatusFilter === 'overdue') {
+      return statusTaskGroups
+        .map((group) => ({
+          ...group,
+          tasks: group.tasks.filter((task) => availableCurrentTaskIds.has(task.id)),
+        }))
+        .filter((group) => group.tasks.length > 0)
+    }
     if (taskStatusFilter !== 'in_progress') return statusTaskGroups
 
     const headerNames = new Map(taskHeaders.map((header) => [header.id, header.title]))
@@ -939,7 +1062,7 @@ function ObjectTasksPage() {
     })
 
     return Array.from(groups.values())
-  }, [filteredTaskList, statusTaskGroups, taskHeaders, taskPaths, taskSectionIds, taskStatusFilter])
+  }, [availableCurrentTaskIds, filteredTaskList, statusTaskGroups, taskHeaders, taskPaths, taskSectionIds, taskStatusFilter])
 
   useLayoutEffect(() => {
     if (!location.hash) {
@@ -1035,7 +1158,7 @@ function ObjectTasksPage() {
               <span className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 items-center gap-2">
                   <span aria-hidden="true" className="inline-block text-base transition-transform group-open:rotate-90">›</span>
-                  <span>Подзадачи</span>
+                  <span>{hasAlternativeChildren(task) ? 'Варианты' : 'Подзадачи'}</span>
                 </span>
                 <span className="badge badge-ghost badge-sm">{children.length}</span>
               </span>
@@ -1161,16 +1284,55 @@ function ObjectTasksPage() {
         </div>
       </div>
 
-      {!taskId && currentStep?.task && (() => {
-        const sectionId = taskSectionIds.get(currentStep.task.id)
-        const destination = sectionId
-          ? `/objects/${objectItem.id}/tasks/${sectionId}#task-${currentStep.task.id}`
-          : `/objects/${objectItem.id}/tasks#task-${currentStep.task.id}`
-        return <Link to={destination} className={`block rounded-3xl border p-5 shadow-sm transition hover:shadow-md ${currentStep.flag === 'overdue' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг · {currentStep.stage_title || 'Без этапа'}</div>
-          <div className="mt-2 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{currentStep.task.title}</h2><div className="mt-1 text-sm text-slate-600">Ответственный: {currentStep.action_required_by?.full_name || currentStep.task.assigned_to?.full_name || 'не назначен'}{currentStep.task.deadline ? ` · Срок: ${formatDateRu(currentStep.task.deadline)}` : ''}</div></div><span className="badge badge-lg">Открыть →</span></div>
-        </Link>
-      })()}
+      {!taskId && currentStepTasks.length > 0 && (
+        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг</div>
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-slate-500">Задач: {currentStepTasks.length}</div>
+              {showAllCurrentTasks && currentStepTasks.length > 2 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs text-amber-900"
+                  onClick={() => setShowAllCurrentTasks(false)}
+                  aria-expanded="true"
+                >
+                  Свернуть ↑
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 grid gap-3">
+            {displayedCurrentStepTasks.map((task) => {
+              const sectionId = taskSectionIds.get(task.id)
+              const destination = sectionId
+                ? `/objects/${objectItem.id}/tasks/${sectionId}#task-${task.id}`
+                : `/objects/${objectItem.id}/tasks#task-${task.id}`
+              return (
+                <Link key={task.id} to={destination} className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-white p-4 transition hover:border-amber-300 hover:shadow-sm">
+                  <div>
+                    <h2 className="text-lg font-semibold">{task.title}</h2>
+                    {task.deadline && <div className="mt-1 text-sm text-slate-600">Срок: {formatDateRu(task.deadline)}</div>}
+                  </div>
+                  <span className="badge badge-lg">Открыть →</span>
+                </Link>
+              )
+            })}
+          </div>
+          {currentStepTasks.length > 2 && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm mt-3 w-full text-amber-900"
+              onClick={() => setShowAllCurrentTasks((current) => !current)}
+              aria-expanded={showAllCurrentTasks}
+            >
+              {showAllCurrentTasks
+                ? 'Свернуть список'
+                : `Показать все задачи (ещё ${currentStepTasks.length - 2})`}
+            </button>
+          )}
+        </section>
+      )}
 
       {displayedOverdueCount > 0 && (
         <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm">
@@ -1281,10 +1443,11 @@ function ObjectTasksPage() {
               const headerStats = sectionStats[header.id]
               const sectionComplete = Boolean(headerStats?.total) && headerStats.done === headerStats.total
               const headerIndex = taskHeaders.findIndex((item) => item.id === header.id)
-              const sectionUnlocked = taskHeaders.slice(0, Math.max(0, headerIndex)).every((previous) =>
-                Boolean(sectionStats[previous.id]?.total)
-                  && sectionStats[previous.id].done === sectionStats[previous.id].total,
-              )
+              const sectionUnlocked = isSectionStarted(headerStats)
+                || taskHeaders.slice(0, Math.max(0, headerIndex)).every((previous) =>
+                  Boolean(sectionStats[previous.id]?.total)
+                    && sectionStats[previous.id].done === sectionStats[previous.id].total,
+                )
               const sectionProgress = headerStats?.total
                 ? Math.round(headerStats.done / headerStats.total * 100)
                 : 0

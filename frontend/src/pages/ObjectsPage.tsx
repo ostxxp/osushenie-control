@@ -3,24 +3,11 @@ import { Link } from 'react-router-dom'
 import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable, SearchableSelect, StyledSelect } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
-import type { ObjectSummary, ObjectTask, ObjectTaskTree, User } from '@/types'
+import type { ObjectSummary, ProjectStageSummary, User } from '@/types'
 import { AuthContext } from '@services/auth'
 import { getCurrentStage } from '@/components/objects/StageStepper'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
-
-const isFinishedTaskTree = (task: ObjectTaskTree): boolean => {
-  if (task.status === 'skipped' || task.status === 'not_applicable') return true
-  if (task.children.length === 0) return task.status === 'done'
-  return task.children.every(isFinishedTaskTree)
-}
-
-const sectionStagesFromTree = (roots: ObjectTaskTree[]): ObjectTask[] => roots.map((root) => {
-  return {
-    ...root,
-    status: root.children.length > 0 && root.children.every(isFinishedTaskTree) ? 'done' : 'todo',
-  }
-})
 
 const getTodayDateValue = (): string => {
   const today = new Date()
@@ -86,7 +73,7 @@ function ObjectsPage() {
   const userRole = authContext?.userRole
   const [objects, setObjects] = useState<ObjectSummary[]>([])
   const [responsibleByObjectId, setResponsibleByObjectId] = useState<Record<number, User | undefined>>({})
-  const [stagesByObjectId, setStagesByObjectId] = useState<Record<number, ObjectTask[]>>({})
+  const [stagesByObjectId, setStagesByObjectId] = useState<Record<number, ProjectStageSummary[]>>({})
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'table' | 'kanban'>('table')
   const [roleFilter, setRoleFilter] = useState<'all' | User['role']>('all')
@@ -156,7 +143,7 @@ function ObjectsPage() {
         const data = await objectApi.getSummaries()
         const objectDetails = await Promise.all(
           data.map(async (objectItem) => {
-            const stages = await objectApi.getFullTasksTree(objectItem.id).then(sectionStagesFromTree).catch(() => [])
+            const stages = await objectApi.getStages(objectItem.id).catch(() => [])
             return [objectItem.id, objectItem.responsible_users[0], stages] as const
           }),
         )
@@ -318,6 +305,16 @@ function ObjectsPage() {
       // Refresh list from server to ensure consistent shape
       try {
         const data = await objectApi.getSummaries()
+        const refreshedStages = await Promise.all(
+          data.map(async (objectItem) => [
+            objectItem.id,
+            await objectApi.getStages(objectItem.id).catch(() => []),
+          ] as const),
+        )
+        setResponsibleByObjectId(Object.fromEntries(
+          data.map((objectItem) => [objectItem.id, objectItem.responsible_users[0]]),
+        ))
+        setStagesByObjectId(Object.fromEntries(refreshedStages))
         setObjects(data)
       } catch (err) {
         // fallback: prepend created object

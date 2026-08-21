@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
-import type { ObjectSummary, ObjectTask, User } from '@/types'
+import type { ObjectSummary, ProjectStageSummary, User } from '@/types'
 import { getCurrentStage } from './StageStepper'
 import ResponsibleBadge from './ResponsibleBadge'
 
 type ObjectKanbanProps = {
   objects: ObjectSummary[]
   responsibleByObjectId: Record<number, User | undefined>
-  stagesByObjectId: Record<number, ObjectTask[]>
+  stagesByObjectId: Record<number, ProjectStageSummary[]>
 }
 
 export default function ObjectKanban({ objects, responsibleByObjectId, stagesByObjectId }: ObjectKanbanProps) {

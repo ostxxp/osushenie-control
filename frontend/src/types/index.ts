@@ -62,7 +62,7 @@ export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'completed'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
 // Object Tasks
-export type ObjectTaskStatus = 'todo' | 'in_progress' | 'done' | 'skipped' | 'not_applicable'
+export type ObjectTaskStatus = 'todo' | 'in_progress' | 'pending_review' | 'rejected' | 'done' | 'skipped' | 'not_applicable'
 export type TaskChildrenMode = 'all' | 'single_choice'
 
 export type NotificationType =
@@ -105,6 +105,8 @@ export interface ObjectTask {
   completed_by?: User
   assigned_to_id: number | null
   assigned_to?: User | null
+  reviewer_id: number | null
+  reviewer?: User | null
   created_at: string
   updated_at: string
 }
