@@ -21,25 +21,25 @@ class ProjectStageDefinition:
 
 
 PROJECT_STAGES = (
-    ProjectStageDefinition(ProjectStage.CONTRACT_START, "Договор и старт проекта", 1),
+    ProjectStageDefinition(ProjectStage.CONTRACT_START, "Договор подряда", 1),
     ProjectStageDefinition(
         ProjectStage.DOCUMENTATION_APPROVALS,
-        "Документация и согласования",
+        "Рабочая документация",
         2,
     ),
     ProjectStageDefinition(
         ProjectStage.PREPARATION_MOBILIZATION,
-        "Подготовка и мобилизация",
+        "Ответственный ИТР за объект",
         3,
     ),
     ProjectStageDefinition(
         ProjectStage.SAFETY_INDUSTRIAL,
-        "Охрана труда и промбезопасность",
+        "Охрана труда",
         4,
     ),
     ProjectStageDefinition(
         ProjectStage.CONSTRUCTION_INSTALLATION,
-        "Производство СМР — монтаж системы",
+        "Основной этап СМР",
         5,
     ),
     ProjectStageDefinition(
@@ -54,7 +54,7 @@ PROJECT_STAGES = (
     ),
     ProjectStageDefinition(
         ProjectStage.COMPLETION_WARRANTY,
-        "Завершение, демобилизация, гарантия",
+        "Завершение работ по договору",
         8,
     ),
 )
