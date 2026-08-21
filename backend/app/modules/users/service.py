@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token, hash_password
 from app.modules.auth.models import AuthSession, RevokedAccessToken
+from app.modules.objects.models import ObjectToUser
+from app.modules.task_activity.models import TaskActivityAction
+from app.modules.task_activity.service import record_task_activity
+from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.users.models import User
 from app.modules.users.schemas import UserCreate
 
@@ -37,6 +41,69 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
     await db.refresh(user)
 
     return user
+
+
+async def deactivate_user(
+    db: AsyncSession,
+    *,
+    user: User,
+    actor_user_id: int,
+) -> None:
+    assigned_tasks_result = await db.execute(
+        select(ObjectTask).where(ObjectTask.assigned_to_id == user.id)
+    )
+    assigned_tasks = assigned_tasks_result.scalars().all()
+    terminal_statuses = {
+        ObjectTaskStatus.DONE,
+        ObjectTaskStatus.SKIPPED,
+        ObjectTaskStatus.NOT_APPLICABLE,
+    }
+
+    for task in assigned_tasks:
+        previous_status = task.status
+        task.assigned_to_id = None
+        task.assigned_to = None
+        task.version += 1
+
+        if task.status not in terminal_statuses:
+            task.status = ObjectTaskStatus.TODO
+            task.submitted_at = None
+            task.reviewed_at = None
+            task.reviewer_id = None
+            task.reviewed_by_id = None
+            task.rejection_reason = None
+
+        await record_task_activity(
+            db,
+            task=task,
+            actor_user_id=actor_user_id,
+            action=TaskActivityAction.ASSIGNED,
+            from_status=previous_status,
+            to_status=task.status,
+            details={
+                "assigned_to_id": None,
+                "previous_assigned_to_id": user.id,
+                "reason": "user_deactivated",
+            },
+        )
+
+    await db.execute(
+        delete(ObjectToUser).where(ObjectToUser.user_id == user.id)
+    )
+    await db.execute(
+        update(ObjectTask)
+        .where(ObjectTask.reviewer_id == user.id)
+        .values(reviewer_id=None)
+    )
+    await db.execute(
+        update(AuthSession)
+        .where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+    user.is_active = False
 
 async def get_current_user(
     db: AsyncSession,
