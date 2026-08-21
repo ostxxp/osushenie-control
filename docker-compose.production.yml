@@ -45,6 +45,8 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: osushenie-control_osushenie_postgres_data
   uploads_data:
   caddy_data:
   caddy_config:
