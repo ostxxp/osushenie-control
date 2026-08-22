@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.notifications.models import (
@@ -21,6 +21,10 @@ def object_payload(name: str = "Object") -> dict:
         "start_date": "2026-01-01",
         "end_date": None,
     }
+
+
+def test_notification_message_has_no_short_varchar_limit() -> None:
+    assert isinstance(Notifications.__table__.c.message.type, Text)
 
 
 async def create_notification(

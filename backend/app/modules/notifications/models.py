@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from app.db.base import Base
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 class NotificationType(StrEnum):
@@ -33,7 +33,7 @@ class Notifications(Base):
 
     type: Mapped[NotificationType] = mapped_column(String(50), nullable=False, default=NotificationType.TASK_STATUS_CHANGED, server_default="task_status_changed")
 
-    message: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
