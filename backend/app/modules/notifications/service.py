@@ -10,7 +10,7 @@ from app.modules.notifications.models import (
 async def create_notification(
     db: AsyncSession,
     *,
-    actor_user_id: int,
+    actor_user_id: int | None,
     object_id: int,
     recipient_ids: set[int],
     message: str,

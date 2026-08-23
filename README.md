@@ -1,8 +1,6 @@
 # Osushenie Control
 
-Internal system for controlling construction objects, users, assignments, and object task progress.
-
-The current repository contains the backend MVP. The frontend is not implemented yet.
+Internal system for controlling construction objects, users, assignments, documents, and task progress.
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
@@ -11,9 +9,7 @@ The current repository contains the backend MVP. The frontend is not implemented
 ![Alembic](https://img.shields.io/badge/Alembic-Migrations-orange)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 
-## MVP Scope
-
-Implemented backend features:
+## Implemented Features
 
 - authentication with access token and refresh token cookie
 - logout and logout-all session revocation
@@ -21,21 +17,16 @@ Implemented backend features:
 - construction objects
 - assigning users to objects
 - responsible users for objects
-- task templates imported from XMind
+- React frontend and FastAPI backend
+- task templates imported from XMind and grouped into project stages
 - object tasks copied from templates when an object is created
-- task statuses, headers, full task tree, and available task branch inside a header
+- task assignment, statuses, deadlines, branching, progress statistics, and activity history
+- offline task synchronization with idempotent operation IDs
+- task documents, photos, and audio attachments
+- ZIP export of all object documents with a CSV registry
+- personal and automatic deadline notifications
+- administrator AI assistant
 - pytest test suite
-- Docker Compose startup blocked by backend tests
-
-Not included in the current MVP:
-
-- frontend
-- task comments
-- task files/photos
-- task history/audit log
-- notifications
-- reports
-- automatic single-choice branch handling
 
 ## Roles
 
@@ -63,11 +54,17 @@ backend/
       users/
       objects/
       tasks/
+      task_activity/
+      task_attachments/
+      task_sync/
+      notifications/
+      ai/
   alembic/
   scripts/
     parse_xmind.py
     import_task_templates.py
   tests/
+frontend/
 docker-compose.yml
 pytest.ini
 ```
@@ -91,6 +88,9 @@ SECRET_KEY
 CORS_ORIGINS
 ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS
+DEADLINE_NOTIFICATIONS_ENABLED
+DEADLINE_NOTIFICATION_INTERVAL_SECONDS
+DEADLINE_DUE_SOON_DAYS
 ```
 
 ## Run With Docker
@@ -98,16 +98,10 @@ REFRESH_TOKEN_EXPIRE_DAYS
 Run from the repository root:
 
 ```bash
-docker compose up --build backend
+docker compose up --build
 ```
 
-Compose starts services in this order:
-
-1. `db`
-2. `backend-tests`
-3. `backend`
-
-The backend starts only if tests pass.
+Compose starts PostgreSQL, backend, frontend, and the backend test service.
 
 URLs:
 
@@ -213,6 +207,7 @@ Objects:
 GET    /api/v1/objects
 POST   /api/v1/objects
 GET    /api/v1/objects/{object_id}
+GET    /api/v1/objects/summary
 PATCH  /api/v1/objects/{object_id}
 PATCH  /api/v1/objects/{object_id}/deactivate
 POST   /api/v1/objects/{object_id}/assign/{user_id}
@@ -225,16 +220,16 @@ Object tasks:
 GET   /api/v1/objects/{object_id}/tasks
 GET   /api/v1/objects/{object_id}/tasks/tree
 GET   /api/v1/objects/{object_id}/tasks/headers
-GET   /api/v1/objects/{object_id}/tasks/{task_id}/available
+GET   /api/v1/objects/{object_id}/tasks/available
+GET   /api/v1/objects/{object_id}/tasks/stats
+GET   /api/v1/objects/{object_id}/stages
 PATCH /api/v1/objects/{object_id}/tasks/{task_id}/status
+PATCH /api/v1/objects/{object_id}/tasks/{task_id}/assignment
+POST  /api/v1/objects/{object_id}/tasks/{task_id}/start
+POST  /api/v1/objects/{object_id}/tasks/{task_id}/complete
+POST  /api/v1/objects/{object_id}/tasks/{task_id}/attachments
+GET   /api/v1/objects/{object_id}/documents/archive
 ```
 
-Frontend task flow:
-
-1. Load object task headers.
-2. User opens a header.
-3. Frontend requests available tasks for that header.
-4. User updates a task status.
-5. Frontend requests available tasks again.
-
-The backend stores task status and access rules. The frontend should render the task data returned by the backend and send status updates.
+Deadline notifications are generated in the backend background loop. The interval and the
+advance warning window are configured through the environment variables listed above.

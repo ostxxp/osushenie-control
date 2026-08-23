@@ -1,3 +1,6 @@
+import csv
+import tempfile
+import zipfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,6 +30,139 @@ ALLOWED_ATTACHMENT_MIME_TYPES = {
     "audio/wav": ".wav",
     "audio/x-wav": ".wav",
 }
+
+
+def _safe_archive_name(value: str, *, fallback: str) -> str:
+    cleaned = "".join(
+        "_" if char in '<>:"/\\|?*' or ord(char) < 32 else char
+        for char in value.strip()
+    ).strip(" .")
+    return cleaned[:120] or fallback
+
+
+def _task_archive_path(
+    task: ObjectTask,
+    *,
+    tasks_by_id: dict[int, ObjectTask],
+) -> list[str]:
+    path = []
+    current: ObjectTask | None = task
+    visited: set[int] = set()
+    while current is not None and current.id not in visited:
+        visited.add(current.id)
+        path.append(
+            f"{current.sort_order + 1:02d}_{_safe_archive_name(current.title, fallback=f'task-{current.id}')}"
+        )
+        current = tasks_by_id.get(current.parent_id) if current.parent_id else None
+    return list(reversed(path))
+
+
+async def create_object_documents_archive(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> Path:
+    tasks = list(
+        (
+            await db.execute(
+                select(ObjectTask)
+                .where(ObjectTask.object_id == object_id)
+                .order_by(ObjectTask.depth, ObjectTask.sort_order, ObjectTask.id)
+            )
+        ).scalars().all()
+    )
+    tasks_by_id = {task.id: task for task in tasks}
+    attachments = list(
+        (
+            await db.execute(
+                select(TaskAttachment)
+                .join(ObjectTask, ObjectTask.id == TaskAttachment.task_id)
+                .where(
+                    ObjectTask.object_id == object_id,
+                    TaskAttachment.is_active.is_(True),
+                )
+                .order_by(TaskAttachment.task_id, TaskAttachment.created_at, TaskAttachment.id)
+            )
+        ).scalars().all()
+    )
+
+    uploader_ids = {
+        attachment.uploaded_by_id
+        for attachment in attachments
+        if attachment.uploaded_by_id is not None
+    }
+    uploaders = {}
+    if uploader_ids:
+        uploaders = {
+            user.id: user.full_name
+            for user in (
+                await db.execute(select(User).where(User.id.in_(uploader_ids)))
+            ).scalars().all()
+        }
+
+    archive_file = tempfile.NamedTemporaryFile(
+        prefix=f"object-{object_id}-documents-",
+        suffix=".zip",
+        delete=False,
+    )
+    archive_path = Path(archive_file.name)
+    archive_file.close()
+
+    manifest_path = archive_path.with_suffix(".csv")
+    try:
+        with manifest_path.open("w", encoding="utf-8-sig", newline="") as manifest:
+            writer = csv.writer(manifest, delimiter=";")
+            writer.writerow(
+                [
+                    "ID файла",
+                    "ID задачи",
+                    "Путь задачи",
+                    "Имя файла",
+                    "Загрузил",
+                    "Дата загрузки",
+                    "Размер, байт",
+                ]
+            )
+            with zipfile.ZipFile(
+                archive_path,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                for attachment in attachments:
+                    task = tasks_by_id.get(attachment.task_id)
+                    if task is None:
+                        continue
+                    task_path = _task_archive_path(task, tasks_by_id=tasks_by_id)
+                    filename = _safe_archive_name(
+                        attachment.original_filename,
+                        fallback=f"attachment-{attachment.id}",
+                    )
+                    archive_name = "/".join(
+                        [*task_path, f"{attachment.id}_{filename}"]
+                    )
+                    source_path = Path(attachment.file_path)
+                    if source_path.is_file():
+                        archive.write(source_path, arcname=archive_name)
+                    writer.writerow(
+                        [
+                            attachment.id,
+                            task.id,
+                            " / ".join(node.split("_", 1)[-1] for node in task_path),
+                            attachment.original_filename,
+                            uploaders.get(attachment.uploaded_by_id, ""),
+                            attachment.created_at.isoformat(),
+                            attachment.size_bytes,
+                        ]
+                    )
+                manifest.flush()
+                archive.write(manifest_path, arcname="Реестр документов.csv")
+    except Exception:
+        archive_path.unlink(missing_ok=True)
+        raise
+    finally:
+        manifest_path.unlink(missing_ok=True)
+
+    return archive_path
 
 
 def serialize_task_attachment(attachment: TaskAttachment) -> dict:
