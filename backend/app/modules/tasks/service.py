@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.objects.models import ConstructionObject, ObjectToUser
