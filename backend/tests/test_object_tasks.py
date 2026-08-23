@@ -572,6 +572,85 @@ async def test_chief_engineer_can_add_and_delete_object_task(
     assert list_response.json() == []
 
 
+async def test_in_progress_tasks_include_working_statuses_and_support_main_task_filter(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    root_template = await create_task_template(
+        title="Main section",
+        source_id="main-section",
+    )
+    await create_task_template(
+        title="Active work",
+        parent_id=root_template.id,
+        source_id="active-work",
+        parent_source_id="main-section",
+        depth=1,
+        sort_order=0,
+    )
+    await create_task_template(
+        title="Waiting for review",
+        parent_id=root_template.id,
+        source_id="waiting-for-review",
+        parent_source_id="main-section",
+        depth=1,
+        sort_order=1,
+    )
+    admin_token = await login(client, email="admin@example.com")
+    object_id = (
+        await client.post(
+            "/api/v1/objects",
+            headers=auth_headers(admin_token),
+            json=object_payload(),
+        )
+    ).json()["id"]
+    tasks = (
+        await client.get(
+            f"/api/v1/objects/{object_id}/tasks",
+            headers=auth_headers(admin_token),
+        )
+    ).json()
+    root_task = next(task for task in tasks if task["title"] == "Main section")
+    active_task = next(task for task in tasks if task["title"] == "Active work")
+    review_task = next(task for task in tasks if task["title"] == "Waiting for review")
+
+    await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{active_task['id']}/status",
+        headers=auth_headers(admin_token),
+        json={"status": ObjectTaskStatus.IN_PROGRESS},
+    )
+    await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{review_task['id']}/status",
+        headers=auth_headers(admin_token),
+        json={"status": ObjectTaskStatus.PENDING_REVIEW},
+    )
+    response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks/in-progress",
+        headers=auth_headers(admin_token),
+        params={"main_task_id": root_task["id"]},
+    )
+
+    assert response.status_code == 200
+    groups = response.json()
+    assert len(groups) == 1
+    assert groups[0]["main_task_id"] == root_task["id"]
+    assert groups[0]["main_task_title"] == "Main section"
+    assert [task["title"] for task in groups[0]["tasks"]] == [
+        "Active work",
+        "Waiting for review",
+    ]
+    assert [task["status"] for task in groups[0]["tasks"]] == [
+        ObjectTaskStatus.IN_PROGRESS,
+        ObjectTaskStatus.PENDING_REVIEW,
+    ]
+    assert [task["path"] for task in groups[0]["tasks"]] == [
+        ["Main section", "Active work"],
+        ["Main section", "Waiting for review"],
+    ]
+
+
 async def test_post_task_update_alias_can_set_deadline_and_count_overdue(
     client: AsyncClient,
     create_test_user,

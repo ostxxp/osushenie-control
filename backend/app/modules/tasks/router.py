@@ -39,6 +39,7 @@ from app.modules.tasks.service import (
     get_current_object_step,
     group_object_tasks_by_main_task,
     list_done_object_tasks,
+    list_in_progress_object_tasks,
     list_overdue_object_tasks,
     select_object_task_branch,
     start_object_task,
@@ -424,6 +425,31 @@ async def get_done_tasks(
         tasks=tasks,
         root_task_id=main_task_id,
     )
+
+
+@router.get(
+    "/{object_id}/tasks/in-progress",
+    response_model=list[ObjectTaskListGroupRead],
+    summary="Get in-progress tasks for object",
+    dependencies=[Depends(user_can_access_object)]
+)
+async def get_in_progress_tasks(
+    main_task_id: int | None = Query(default=None),
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    tasks = await list_in_progress_object_tasks(
+        db,
+        object_id=object.id,
+        root_task_id=main_task_id,
+    )
+    return await group_object_tasks_by_main_task(
+        db,
+        object_id=object.id,
+        tasks=tasks,
+        root_task_id=main_task_id,
+    )
+
 
 @router.get(
     "/{object_id}/tasks/todo",
