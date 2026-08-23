@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -12,10 +12,20 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
+from app.modules.tasks.stages import PROJECT_STAGES, ProjectStage, infer_project_stage
 from app.modules.notifications.models import Notifications, NotificationReads as NotificationReceipt
-from app.modules.tasks.schemas import ObjectTaskCreate, ObjectTaskUpdate
+from app.modules.notifications.service import create_notification
+from app.modules.tasks.schemas import (
+    MyTaskPageRead,
+    ObjectTaskAssignmentUpdate,
+    ObjectTaskCreate,
+    ObjectTaskUpdate,
+    TaskAttentionFlag,
+)
 from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import UserRead
+from app.modules.task_activity.models import TaskActivityAction
+from app.modules.task_activity.service import record_task_activity
 
 from app.modules.notifications.models import NotificationType
 
@@ -27,6 +37,13 @@ BLOCKING_STATUSES = {
 STOPPING_STATUSES = {
     ObjectTaskStatus.TODO,
     ObjectTaskStatus.IN_PROGRESS,
+    ObjectTaskStatus.PENDING_REVIEW,
+    ObjectTaskStatus.REJECTED,
+}
+
+WORKING_STATUSES = {
+    ObjectTaskStatus.IN_PROGRESS,
+    ObjectTaskStatus.PENDING_REVIEW,
 }
 
 
@@ -61,6 +78,7 @@ async def copy_task_templates_to_object(
             depth=template.depth if parent is None else parent.depth + 1,
             sort_order=template.sort_order,
             children_mode=template.children_mode,
+            stage=template.stage or (parent.stage if parent is not None else infer_project_stage(template.title)),
         )
         db.add(object_task)
         await db.flush()
@@ -131,16 +149,29 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "object_id": task.object_id,
             "parent_id": task.parent_id,
             "template_id": task.template_id,
+            "selected_child_id": task.selected_child_id,
             "title": task.title,
             "depth": task.depth,
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
+            "stage": task.stage,
             "status": task.status,
             "deadline": task.deadline,
             "is_active": task.is_active,
+            "version": task.version,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
             "completed_by": completed_by_map.get(task.completed_by_id),
+            "assigned_to_id": task.assigned_to_id,
+            "assigned_to": task.assigned_to,
+            "reviewer_id": task.reviewer_id,
+            "reviewer": task.reviewer,
+            "submitted_at": task.submitted_at,
+            "reviewed_at": task.reviewed_at,
+            "reviewed_by_id": task.reviewed_by_id,
+            "reviewed_by": task.reviewed_by,
+            "rejection_reason": task.rejection_reason,
+            "not_applicable_reason": task.not_applicable_reason,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -165,6 +196,7 @@ async def create_object_task(
     *,
     object_id: int,
     task_data: ObjectTaskCreate,
+    current_user: User,
 ) -> ObjectTask:
     parent = None
     if task_data.parent_id is not None:
@@ -193,9 +225,18 @@ async def create_object_task(
         depth=0 if parent is None else parent.depth + 1,
         sort_order=sort_order,
         children_mode=task_data.children_mode,
+        stage=task_data.stage or (parent.stage if parent is not None else infer_project_stage(task_data.title)),
         deadline=task_data.deadline,
     )
     db.add(object_task)
+    await db.flush()
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.CREATED,
+        to_status=object_task.status,
+    )
     await db.commit()
     await db.refresh(object_task)
     return object_task
@@ -208,7 +249,23 @@ async def update_object_task(
     task_data: ObjectTaskUpdate,
     current_user: User,
 ) -> ObjectTask:
+    previous_status = object_task.status
     update_data = task_data.model_dump(exclude_unset=True)
+    expected_version = update_data.pop("expected_version", None)
+    if expected_version is not None and object_task.version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Task was changed by another user",
+                "current_version": object_task.version,
+            },
+        )
+
+    if task_data.status is not None and object_task.assigned_to_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Use the task workflow endpoints to change an assigned task status.",
+        )
 
     if task_data.status is not None:
         if task_data.status == ObjectTaskStatus.DONE:
@@ -232,9 +289,28 @@ async def update_object_task(
                 root_task=object_task,
             )
 
-    for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
+    for field in ("title", "sort_order", "children_mode", "is_active", "deadline", "stage"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
+
+    object_task.version += 1
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=(
+            TaskActivityAction.STATUS_CHANGED
+            if "status" in update_data
+            else TaskActivityAction.UPDATED
+        ),
+        from_status=previous_status,
+        to_status=object_task.status,
+        details={
+            "changed_fields": sorted(
+                field for field in update_data if field != "expected_version"
+            )
+        },
+    )
     
     if "status" in update_data:
         taskTitle = object_task.title if object_task.title is not None else "Задача"
@@ -321,11 +397,16 @@ def _set_task_status(
     status: ObjectTaskStatus,
     *,
     current_user: User | None = None,
+    completed_by_id: int | None = None,
 ) -> None:
     task.status = status
     if status == ObjectTaskStatus.DONE:
         task.completed_at = datetime.now(UTC)
-        task.completed_by_id = current_user.id if current_user is not None else None
+        task.completed_by_id = (
+            completed_by_id
+            if completed_by_id is not None
+            else current_user.id if current_user is not None else None
+        )
         return
 
     task.completed_at = None
@@ -350,6 +431,7 @@ async def _sync_single_choice_siblings(
     siblings = children_by_parent_id.get(parent.id, [])
 
     if changed_task.status == ObjectTaskStatus.DONE:
+        parent.selected_child_id = changed_task.id
         for sibling in siblings:
             if sibling.id == changed_task.id:
                 continue
@@ -369,6 +451,8 @@ async def _sync_single_choice_siblings(
     )
     if has_selected_sibling:
         return
+
+    parent.selected_child_id = None
 
     for sibling in siblings:
         if sibling.id == changed_task.id:
@@ -486,16 +570,29 @@ def _serialize_task_list_item(
         "object_id": task.object_id,
         "parent_id": task.parent_id,
         "template_id": task.template_id,
+        "selected_child_id": task.selected_child_id,
         "title": task.title,
         "depth": task.depth,
         "sort_order": task.sort_order,
         "children_mode": task.children_mode,
+        "stage": task.stage,
         "status": task.status,
         "is_active": task.is_active,
+        "version": task.version,
         "deadline": task.deadline,
         "completed_at": task.completed_at,
         "completed_by_id": task.completed_by_id,
         "completed_by": completed_by_map.get(task.completed_by_id),
+        "assigned_to_id": task.assigned_to_id,
+        "assigned_to": task.assigned_to,
+        "reviewer_id": task.reviewer_id,
+        "reviewer": task.reviewer,
+        "submitted_at": task.submitted_at,
+        "reviewed_at": task.reviewed_at,
+        "reviewed_by_id": task.reviewed_by_id,
+        "reviewed_by": task.reviewed_by,
+        "rejection_reason": task.rejection_reason,
+        "not_applicable_reason": task.not_applicable_reason,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "main_task_id": main_task.id,
@@ -575,7 +672,7 @@ def _add_status_to_stats(
 ) -> None:
     if status == ObjectTaskStatus.DONE or status in BLOCKING_STATUSES:
         stats["done"] += 1
-    elif status == ObjectTaskStatus.IN_PROGRESS:
+    elif status in WORKING_STATUSES:
         stats["in_progress"] += 1
     else:
         stats["todo"] += 1
@@ -601,22 +698,18 @@ def _get_task_group_status(tasks: list[ObjectTask]) -> ObjectTaskStatus:
 
     if any(task.status == ObjectTaskStatus.DONE for task in active_tasks):
         return ObjectTaskStatus.DONE
-    if any(task.status == ObjectTaskStatus.IN_PROGRESS for task in active_tasks):
+    if any(task.status in WORKING_STATUSES for task in active_tasks):
         return ObjectTaskStatus.IN_PROGRESS
     if not active_tasks:
         return ObjectTaskStatus.DONE
     return ObjectTaskStatus.TODO
 
 
-async def get_task_stats(
-    db: AsyncSession,
-    *,
-    object_id: int,
-    root_task_id: int | None = None,
+def _calculate_task_stats(
+    tasks: list[ObjectTask],
+    scope_roots: list[ObjectTask],
 ) -> dict[str, int]:
-    tasks = await _list_active_object_tasks(db, object_id=object_id)
     children_by_parent_id = _group_tasks_by_parent_id(tasks)
-    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
     scope_root_ids = {task.id for task in scope_roots}
     stats = _empty_task_stats()
 
@@ -709,6 +802,50 @@ async def get_task_stats(
     return stats
 
 
+async def get_task_stats(
+    db: AsyncSession,
+    *,
+    object_id: int,
+    root_task_id: int | None = None,
+) -> dict[str, int]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    return _calculate_task_stats(tasks, scope_roots)
+
+
+async def get_project_stage_summaries(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> list[dict]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    summaries = []
+
+    for stage_definition in PROJECT_STAGES:
+        stage_tasks = [
+            task
+            for task in tasks
+            if task.stage == stage_definition.code
+        ]
+        stage_task_ids = {task.id for task in stage_tasks}
+        stage_roots = [
+            task
+            for task in stage_tasks
+            if task.parent_id not in stage_task_ids
+        ]
+        summaries.append(
+            {
+                "code": stage_definition.code,
+                "title": stage_definition.title,
+                "order": stage_definition.order,
+                "stats": _calculate_task_stats(stage_tasks, stage_roots),
+            }
+        )
+
+    return summaries
+
+
 async def list_done_object_tasks(
     db: AsyncSession,
     *,
@@ -757,10 +894,14 @@ async def list_logical_todo_object_tasks(
             collect_children(task)
             return
 
-        if task.status == ObjectTaskStatus.TODO:
+        if task.status in {ObjectTaskStatus.TODO, ObjectTaskStatus.REJECTED}:
             todo_tasks.append(task)
 
-        if task.status in {ObjectTaskStatus.DONE, ObjectTaskStatus.IN_PROGRESS}:
+        if task.status in {
+            ObjectTaskStatus.DONE,
+            ObjectTaskStatus.IN_PROGRESS,
+            ObjectTaskStatus.PENDING_REVIEW,
+        }:
             collect_children(task)
 
     def collect_children(parent: ObjectTask) -> None:
@@ -828,8 +969,17 @@ async def deactivate_object_task(
     db: AsyncSession,
     *,
     object_task: ObjectTask,
+    current_user: User,
 ) -> None:
     object_task.is_active = False
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.DEACTIVATED,
+        from_status=object_task.status,
+        to_status=object_task.status,
+    )
     db.add(object_task)
     await db.commit()
 
@@ -849,18 +999,31 @@ async def build_available_task_tree(
             "object_id": task.object_id,
             "parent_id": task.parent_id,
             "template_id": task.template_id,
+            "selected_child_id": task.selected_child_id,
             "title": task.title,
             "depth": task.depth,
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
+            "stage": task.stage,
             "status": task.status,
             "deadline": task.deadline,
             "days_until_deadline": (task.deadline - datetime.now(UTC)).days if task.deadline is not None else None,
             "is_overdue": task.deadline is not None and task.deadline < datetime.now(UTC) and task.status != ObjectTaskStatus.DONE,
             "is_active": task.is_active,
+            "version": task.version,
             "completed_at": task.completed_at,
             "completed_by_id": task.completed_by_id,
             "completed_by": completed_by_map.get(task.completed_by_id),
+            "assigned_to_id": task.assigned_to_id,
+            "assigned_to": task.assigned_to,
+            "reviewer_id": task.reviewer_id,
+            "reviewer": task.reviewer,
+            "submitted_at": task.submitted_at,
+            "reviewed_at": task.reviewed_at,
+            "reviewed_by_id": task.reviewed_by_id,
+            "reviewed_by": task.reviewed_by,
+            "rejection_reason": task.rejection_reason,
+            "not_applicable_reason": task.not_applicable_reason,
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "children": [],
@@ -889,6 +1052,311 @@ async def build_available_task_tree(
         return node
 
     return await serialize_until_blocker(main_task)
+
+
+async def select_object_task_branch(
+    db: AsyncSession,
+    *,
+    parent_task: ObjectTask,
+    child_id: int,
+    expected_version: int | None = None,
+    current_user: User,
+) -> ObjectTask:
+    if parent_task.children_mode != TaskChildrenMode.SINGLE_CHOICE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task does not contain a single-choice branch.",
+        )
+    if expected_version is not None and parent_task.version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Task was changed by another user",
+                "current_version": parent_task.version,
+            },
+        )
+
+    result = await db.execute(
+        select(ObjectTask).where(
+            ObjectTask.object_id == parent_task.object_id,
+            ObjectTask.parent_id == parent_task.id,
+            ObjectTask.is_active.is_(True),
+        )
+    )
+    children = list(result.scalars().all())
+    selected_child = next((child for child in children if child.id == child_id), None)
+    if selected_child is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected task is not an active direct child.",
+        )
+
+    parent_task.selected_child_id = selected_child.id
+    parent_task.version += 1
+    for child in children:
+        if child.id == selected_child.id:
+            if child.status == ObjectTaskStatus.NOT_APPLICABLE:
+                _set_task_status(child, ObjectTaskStatus.TODO)
+            child.not_applicable_reason = None
+            continue
+        _set_task_status(child, ObjectTaskStatus.NOT_APPLICABLE)
+        child.not_applicable_reason = "Выбрана другая взаимоисключающая ветка"
+
+    await record_task_activity(
+        db,
+        task=parent_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.BRANCH_SELECTED,
+        from_status=parent_task.status,
+        to_status=parent_task.status,
+        details={"selected_child_id": selected_child.id},
+    )
+
+    await db.commit()
+    await db.refresh(parent_task)
+    return parent_task
+
+
+async def clear_object_task_branch(
+    db: AsyncSession,
+    *,
+    parent_task: ObjectTask,
+    current_user: User,
+) -> ObjectTask:
+    if parent_task.children_mode != TaskChildrenMode.SINGLE_CHOICE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task does not contain a single-choice branch.",
+        )
+
+    result = await db.execute(
+        select(ObjectTask).where(
+            ObjectTask.object_id == parent_task.object_id,
+            ObjectTask.parent_id == parent_task.id,
+            ObjectTask.is_active.is_(True),
+        )
+    )
+    for child in result.scalars().all():
+        _set_task_status(child, ObjectTaskStatus.TODO)
+        child.not_applicable_reason = None
+
+    parent_task.selected_child_id = None
+    parent_task.version += 1
+    await record_task_activity(
+        db,
+        task=parent_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.BRANCH_CLEARED,
+        from_status=parent_task.status,
+        to_status=parent_task.status,
+    )
+    await db.commit()
+    await db.refresh(parent_task)
+    return parent_task
+
+
+async def _get_active_user(db: AsyncSession, user_id: int) -> User:
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Active user not found.",
+        )
+    return user
+
+
+async def _ensure_foreman_has_object_access(
+    db: AsyncSession,
+    *,
+    user: User,
+    object_id: int,
+) -> None:
+    if user.role != UserRole.FOREMAN:
+        return
+    assignment = await db.scalar(
+        select(ObjectToUser).where(
+            ObjectToUser.object_id == object_id,
+            ObjectToUser.user_id == user.id,
+        )
+    )
+    if assignment is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Foreman must be assigned to the object first.",
+        )
+
+
+def _can_manage_task(task: ObjectTask, user: User) -> bool:
+    return task.assigned_to_id == user.id
+
+
+def _require_task_version(task: ObjectTask, expected_version: int) -> None:
+    if task.version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Task was changed by another user",
+                "current_version": task.version,
+            },
+        )
+
+
+def _require_task_status(
+    task: ObjectTask,
+    allowed_statuses: set[ObjectTaskStatus],
+) -> None:
+    if task.status not in allowed_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Task cannot be changed from status '{task.status}'.",
+        )
+
+
+async def assign_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    assignment: ObjectTaskAssignmentUpdate,
+    current_user: User,
+) -> ObjectTask:
+    _require_task_version(object_task, assignment.expected_version)
+    assigned_to = None
+    if assignment.assigned_to_id is not None:
+        assigned_to = await _get_active_user(db, assignment.assigned_to_id)
+        await _ensure_foreman_has_object_access(
+            db,
+            user=assigned_to,
+            object_id=object_task.object_id,
+        )
+    object_task.assigned_to_id = assigned_to.id if assigned_to is not None else None
+    object_task.reviewer_id = None
+    object_task.submitted_at = None
+    object_task.reviewed_at = None
+    object_task.reviewed_by_id = None
+    object_task.rejection_reason = None
+    object_task.version += 1
+    object_task.assigned_to = assigned_to
+    object_task.reviewer = None
+    object_task.reviewed_by = None
+
+    recipient_ids = {object_task.assigned_to_id} if object_task.assigned_to_id else set()
+    await create_notification(
+        db,
+        actor_user_id=current_user.id,
+        object_id=object_task.object_id,
+        recipient_ids=recipient_ids,
+        message=f'Назначен исполнитель задачи "{object_task.title}".',
+        notification_type=NotificationType.TASK_ASSIGNED,
+    )
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.ASSIGNED,
+        from_status=object_task.status,
+        to_status=object_task.status,
+        details={
+            "assigned_to_id": object_task.assigned_to_id,
+        },
+    )
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
+
+
+async def start_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    current_user: User,
+    expected_version: int,
+) -> ObjectTask:
+    _require_task_version(object_task, expected_version)
+    if object_task.assigned_to_id is None:
+        raise HTTPException(status_code=409, detail="Task executor is not assigned.")
+    if not _can_manage_task(object_task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot start this task.")
+    _require_task_status(
+        object_task,
+        {ObjectTaskStatus.TODO, ObjectTaskStatus.REJECTED},
+    )
+    previous_status = object_task.status
+    _set_task_status(object_task, ObjectTaskStatus.IN_PROGRESS)
+    object_task.rejection_reason = None
+    object_task.reviewed_at = None
+    object_task.reviewed_by_id = None
+    object_task.version += 1
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.STARTED,
+        from_status=previous_status,
+        to_status=object_task.status,
+    )
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
+
+
+async def complete_object_task(
+    db: AsyncSession,
+    *,
+    object_task: ObjectTask,
+    current_user: User,
+    expected_version: int,
+) -> ObjectTask:
+    _require_task_version(object_task, expected_version)
+    if not _can_manage_task(object_task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot complete this task.")
+    _require_task_status(
+        object_task,
+        {ObjectTaskStatus.IN_PROGRESS, ObjectTaskStatus.PENDING_REVIEW},
+    )
+    previous_status = object_task.status
+    await _set_children_status_in_progress(db, parent_task=object_task)
+    _set_task_status(object_task, ObjectTaskStatus.DONE, current_user=current_user)
+    await _sync_single_choice_siblings(
+        db,
+        changed_task=object_task,
+        current_user=current_user,
+    )
+    object_task.submitted_at = None
+    object_task.reviewed_at = None
+    object_task.reviewed_by_id = None
+    object_task.rejection_reason = None
+    object_task.version += 1
+
+    await record_task_activity(
+        db,
+        task=object_task,
+        actor_user_id=current_user.id,
+        action=TaskActivityAction.COMPLETED,
+        from_status=previous_status,
+        to_status=object_task.status,
+    )
+
+    recipients = set(
+        (
+            await db.execute(
+                select(User.id).where(
+                    User.role.in_([UserRole.ADMIN, UserRole.CHIEF_ENGINEER]),
+                    User.is_active.is_(True),
+                )
+            )
+        ).scalars().all()
+    )
+    await create_notification(
+        db,
+        actor_user_id=current_user.id,
+        object_id=object_task.object_id,
+        recipient_ids=recipients,
+        message=f'Задача "{object_task.title}" выполнена.',
+        notification_type=NotificationType.TASK_STATUS_CHANGED,
+    )
+    await db.commit()
+    await db.refresh(object_task)
+    return object_task
 
 
 async def build_available_task_trees(
@@ -925,3 +1393,210 @@ async def get_progress(
         return 0
 
     return stats["done"] * 100 // stats["total"]
+
+
+def _task_deadline_details(task: ObjectTask) -> tuple[TaskAttentionFlag, int | None]:
+    if task.status == ObjectTaskStatus.REJECTED:
+        return TaskAttentionFlag.REJECTED, None
+    if task.deadline is None:
+        return TaskAttentionFlag.NORMAL, None
+
+    deadline = task.deadline
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    days_remaining = (deadline.date() - datetime.now(UTC).date()).days
+    if days_remaining < 0:
+        return TaskAttentionFlag.OVERDUE, days_remaining
+    if days_remaining <= 3:
+        return TaskAttentionFlag.DUE_SOON, days_remaining
+    return TaskAttentionFlag.NORMAL, days_remaining
+
+
+def _task_stage_details(task: ObjectTask | None) -> tuple[str | None, int | None]:
+    if task is None or task.stage is None:
+        return None, None
+    definition = next((item for item in PROJECT_STAGES if item.code == task.stage), None)
+    if definition is None:
+        return None, None
+    return definition.title, definition.order
+
+
+def _task_action_required_by(task: ObjectTask) -> User | None:
+    return task.assigned_to
+
+
+async def get_current_object_step(
+    db: AsyncSession,
+    *,
+    object_id: int,
+) -> dict:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    if not tasks:
+        return {
+            "task": None,
+            "stage": None,
+            "stage_title": None,
+            "stage_order": None,
+            "action_required_by": None,
+            "flag": TaskAttentionFlag.NORMAL,
+            "days_remaining": None,
+        }
+
+    logical_todo = await list_logical_todo_object_tasks(db, object_id=object_id)
+    workflow_candidates = [
+        task
+        for task in tasks
+        if task.status in {
+            ObjectTaskStatus.IN_PROGRESS,
+            ObjectTaskStatus.PENDING_REVIEW,
+            ObjectTaskStatus.REJECTED,
+        }
+    ]
+    status_order = {
+        ObjectTaskStatus.REJECTED: 0,
+        ObjectTaskStatus.PENDING_REVIEW: 1,
+        ObjectTaskStatus.IN_PROGRESS: 2,
+    }
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    traversal_order: dict[int, int] = {}
+
+    def index_subtree(task: ObjectTask) -> None:
+        traversal_order[task.id] = len(traversal_order)
+        for child in children_by_parent_id.get(task.id, []):
+            index_subtree(child)
+
+    for root in children_by_parent_id.get(None, []):
+        index_subtree(root)
+
+    workflow_candidates.sort(
+        key=lambda task: (
+            status_order[task.status],
+            traversal_order.get(task.id, len(traversal_order)),
+        )
+    )
+    task = workflow_candidates[0] if workflow_candidates else next(iter(logical_todo), None)
+    title, order = _task_stage_details(task)
+    flag, days_remaining = (
+        _task_deadline_details(task)
+        if task is not None
+        else (TaskAttentionFlag.NORMAL, None)
+    )
+    return {
+        "task": task,
+        "stage": task.stage if task is not None else None,
+        "stage_title": title,
+        "stage_order": order,
+        "action_required_by": _task_action_required_by(task) if task is not None else None,
+        "flag": flag,
+        "days_remaining": days_remaining,
+    }
+
+
+async def list_user_work_items(
+    db: AsyncSession,
+    *,
+    user: User,
+    object_id: int | None = None,
+    task_status: ObjectTaskStatus | None = None,
+    search: str | None = None,
+    deadline_from: date | None = None,
+    deadline_to: date | None = None,
+    today_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    query = (
+        select(ObjectTask, ConstructionObject)
+        .join(ConstructionObject, ConstructionObject.id == ObjectTask.object_id)
+        .where(
+            ObjectTask.is_active.is_(True),
+            ObjectTask.status.notin_(BLOCKING_STATUSES),
+            or_(
+                ObjectTask.completed_by_id == user.id,
+                ObjectTask.assigned_to_id == user.id,
+                and_(
+                    ObjectTask.reviewer_id == user.id,
+                    ObjectTask.status == ObjectTaskStatus.PENDING_REVIEW,
+                ),
+                select(ObjectToUser.id)
+                .where(
+                    ObjectToUser.object_id == ObjectTask.object_id,
+                    ObjectToUser.user_id == user.id,
+                )
+                .exists(),
+            ),
+        )
+    )
+    if object_id is not None:
+        query = query.where(ObjectTask.object_id == object_id)
+    if task_status is not None:
+        query = query.where(ObjectTask.status == task_status)
+    if search and search.strip():
+        query = query.where(ObjectTask.title.ilike(f"%{search.strip()}%"))
+    if deadline_from is not None:
+        query = query.where(
+            ObjectTask.deadline >= datetime.combine(deadline_from, time.min, tzinfo=UTC)
+        )
+    if deadline_to is not None:
+        query = query.where(
+            ObjectTask.deadline < datetime.combine(deadline_to + timedelta(days=1), time.min, tzinfo=UTC)
+        )
+
+    result = await db.execute(
+        query.order_by(
+            ObjectTask.deadline.asc().nullslast(),
+            ObjectTask.updated_at.desc(),
+            ObjectTask.id,
+        )
+    )
+    rows = list(result.all())
+    if today_only:
+        today = datetime.now(UTC).date()
+        rows = [
+            row
+            for row in rows
+            if row.ObjectTask.status in {
+                ObjectTaskStatus.IN_PROGRESS,
+                ObjectTaskStatus.PENDING_REVIEW,
+                ObjectTaskStatus.REJECTED,
+            }
+            or (
+                row.ObjectTask.deadline is not None
+                and row.ObjectTask.deadline.date() <= today
+            )
+        ]
+
+    total = len(rows)
+    items = []
+    completed_by_map = await _build_completed_by_map(
+        db,
+        [row.ObjectTask for row in rows[offset:offset + limit]],
+    )
+    for task, object_item in rows[offset:offset + limit]:
+        flag, days_remaining = _task_deadline_details(task)
+        task_data = {
+            column.name: getattr(task, column.name)
+            for column in ObjectTask.__table__.columns
+        }
+        task_data.update(
+            {
+                "assigned_to": task.assigned_to,
+                "reviewer": task.reviewer,
+                "reviewed_by": task.reviewed_by,
+                "completed_by": completed_by_map.get(task.completed_by_id),
+                "main_task_id": await get_main_task_id(db, object_task=task),
+                "object_name": object_item.name,
+                "object_address": object_item.address,
+                "action_required": "execute",
+                "flag": flag,
+                "days_remaining": days_remaining,
+            }
+        )
+        items.append(task_data)
+
+    return MyTaskPageRead(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    ).model_dump()

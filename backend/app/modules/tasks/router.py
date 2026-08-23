@@ -6,7 +6,11 @@ from app.modules.objects.dependencies import get_object_or_404, user_can_access_
 from app.modules.objects.models import ConstructionObject
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
 from app.modules.tasks.schemas import (
+    CurrentStepRead,
     ObjectTaskCreate,
+    ObjectTaskAction,
+    ObjectTaskAssignmentUpdate,
+    ObjectTaskBranchSelect,
     ObjectTaskListGroupRead,
     ObjectTaskRead,
     ObjectTaskStatsRead,
@@ -14,9 +18,12 @@ from app.modules.tasks.schemas import (
     ObjectTaskStatusUpdateRead,
     ObjectTaskTreeRead,
     ObjectTaskUpdate,
+    ProjectStageRead,
 )
 from app.modules.tasks.service import (
     build_object_task_tree,
+    assign_object_task,
+    clear_object_task_branch,
     create_object_task,
     deactivate_object_task,
     list_object_tasks,
@@ -28,9 +35,14 @@ from app.modules.tasks.service import (
     get_main_task_id,
     get_progress,
     get_task_stats,
+    get_project_stage_summaries,
+    get_current_object_step,
     group_object_tasks_by_main_task,
     list_done_object_tasks,
     list_overdue_object_tasks,
+    select_object_task_branch,
+    start_object_task,
+    complete_object_task,
 )
 from app.modules.tasks.dependencies import get_object_task_or_404
 from app.modules.users.dependencies import get_current_auth_user, require_chief_engineer_or_admin
@@ -39,6 +51,19 @@ from app.modules.users.schemas import UserRead
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/{object_id}/current-step",
+    response_model=CurrentStepRead,
+    summary="Get current actionable object step",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def get_current_step_for_object(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    return await get_current_object_step(db, object_id=object.id)
 
 @router.get(
     "/{object_id}/tasks",
@@ -90,8 +115,14 @@ async def create_task_for_object(
     task_data: ObjectTaskCreate,
     object: ConstructionObject = Depends(get_object_or_404),
     db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
 ) -> ObjectTask:
-    return await create_object_task(db, object_id=object.id, task_data=task_data)
+    return await create_object_task(
+        db,
+        object_id=object.id,
+        task_data=task_data,
+        current_user=current_user,
+    )
 
 @router.get(
     "/{object_id}/progress",
@@ -119,6 +150,19 @@ async def get_object_task_stats(
     db: AsyncSession = Depends(get_db_session),
 ) -> dict[str, int]:
     return await get_task_stats(db, object_id=object.id, root_task_id=main_task_id)
+
+
+@router.get(
+    "/{object_id}/stages",
+    response_model=list[ProjectStageRead],
+    summary="Get all project stages with task stats",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def get_object_project_stages(
+    object: ConstructionObject = Depends(get_object_or_404),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    return await get_project_stage_summaries(db, object_id=object.id)
 
 
 @router.get(
@@ -182,6 +226,105 @@ async def update_task_for_object_post(
         db,
         object_task=object_task,
         task_data=task_data,
+        current_user=current_user,
+    )
+
+
+@router.patch(
+    "/{object_id}/tasks/{task_id}/assignment",
+    response_model=ObjectTaskRead,
+    summary="Assign task executor",
+    dependencies=[Depends(user_can_access_object), Depends(require_chief_engineer_or_admin)],
+)
+async def assign_task_for_object(
+    assignment: ObjectTaskAssignmentUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await assign_object_task(
+        db,
+        object_task=object_task,
+        assignment=assignment,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{object_id}/tasks/{task_id}/start",
+    response_model=ObjectTaskRead,
+    summary="Start assigned task",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def start_task_for_object(
+    payload: ObjectTaskAction,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await start_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+        expected_version=payload.expected_version,
+    )
+
+
+@router.post(
+    "/{object_id}/tasks/{task_id}/complete",
+    response_model=ObjectTaskRead,
+    summary="Complete assigned task",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def complete_task_for_object(
+    payload: ObjectTaskAction,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_auth_user),
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+) -> ObjectTask:
+    return await complete_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+        expected_version=payload.expected_version,
+    )
+
+
+@router.put(
+    "/{object_id}/tasks/{task_id}/branch",
+    response_model=ObjectTaskRead,
+    summary="Select a single-choice task branch",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def select_task_branch_for_object(
+    payload: ObjectTaskBranchSelect,
+    db: AsyncSession = Depends(get_db_session),
+    parent_task: ObjectTask = Depends(get_object_task_or_404),
+    current_user: User = Depends(get_current_auth_user),
+) -> ObjectTask:
+    return await select_object_task_branch(
+        db,
+        parent_task=parent_task,
+        child_id=payload.child_id,
+        expected_version=payload.expected_version,
+        current_user=current_user,
+    )
+
+
+@router.delete(
+    "/{object_id}/tasks/{task_id}/branch",
+    response_model=ObjectTaskRead,
+    summary="Clear a single-choice task branch",
+    dependencies=[Depends(user_can_access_object)],
+)
+async def clear_task_branch_for_object(
+    db: AsyncSession = Depends(get_db_session),
+    parent_task: ObjectTask = Depends(get_object_task_or_404),
+    current_user: User = Depends(get_current_auth_user),
+) -> ObjectTask:
+    return await clear_object_task_branch(
+        db,
+        parent_task=parent_task,
         current_user=current_user,
     )
 
@@ -249,9 +392,14 @@ async def update_task_status_for_object(
 async def delete_task_for_object(
     response: Response,
     db: AsyncSession = Depends(get_db_session),
-    object_task: ObjectTask = Depends(get_object_task_or_404)
+    object_task: ObjectTask = Depends(get_object_task_or_404),
+    current_user: User = Depends(get_current_auth_user),
 ) -> None:
-    await deactivate_object_task(db, object_task=object_task)
+    await deactivate_object_task(
+        db,
+        object_task=object_task,
+        current_user=current_user,
+    )
     response.status_code = status.HTTP_204_NO_CONTENT
 
 @router.get(

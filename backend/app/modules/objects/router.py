@@ -19,7 +19,7 @@ from app.modules.users.models import User
 from app.modules.objects.service import set_responsible_status
 from app.modules.photos.models import Photo, PhotoType
 from app.modules.photos.service import serialize_photo
-from app.modules.tasks.service import copy_task_templates_to_object, get_task_stats
+from app.modules.tasks.service import copy_task_templates_to_object, get_current_object_step, get_task_stats
 
 
 router = APIRouter()
@@ -97,6 +97,22 @@ async def list_object_summaries(
     objects = result.scalars().unique().all()
     object_ids = [object.id for object in objects]
 
+    responsible_users_by_object_id: dict[int, list[User]] = {
+        object_id: [] for object_id in object_ids
+    }
+    if object_ids:
+        responsible_result = await db.execute(
+            select(ObjectToUser.object_id, User)
+            .join(User, User.id == ObjectToUser.user_id)
+            .where(
+                ObjectToUser.object_id.in_(object_ids),
+                ObjectToUser.is_responsible.is_(True),
+                User.is_active.is_(True),
+            )
+        )
+        for object_id, responsible_user in responsible_result.all():
+            responsible_users_by_object_id[object_id].append(responsible_user)
+
     photos_by_object_id: dict[int, list[dict]] = {object_id: [] for object_id in object_ids}
     if object_ids:
         photos_result = await db.execute(
@@ -117,6 +133,7 @@ async def list_object_summaries(
     summaries = []
     for object in objects:
         stats = await get_task_stats(db, object_id=object.id)
+        current_step = await get_current_object_step(db, object_id=object.id)
         progress = 0 if stats["total"] == 0 else stats["done"] * 100 // stats["total"]
         summaries.append(
             {
@@ -131,6 +148,8 @@ async def list_object_summaries(
                 "stats": stats,
                 "progress": progress,
                 "photos": photos_by_object_id.get(object.id, []),
+                "responsible_users": responsible_users_by_object_id.get(object.id, []),
+                "current_step": current_step,
             }
         )
 
@@ -273,6 +292,12 @@ async def assign_user_to_object(
     user: User = Depends(get_user_or_404),
     db: AsyncSession = Depends(get_db_session)
 ):
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неактивного пользователя нельзя назначить на объект.",
+        )
+
     existing_association = await db.execute(
         select(ObjectToUser).where(
             ObjectToUser.object_id == object.id,

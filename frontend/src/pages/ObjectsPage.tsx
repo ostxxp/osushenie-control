@@ -1,10 +1,11 @@
 import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue } from '@/components'
+import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable, SearchableSelect, StyledSelect } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
-import type { ConstructionObject, User } from '@/types'
+import type { ObjectSummary, ProjectStageSummary, User } from '@/types'
 import { AuthContext } from '@services/auth'
+import { getCurrentStage } from '@/components/objects/StageStepper'
 
 const objectTypeStorageKey = (objectId: number) => `object-type:${objectId}`
 
@@ -70,8 +71,15 @@ function getErrorMessage(error: unknown, fallback: string): string {
 function ObjectsPage() {
   const authContext = useContext(AuthContext)
   const userRole = authContext?.userRole
-  const [objects, setObjects] = useState<ConstructionObject[]>([])
+  const [objects, setObjects] = useState<ObjectSummary[]>([])
+  const [responsibleByObjectId, setResponsibleByObjectId] = useState<Record<number, User | undefined>>({})
+  const [stagesByObjectId, setStagesByObjectId] = useState<Record<number, ProjectStageSummary[]>>({})
   const [search, setSearch] = useState('')
+  const [view, setView] = useState<'table' | 'kanban'>('table')
+  const [roleFilter, setRoleFilter] = useState<'all' | User['role']>('all')
+  const [stageFilter, setStageFilter] = useState('all')
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
+  const [onlyWithoutResponsible, setOnlyWithoutResponsible] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
@@ -91,13 +99,11 @@ function ObjectsPage() {
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<number[]>([])
   const [responsibleUserId, setResponsibleUserId] = useState('')
   const [responsibleSearch, setResponsibleSearch] = useState('')
-  const [responsibleDropdownOpen, setResponsibleDropdownOpen] = useState(false)
   const [workerSearch, setWorkerSearch] = useState('')
-  const [workerDropdownOpen, setWorkerDropdownOpen] = useState(false)
   const [objectPhotoFiles, setObjectPhotoFiles] = useState<File[]>([])
   const [objectPhotoPreviewUrls, setObjectPhotoPreviewUrls] = useState<string[]>([])
 
-  const filteredObjects = useMemo(
+  const searchedObjects = useMemo(
     () =>
       objects
         .filter((objectItem) => {
@@ -112,10 +118,37 @@ function ObjectsPage() {
     [search, objects],
   )
 
+  const stageOptions = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => {
+      const stageTitle = Object.values(stagesByObjectId).find((stages) => stages[index]?.title)?.[index]?.title
+      return { value: String(index + 1), label: stageTitle || `Макроэтап ${index + 1}` }
+    }),
+    [stagesByObjectId],
+  )
+  const filteredObjects = useMemo(
+    () => searchedObjects.filter((objectItem) => {
+      const responsible = responsibleByObjectId[objectItem.id]
+      const matchesRole = roleFilter === 'all' || responsible?.role === roleFilter
+      const matchesStage = stageFilter === 'all' || getCurrentStage(stagesByObjectId[objectItem.id] || []) === Number(stageFilter)
+      const matchesOverdue = !onlyOverdue || objectItem.stats.overdue > 0
+      const matchesResponsible = !onlyWithoutResponsible || !responsible
+      return matchesRole && matchesStage && matchesOverdue && matchesResponsible
+    }),
+    [onlyOverdue, onlyWithoutResponsible, responsibleByObjectId, roleFilter, searchedObjects, stageFilter, stagesByObjectId],
+  )
+
   useEffect(() => {
     const fetchObjects = async () => {
       try {
-        const data = await objectApi.getAll()
+        const data = await objectApi.getSummaries()
+        const objectDetails = await Promise.all(
+          data.map(async (objectItem) => {
+            const stages = await objectApi.getStages(objectItem.id).catch(() => [])
+            return [objectItem.id, objectItem.responsible_users[0], stages] as const
+          }),
+        )
+        setResponsibleByObjectId(Object.fromEntries(objectDetails.map(([id, responsible]) => [id, responsible])))
+        setStagesByObjectId(Object.fromEntries(objectDetails.map(([id, , stages]) => [id, stages])))
         setObjects(data)
       } catch (err: unknown) {
         setLoadError(getErrorMessage(err, 'Ошибка загрузки объектов'))
@@ -159,7 +192,9 @@ function ObjectsPage() {
   }
 
   const availableWorkers = useMemo(
-    () => users.filter((user) => user.role === 'chief_engineer' || user.role === 'foreman'),
+    () => users.filter((user) => (
+      user.is_active && (user.role === 'chief_engineer' || user.role === 'foreman')
+    )),
     [users],
   )
 
@@ -269,11 +304,28 @@ function ObjectsPage() {
       }
       // Refresh list from server to ensure consistent shape
       try {
-        const data = await objectApi.getAll()
+        const data = await objectApi.getSummaries()
+        const refreshedStages = await Promise.all(
+          data.map(async (objectItem) => [
+            objectItem.id,
+            await objectApi.getStages(objectItem.id).catch(() => []),
+          ] as const),
+        )
+        setResponsibleByObjectId(Object.fromEntries(
+          data.map((objectItem) => [objectItem.id, objectItem.responsible_users[0]]),
+        ))
+        setStagesByObjectId(Object.fromEntries(refreshedStages))
         setObjects(data)
       } catch (err) {
         // fallback: prepend created object
-        setObjects((prev) => [created, ...prev])
+        setObjects((prev) => [{
+          ...created,
+          stats: { total: 0, done: 0, todo: 0, in_progress: 0, overdue: 0 },
+          progress: 0,
+          photos: [],
+          responsible_users: [],
+          current_step: { task: null, stage: null, stage_title: null, stage_order: null, action_required_by: null, flag: 'normal', days_remaining: null },
+        }, ...prev])
       }
       setShowCreateObject(false)
       setSelectedWorkerIds([])
@@ -316,13 +368,13 @@ function ObjectsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold sm:text-3xl">Объекты строительства</h1>
-      </div>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm sm:p-4">
+        <div className="mb-2 px-4 lg:px-3">
+          <h1 className="text-2xl font-semibold sm:text-3xl">Объекты строительства</h1>
+        </div>
 
-      <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 px-[calc(1.25rem+1px)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 px-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-start lg:px-3">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
@@ -352,8 +404,8 @@ function ObjectsPage() {
             </div>
             <p className="mt-2 text-sm text-base-content/70">Поиск по названию или адресу.</p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            {search && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-start">
+            {false && search && (
               <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
                 Найдено {filteredObjects.length}
               </span>
@@ -377,7 +429,53 @@ function ObjectsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
+        <div className="flex flex-col gap-3 border-t border-base-200 px-4 pt-2 lg:px-3 xl:flex-row xl:items-center">
+          <div className="flex flex-wrap items-center gap-2">
+            <StyledSelect className="min-w-44" value={roleFilter} onChange={(value) => setRoleFilter(value as 'all' | User['role'])} ariaLabel="Фильтр по роли" options={[{ value: 'all', label: 'Все роли' }, { value: 'admin', label: 'Администратор' }, { value: 'chief_engineer', label: 'Главный инженер' }, { value: 'foreman', label: 'Прораб' }]} />
+            <StyledSelect className="min-w-44" value={stageFilter} onChange={setStageFilter} ariaLabel="Фильтр по этапу" options={[{ value: 'all', label: 'Все этапы' }, ...stageOptions]} />
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
+              <input type="checkbox" className="checkbox checkbox-sm" checked={onlyOverdue} onChange={(event) => setOnlyOverdue(event.target.checked)} />
+              Просроченные
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm focus-within:border-[#ff4539] focus-within:ring-2 focus-within:ring-[#ff4539]/15">
+              <input type="checkbox" className="checkbox checkbox-sm" checked={onlyWithoutResponsible} onChange={(event) => setOnlyWithoutResponsible(event.target.checked)} />
+              Без ответственного
+            </label>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm self-start text-base-content/65 xl:self-auto"
+            onClick={() => {
+              setSearch('')
+              setRoleFilter('all')
+              setStageFilter('all')
+              setOnlyOverdue(false)
+              setOnlyWithoutResponsible(false)
+            }}
+          >
+            Сбросить
+          </button>
+          <div className="flex self-end rounded-xl bg-base-200 p-1 xl:ml-auto xl:self-auto">
+            <button type="button" className={`btn btn-sm border-0 ${view === 'table' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('table')}>Таблица</button>
+            <button type="button" className={`btn btn-sm border-0 ${view === 'kanban' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('kanban')}>Канбан</button>
+          </div>
+        </div>
+
+        {view === 'table' ? (
+          <ObjectTable
+            objects={filteredObjects}
+            responsibleByObjectId={responsibleByObjectId}
+            stagesByObjectId={stagesByObjectId}
+          />
+        ) : (
+          <ObjectKanban
+            objects={filteredObjects}
+            responsibleByObjectId={responsibleByObjectId}
+            stagesByObjectId={stagesByObjectId}
+          />
+        )}
+
+        <div className="hidden overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
           <table className="w-full min-w-[900px] table-fixed text-left">
             <colgroup>
               <col className="w-[25%]" />
@@ -580,48 +678,24 @@ function ObjectsPage() {
 
                 <div className="flex flex-col gap-2">
                   <span className="text-sm font-medium">Ответственный</span>
-                  <div className="relative">
-                    <input
-                      className="input w-full focus:border-[#ff4539] focus:outline-none"
-                      placeholder="Поиск по имени..."
-                      value={responsibleSearch}
-                      onChange={(e) => setResponsibleSearch(e.target.value)}
-                      onFocus={() => setResponsibleDropdownOpen(true)}
-                      onBlur={() => setTimeout(() => setResponsibleDropdownOpen(false), 150)}
-                      aria-label="Поиск ответственного"
-                    />
-                    {responsibleDropdownOpen && (
-                      <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
-                        {filteredResponsibleWorkers.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-base-content/60">Не найдено сотрудников.</div>
-                        ) : (
-                          filteredResponsibleWorkers.map((user) => (
-                            <button
-                              type="button"
-                              key={user.id}
-                              className={`flex w-full items-center justify-between gap-3 border-b border-base-200 px-4 py-3 text-left transition ${
-                                responsibleUserId === String(user.id) ? 'bg-primary/10' : 'hover:bg-base-200'
-                              }`}
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                setResponsibleUserId(String(user.id))
-                                setResponsibleSearch(user.full_name)
-                                setResponsibleDropdownOpen(false)
-                              }}
-                            >
-                              <div>
-                                <div className="font-medium text-slate-900">{user.full_name}</div>
-                                <div className="text-xs text-slate-600">{getWorkerRoleLabel(user.role)}</div>
-                              </div>
-                              <span className={`badge ${responsibleUserId === String(user.id) ? 'badge-primary' : 'badge-outline'}`}>
-                                {responsibleUserId === String(user.id) ? 'Выбрано' : 'Выбрать'}
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <SearchableSelect
+                    searchValue={responsibleSearch}
+                    onSearchChange={setResponsibleSearch}
+                    onSelect={(value) => {
+                      setResponsibleUserId(value)
+                      setResponsibleSearch(availableWorkers.find((user) => String(user.id) === value)?.full_name || '')
+                    }}
+                    selectedValues={responsibleUserId ? [responsibleUserId] : []}
+                    options={filteredResponsibleWorkers.map((user) => ({
+                      value: String(user.id),
+                      label: user.full_name,
+                      description: getWorkerRoleLabel(user.role),
+                    }))}
+                    placeholder="Поиск по имени..."
+                    ariaLabel="Поиск ответственного"
+                    emptyMessage="Не найдено сотрудников."
+                    showSelectionAction
+                  />
                   {responsibleUser && (
                     <div className="flex flex-wrap gap-2 rounded-xl bg-base-200/50 p-2">
                       <button
@@ -640,44 +714,22 @@ function ObjectsPage() {
 
                 <div className="flex flex-col gap-2">
                   <p className="text-sm font-medium">Дополнительные сотрудники</p>
-                  <div className="relative">
-                    <input
-                      className="input w-full focus:border-[#ff4539] focus:outline-none"
-                      placeholder="Поиск по имени..."
-                      value={workerSearch}
-                      onChange={(e) => setWorkerSearch(e.target.value)}
-                      onFocus={() => setWorkerDropdownOpen(true)}
-                      onBlur={() => setTimeout(() => setWorkerDropdownOpen(false), 150)}
-                      aria-label="Поиск по имени сотрудника"
-                    />
-                    {workerDropdownOpen && (
-                      <div className="absolute left-0 right-0 z-20 mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-200 bg-white shadow-lg">
-                        {filteredWorkers.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-base-content/60">Не найдено сотрудников.</div>
-                        ) : (
-                          filteredWorkers.map((user) => (
-                            <button
-                              type="button"
-                              key={user.id}
-                              className={`flex w-full items-center justify-between gap-3 border-b border-base-200 px-4 py-3 text-left transition ${
-                                selectedWorkerIds.includes(user.id) ? 'bg-primary/10' : 'hover:bg-base-200'
-                              }`}
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => toggleWorker(user.id)}
-                            >
-                              <div>
-                                <div className="font-medium text-slate-900">{user.full_name}</div>
-                                <div className="text-xs text-slate-600">{getWorkerRoleLabel(user.role)}</div>
-                              </div>
-                              <span className={`badge ${selectedWorkerIds.includes(user.id) ? 'badge-primary' : 'badge-outline'}`}>
-                                {selectedWorkerIds.includes(user.id) ? 'Выбрано' : 'Выбрать'}
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <SearchableSelect
+                    searchValue={workerSearch}
+                    onSearchChange={setWorkerSearch}
+                    onSelect={(value) => toggleWorker(Number(value))}
+                    selectedValues={selectedWorkerIds.map(String)}
+                    options={filteredWorkers.map((user) => ({
+                      value: String(user.id),
+                      label: user.full_name,
+                      description: getWorkerRoleLabel(user.role),
+                    }))}
+                    placeholder="Поиск по имени..."
+                    ariaLabel="Поиск по имени сотрудника"
+                    emptyMessage="Не найдено сотрудников."
+                    closeOnSelect={false}
+                    showSelectionAction
+                  />
                   {selectedWorkerIds.length > 0 && (
                     <div className="flex flex-wrap gap-2 rounded-xl bg-base-200/50 p-2">
                       {selectedWorkerIds.map((id) => {
@@ -715,8 +767,6 @@ function ObjectsPage() {
                   setStartDateInput(formatDateInputValue(todayDateValue))
                   setEndDateInput('')
                   setWorkerSearch('')
-                  setResponsibleDropdownOpen(false)
-                  setWorkerDropdownOpen(false)
                 }}
                 disabled={creating}
               >

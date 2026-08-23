@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from httpx import AsyncClient
 
 from app.modules.tasks.models import ObjectTaskStatus, TaskChildrenMode
+from app.modules.tasks.stages import ProjectStage
 from app.modules.users.models import UserRole
 from tests.conftest import auth_headers, login
 
@@ -619,3 +620,89 @@ async def test_post_task_update_alias_can_set_deadline_and_count_overdue(
     assert len(overdue_tasks_response.json()) == 1
     assert cleared_response.status_code == 200
     assert cleared_response.json()["deadline"] is None
+
+
+async def test_project_stages_are_fixed_and_include_stage_stats(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    root = await create_task_template(
+        title="Рабочая документация",
+        source_id="documentation",
+        stage=ProjectStage.DOCUMENTATION_APPROVALS,
+    )
+    await create_task_template(
+        title="Согласовать РД",
+        parent_id=root.id,
+        source_id="approve-documentation",
+        parent_source_id="documentation",
+        depth=1,
+        stage=ProjectStage.DOCUMENTATION_APPROVALS,
+    )
+    token = await login(client, email="admin@example.com")
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(token),
+        json=object_payload(),
+    )
+
+    stages_response = await client.get(
+        f"/api/v1/objects/{create_response.json()['id']}/stages",
+        headers=auth_headers(token),
+    )
+
+    assert stages_response.status_code == 200
+    stages = stages_response.json()
+    assert len(stages) == 8
+    assert [stage["order"] for stage in stages] == list(range(1, 9))
+    documentation = next(
+        stage
+        for stage in stages
+        if stage["code"] == ProjectStage.DOCUMENTATION_APPROVALS
+    )
+    assert documentation["stats"] == {
+        "total": 1,
+        "done": 0,
+        "todo": 1,
+        "in_progress": 0,
+        "overdue": 0,
+    }
+
+
+async def test_task_update_rejects_stale_version(
+    client: AsyncClient,
+    create_test_user,
+    create_task_template,
+) -> None:
+    await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    await create_task_template(title="Versioned task", source_id="versioned")
+    token = await login(client, email="admin@example.com")
+    create_response = await client.post(
+        "/api/v1/objects",
+        headers=auth_headers(token),
+        json=object_payload(),
+    )
+    object_id = create_response.json()["id"]
+    tasks_response = await client.get(
+        f"/api/v1/objects/{object_id}/tasks",
+        headers=auth_headers(token),
+    )
+    task = tasks_response.json()[0]
+
+    update_response = await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{task['id']}",
+        headers=auth_headers(token),
+        json={"title": "Updated title", "expected_version": task["version"]},
+    )
+    stale_response = await client.patch(
+        f"/api/v1/objects/{object_id}/tasks/{task['id']}",
+        headers=auth_headers(token),
+        json={"title": "Stale title", "expected_version": task["version"]},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["version"] == task["version"] + 1
+    assert stale_response.status_code == 409
+    assert stale_response.json()["detail"]["current_version"] == task["version"] + 1

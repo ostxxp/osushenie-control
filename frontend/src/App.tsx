@@ -1,18 +1,21 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import LoginPage from '@pages/LoginPage'
-import DashboardPage from '@pages/DashboardPage'
-import ObjectsPage from '@pages/ObjectsPage'
-import ObjectDetailsPage from '@pages/ObjectDetailsPage'
-import ObjectTasksPage from '@pages/ObjectTasksPage'
-import ObjectEmployeesPage from '@pages/ObjectEmployeesPage'
-import UsersPage from '@pages/UsersPage'
-import NotificationsPage from '@pages/NotificationsPage'
-import AiChatPage from '@pages/AiChatPage'
-import SettingsPage from '@pages/SettingsPage'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import Layout from './components/Layout'
 import { AUTH_EXPIRED_EVENT, AuthContext, authService } from '@services/auth'
 import type { UserRole } from '@/types'
+
+const LoginPage = lazy(() => import('@pages/LoginPage'))
+const DashboardPage = lazy(() => import('@pages/DashboardPage'))
+const ObjectsPage = lazy(() => import('@pages/ObjectsPage'))
+const ObjectDetailsPage = lazy(() => import('@pages/ObjectDetailsPage'))
+const ObjectTasksPage = lazy(() => import('@pages/ObjectTasksPage'))
+const ObjectEmployeesPage = lazy(() => import('@pages/ObjectEmployeesPage'))
+const UsersPage = lazy(() => import('@pages/UsersPage'))
+const NotificationsPage = lazy(() => import('@pages/NotificationsPage'))
+const AiChatPage = lazy(() => import('@pages/AiChatPage'))
+const SettingsPage = lazy(() => import('@pages/SettingsPage'))
+const WorkItemsPage = lazy(() => import('@pages/WorkItemsPage'))
+const ActivityPage = lazy(() => import('@pages/ActivityPage'))
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -53,6 +56,7 @@ function App() {
   return (
     <AuthContext.Provider value={{ isAuthenticated, userRole, setIsAuthenticated, setUserRole }}>
       <Router>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><span className="loading loading-spinner text-primary" /></div>}>
         <Routes>
           <Route
             path="/login"
@@ -65,6 +69,8 @@ function App() {
             <Route path="/objects/:id/tasks" element={<ObjectTasksPage />} />
             <Route path="/objects/:id/tasks/:taskId" element={<ObjectTasksPage />} />
             <Route path="/objects/:id/employees" element={<ObjectEmployeesPage />} />
+            <Route path="/tasks/my" element={<WorkItemsPage />} />
+            <Route path="/activity" element={<ActivityPage />} />
             <Route
               path="/users"
               element={userRole === 'admin' ? <UsersPage /> : <Navigate to="/" replace />}
@@ -80,6 +86,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>
+        </Suspense>
       </Router>
     </AuthContext.Provider>
   )

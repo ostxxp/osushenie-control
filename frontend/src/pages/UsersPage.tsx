@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { getStoredAvatarUrl, photoApi, userApi } from '@services/api'
+import { StyledSelect } from '@/components'
 import type { User, UserRole } from '@/types'
 
 type UserFormState = {
@@ -35,12 +36,27 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
   )
 }
 
+function normalizeErrorMessage(message: string): string {
+  const normalized = message.replace(/^value error,\s*/i, '').trim()
+
+  if (/^value is not a valid email address/i.test(normalized)) {
+    return 'Введите корректный email в формате name@example.com.'
+  }
+
+  const translations: Record<string, string> = {
+    'User with this email already exists.': 'Пользователь с таким email уже существует.',
+    'Field required': 'Заполните обязательное поле.',
+  }
+
+  return translations[normalized] || normalized
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   const detail = (error as { response?: { data?: { detail?: unknown } }; message?: unknown })?.response?.data?.detail
     ?? (error as { message?: unknown })?.message
 
   if (typeof detail === 'string') {
-    return detail
+    return normalizeErrorMessage(detail)
   }
 
   if (Array.isArray(detail)) {
@@ -49,14 +65,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
         if (typeof item === 'string') return item
         if (item && typeof item === 'object' && 'msg' in item) {
           const maybeMsg = (item as { msg?: unknown }).msg
-          return typeof maybeMsg === 'string' ? maybeMsg : JSON.stringify(item)
+          return typeof maybeMsg === 'string' ? normalizeErrorMessage(maybeMsg) : JSON.stringify(item)
         }
         return JSON.stringify(item)
       })
       .filter(Boolean)
 
     if (messages.length > 0) {
-      return messages.join(', ')
+      return messages.join('\n')
     }
   }
 
@@ -99,7 +115,9 @@ function UsersPage() {
             roleLabel[user.role].toLowerCase().includes(query)
           )
         })
-        .sort((first, second) => second.id - first.id),
+        .sort((first, second) => (
+          Number(second.is_active) - Number(first.is_active) || second.id - first.id
+        )),
     [search, users],
   )
 
@@ -245,6 +263,11 @@ function UsersPage() {
       return 'Пароль должен содержать минимум 8 символов.'
     }
 
+    const phoneNumber = userForm.phone_number.trim()
+    if (phoneNumber && (phoneNumber.match(/\d/g)?.length ?? 0) !== 11) {
+      return 'Номер телефона должен содержать ровно 11 цифр.'
+    }
+
     return ''
   }
 
@@ -332,13 +355,13 @@ function UsersPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold sm:text-3xl">Пользователи</h1>
-      </div>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm sm:p-4">
+        <div className="px-4 lg:px-3 2xl:px-5">
+          <h1 className="text-2xl font-semibold sm:text-3xl">Пользователи</h1>
+        </div>
 
-      <div className="flex flex-col gap-4 rounded-[1.75rem] border border-base-200 bg-base-100 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 px-[calc(0.75rem+1px)] sm:flex-row sm:items-center sm:justify-between 2xl:px-[calc(1.25rem+1px)]">
+        <div className="flex flex-col gap-3 px-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-start lg:px-3 2xl:px-5">
           <div className="flex-none w-full max-w-sm">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-700">
@@ -368,7 +391,7 @@ function UsersPage() {
             </div>
             <p className="mt-2 text-sm text-base-content/70">Поиск по имени, должности, телефону или email.</p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-start">
             {search && (
               <span className="badge badge-outline h-auto shrink-0 whitespace-nowrap px-3 py-2">
                 Найдено {filteredUsers.length}
@@ -384,12 +407,57 @@ function UsersPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100">
+        <div className="space-y-3 lg:hidden">
+          {filteredUsers.map((user) => (
+            <article key={user.id} className="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                {avatarUrls[user.id] ? (
+                  <span className="h-12 w-12 shrink-0 overflow-hidden rounded-full">
+                    <img src={avatarUrls[user.id]} alt={`Фото ${user.full_name}`} className="h-full w-full object-cover" />
+                  </span>
+                ) : (
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-base-200 font-semibold text-base-content/70" aria-hidden="true">
+                    {user.full_name.trim().charAt(0).toUpperCase() || '?'}
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="break-words font-semibold text-slate-900">{user.full_name}</div>
+                  <div className="mt-1 text-sm text-base-content/60">{roleLabel[user.role]}</div>
+                </div>
+                <span className={`badge h-auto shrink-0 border px-2 py-1 text-xs ${user.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'badge-ghost'}`}>
+                  {user.is_active ? 'Работает' : 'Не активен'}
+                </span>
+              </div>
+
+              <dl className="mt-4 grid gap-3 border-t border-base-200 pt-4 text-sm">
+                <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
+                  <dt className="text-base-content/55">Телефон</dt>
+                  <dd className="whitespace-nowrap font-medium text-slate-800">{user.phone_number || '—'}</dd>
+                </div>
+                <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
+                  <dt className="text-base-content/55">Email</dt>
+                  <dd className="min-w-0 break-all font-medium text-slate-800">{user.email}</dd>
+                </div>
+              </dl>
+
+              <button type="button" className="btn btn-ghost mt-4 w-full border border-base-200" onClick={() => openEditModal(user)}>
+                Редактировать
+              </button>
+            </article>
+          ))}
+          {filteredUsers.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/70">
+              Пользователей не найдено.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100 lg:block">
           <table className="w-full table-fixed text-left">
             <colgroup>
-              <col className="w-[22%]" />
+              <col className="w-[20%]" />
               <col className="w-[16%]" />
-              <col className="w-[14%]" />
+              <col className="w-[16%]" />
               <col className="w-[18%]" />
               <col className="w-[13%]" />
               <col className="w-[17%]" />
@@ -398,7 +466,7 @@ function UsersPage() {
               <tr>
                 <th className="px-3 py-3 2xl:px-5">Имя</th>
                 <th className="whitespace-nowrap px-3 py-3 2xl:px-5">Должность</th>
-                <th className="px-3 py-3 2xl:px-5">Телефон</th>
+                <th className="whitespace-nowrap px-3 py-3 2xl:px-5">Телефон</th>
                 <th className="px-3 py-3 2xl:px-5">Email</th>
                 <th className="px-3 py-3 2xl:px-5">Статус</th>
                 <th className="px-3 py-3 text-right 2xl:px-5">Действие</th>
@@ -433,18 +501,14 @@ function UsersPage() {
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm 2xl:px-5">{roleLabel[user.role]}</td>
-                  <td className="break-words px-3 py-3 2xl:px-5">{user.phone_number || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-sm 2xl:px-5">{user.phone_number || '—'}</td>
                   <td className="break-words px-3 py-3 2xl:px-5">{user.email}</td>
                   <td className="px-3 py-3 2xl:px-5">
-                    <span
-                      className={`badge border ${
-                        user.is_active
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'badge-ghost'
-                      }`}
-                    >
-                      {user.is_active ? 'Работает' : 'Не активен'}
-                    </span>
+                    {user.is_active ? (
+                      <span className="badge border border-emerald-200 bg-emerald-50 text-emerald-700">Работает</span>
+                    ) : (
+                      <span className="text-sm text-base-content/70">Не активен</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right 2xl:px-5">
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => openEditModal(user)}>
@@ -471,7 +535,15 @@ function UsersPage() {
             <h2 className="text-xl font-semibold">
               {modalMode === 'create' ? 'Создать пользователя' : 'Редактировать пользователя'}
             </h2>
-            {formError && <div className="alert alert-error">{formError}</div>}
+            {formError && (
+              <div role="alert" className="flex gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-100 font-bold" aria-hidden="true">!</span>
+                <div className="min-w-0">
+                  <div className="font-semibold">Не удалось сохранить пользователя</div>
+                  <div className="mt-1 whitespace-pre-line text-sm text-red-700">{formError}</div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Ф.И.О. *</span>
@@ -496,6 +568,7 @@ function UsersPage() {
                 <input
                   className="input w-full focus:border-[#ff4539] focus:outline-none"
                   placeholder="+7 999 123-45-67"
+                  inputMode="tel"
                   value={userForm.phone_number}
                   onChange={(e) => handleChange('phone_number', e.target.value)}
                 />
@@ -514,14 +587,12 @@ function UsersPage() {
               </label>
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Должность</span>
-                <select
-                  className="select w-full focus:border-[#ff4539] focus:outline-none"
+                <StyledSelect
+                  className="w-full"
                   value={userForm.role}
-                  onChange={(e) => handleChange('role', e.target.value as UserRole)}
-                >
-                  <option value="chief_engineer">Инженер</option>
-                  <option value="foreman">Прораб</option>
-                </select>
+                  onChange={(value) => handleChange('role', value as UserRole)}
+                  options={[{ value: 'chief_engineer', label: 'Инженер' }, { value: 'foreman', label: 'Прораб' }]}
+                />
               </label>
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">Статус</span>

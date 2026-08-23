@@ -168,6 +168,12 @@ function ObjectEmployeesPage() {
     () => new Set(responsibleUsers.map((user) => user.id)),
     [responsibleUsers],
   )
+  const sortedEmployees = useMemo(
+    () => [...employees].sort((first, second) => (
+      Number(responsibleUserIds.has(second.id)) - Number(responsibleUserIds.has(first.id))
+    )),
+    [employees, responsibleUserIds],
+  )
 
   const availableResponsibleUsers = useMemo(() => {
     const query = responsibleSearch.trim().toLowerCase()
@@ -403,7 +409,40 @@ function ObjectEmployeesPage() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          <div className="space-y-3 p-4 lg:hidden">
+            {sortedEmployees.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/70">Сотрудники не найдены.</div>
+            ) : sortedEmployees.map((employee) => (
+              <article key={employee.id} className="rounded-2xl border border-base-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  {avatarUrls[employee.id] ? (
+                    <span className="size-12 shrink-0 overflow-hidden rounded-full"><img src={avatarUrls[employee.id]} alt={`Фото ${employee.full_name}`} className="size-full object-cover" /></span>
+                  ) : (
+                    <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-base-200 font-semibold text-base-content/70" aria-hidden="true">{employee.full_name.trim().charAt(0).toUpperCase() || '?'}</span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-900">
+                      <span className="break-words">{employee.full_name}</span>
+                      {responsibleUserIds.has(employee.id) && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Ответственный</span>}
+                    </div>
+                    <div className="mt-1 text-sm text-base-content/60">{roleLabel[employee.role]}</div>
+                  </div>
+                </div>
+                <dl className="mt-4 grid gap-3 border-t border-base-200 pt-4 text-sm">
+                  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3"><dt className="text-base-content/55">Телефон</dt><dd className="whitespace-nowrap font-medium">{employee.phone_number || '—'}</dd></div>
+                  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3"><dt className="text-base-content/55">Email</dt><dd className="break-all font-medium">{employee.email}</dd></div>
+                </dl>
+                {canManageEmployees && employee.role !== 'admin' && (
+                  <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    {responsibleUserIds.has(employee.id) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleUnsetResponsible(employee.id)} disabled={responsibilityUpdatingUserId !== null}>{responsibilityUpdatingUserId === employee.id ? 'Снятие...' : 'Снять ответственность'}</button>}
+                    <button type="button" className="btn btn-ghost btn-sm text-error" onClick={() => handleUnassign(employee.id)}>Удалить</button>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto lg:block">
             <table className={`w-full table-fixed text-left ${canManageEmployees ? 'min-w-[1050px]' : 'min-w-[820px]'}`}>
               <colgroup>
                 <col className={canManageEmployees ? 'w-[24%]' : 'w-[32%]'} />
@@ -431,7 +470,7 @@ function ObjectEmployeesPage() {
                     </td>
                   </tr>
                 ) : (
-                  employees.map((employee) => (
+                  sortedEmployees.map((employee) => (
                     <tr key={employee.id} className="border-t border-base-200 align-middle hover:bg-base-100">
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
@@ -588,7 +627,7 @@ function ObjectEmployeesPage() {
             </div>
             {assignError && <div className="alert alert-error">{assignError}</div>}
             <input
-              className="input w-full"
+              className="input w-full border-base-300 focus:!border-[#ff4539] focus:outline-none focus:ring-2 focus:ring-[#ff4539]/20"
               placeholder="Поиск по имени, email или телефону..."
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
@@ -613,7 +652,7 @@ function ObjectEmployeesPage() {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-sm btn-primary"
+                      className="btn btn-sm border-0 bg-[#ff4539] text-white hover:bg-[#cc372e] focus:ring-2 focus:ring-[#ff4539]/30"
                       disabled={assigningUserId === user.id}
                       onClick={() => handleAssign(user.id)}
                     >
@@ -623,7 +662,7 @@ function ObjectEmployeesPage() {
                 ))
               )}
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end pr-4">
               <button type="button" className="btn" onClick={() => setShowAddUser(false)}>
                 Закрыть
               </button>

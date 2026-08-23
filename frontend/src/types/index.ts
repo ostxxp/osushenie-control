@@ -62,7 +62,7 @@ export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'completed'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
 // Object Tasks
-export type ObjectTaskStatus = 'todo' | 'in_progress' | 'done' | 'skipped' | 'not_applicable'
+export type ObjectTaskStatus = 'todo' | 'in_progress' | 'pending_review' | 'rejected' | 'done' | 'skipped' | 'not_applicable'
 export type TaskChildrenMode = 'all' | 'single_choice'
 
 export type NotificationType =
@@ -90,16 +90,23 @@ export interface ObjectTask {
   object_id: number
   parent_id: number | null
   template_id?: number | null
+  selected_child_id?: number | null
   title: string
   status: ObjectTaskStatus
   children_mode: TaskChildrenMode
+  stage?: string | null
   depth: number
   sort_order: number
   is_active: boolean
+  version: number
   deadline: string | null
   completed_at: string | null
   completed_by_id: number | null
   completed_by?: User
+  assigned_to_id: number | null
+  assigned_to?: User | null
+  reviewer_id: number | null
+  reviewer?: User | null
   created_at: string
   updated_at: string
 }
@@ -112,6 +119,62 @@ export interface ObjectTaskUpsertPayload {
   status?: ObjectTaskStatus
   is_active?: boolean
   deadline?: string | null
+  expected_version?: number
+}
+
+export interface ProjectStageSummary {
+  code: string
+  title: string
+  order: number
+  stats: { total: number; done: number; todo: number; in_progress: number; overdue: number }
+}
+
+export interface CurrentStep {
+  task: ObjectTask | null
+  stage: string | null
+  stage_title: string | null
+  stage_order: number | null
+  action_required_by: User | null
+  flag: 'normal' | 'due_soon' | 'overdue'
+  days_remaining: number | null
+}
+
+export interface TaskAttachment {
+  id: number
+  task_id: number
+  uploaded_by_id: number | null
+  original_filename: string
+  mime_type: string
+  size_bytes: number
+  file_url: string
+  created_at: string
+}
+
+export interface MyTask extends ObjectTask {
+  main_task_id: number
+  main_task_title: string
+  origin_path: string[]
+  object_name: string
+  object_address: string
+  flag: CurrentStep['flag']
+  days_remaining: number | null
+}
+
+export interface Page<T> { items: T[]; total: number; limit: number; offset: number }
+
+export interface TaskActivity {
+  id: number
+  object_id: number | null
+  object_name: string
+  task_id: number | null
+  task_title: string
+  actor_user_id: number | null
+  actor_full_name: string | null
+  action: string
+  from_status: ObjectTaskStatus | null
+  to_status: ObjectTaskStatus | null
+  details: Record<string, unknown>
+  created_at: string
 }
 
 export interface ObjectTaskTree extends ObjectTask {
@@ -151,6 +214,8 @@ export interface ObjectSummary extends ConstructionObject {
   }
   progress: number
   photos: ObjectPhotoSummary[]
+  responsible_users: User[]
+  current_step: CurrentStep
 }
 
 export interface ObjectTaskStats {

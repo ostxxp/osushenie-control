@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.modules.users.schemas import UserCreate, UserRead, UserUpdate
-from app.modules.users.service import create_user, get_user_by_email
+from app.modules.users.service import create_user, deactivate_user, get_user_by_email
 
 from app.modules.users.models import User
 from sqlalchemy import select
@@ -123,8 +123,14 @@ async def update_user_endpoint(
         _raise_if_self_target(
             current_user,
             user,
-            "You cannot deactivate your own account.",
+            "Нельзя деактивировать собственную учётную запись.",
         )
+        await deactivate_user(
+            db,
+            user=user,
+            actor_user_id=current_user.id,
+        )
+        update_data.pop("is_active")
 
     if "email" in update_data:
         existing_user = await get_user_by_email(db=db, email=update_data["email"])
@@ -175,10 +181,14 @@ async def deactivate_user_endpoint(
     _raise_if_self_target(
         current_user,
         user,
-        "You cannot deactivate your own account.",
+        "Нельзя деактивировать собственную учётную запись.",
     )
 
-    user.is_active = False
+    await deactivate_user(
+        db,
+        user=user,
+        actor_user_id=current_user.id,
+    )
     await db.commit()
     await db.refresh(user)
 

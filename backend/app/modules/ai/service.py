@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.modules.ai.schemas import AIChatMessage
-from app.modules.notifications.models import Notifications
+from app.modules.task_activity.models import TaskActivity
 from app.modules.objects.models import ConstructionObject, ObjectToUser
 from app.modules.photos.models import Photo
 from app.modules.tasks.models import ObjectTask, ObjectTaskStatus
@@ -120,9 +120,9 @@ async def _build_objects_context(db: AsyncSession) -> str:
     objects_by_id = {obj.id: obj for obj in objects}
 
     action_history_result = await db.execute(
-        select(Notifications)
-        .where(Notifications.object_id.in_(object_ids))
-        .order_by(Notifications.created_at.desc(), Notifications.id.desc())
+        select(TaskActivity)
+        .where(TaskActivity.object_id.in_(object_ids))
+        .order_by(TaskActivity.created_at.desc(), TaskActivity.id.desc())
         .limit(AI_CONTEXT_ACTION_HISTORY_LIMIT)
     )
     action_history = list(action_history_result.scalars().all())
@@ -283,14 +283,20 @@ async def _build_objects_context(db: AsyncSession) -> str:
     lines.append("История действий:")
     if action_history:
         for action in action_history:
-            actor = users_by_id.get(action.user_id)
-            actor_name = actor.full_name if actor is not None else f"Пользователь #{action.user_id}"
+            actor = users_by_id.get(action.actor_user_id)
+            actor_name = (
+                actor.full_name
+                if actor is not None
+                else f"Пользователь #{action.actor_user_id}"
+            )
             obj = objects_by_id.get(action.object_id)
             object_name = obj.name if obj is not None else f"Объект #{action.object_id}"
             lines.append(
                 f"- action_id={action.id}; created_at={_format_datetime(action.created_at)}; "
                 f"actor={actor_name}; object_id={action.object_id}; object_name={object_name}; "
-                f"type={action.type}; message={action.message}"
+                f"task_id={action.task_id}; task_title={action.task_title}; "
+                f"action={action.action}; from_status={action.from_status}; "
+                f"to_status={action.to_status}; details={action.details}"
             )
     else:
         lines.append("- действий пока нет")

@@ -16,6 +16,12 @@ import type {
   NotificationLog,
   AIChatMessage,
   AIChatResponse,
+  CurrentStep,
+  MyTask,
+  Page,
+  ProjectStageSummary,
+  TaskActivity,
+  TaskAttachment,
 } from '@/types'
 
 export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
@@ -39,6 +45,8 @@ type PhotoMetadata = {
 const avatarCacheName = 'user-avatars-v1'
 const avatarCacheKey = (userId: number) => `/__avatar-cache/users/${userId}`
 const avatarStorageKey = (userId: number) => `user-avatar:${userId}`
+const avatarMemoryCache = new Map<number, Blob | null>()
+const avatarRequests = new Map<number, Promise<Blob | null>>()
 
 export const getStoredAvatarUrl = (userId: number): string => {
   try {
@@ -97,6 +105,8 @@ export const getAllStoredAvatarUrls = (): Record<number, string> => {
 }
 
 const deleteCachedAvatar = async (userId: number): Promise<void> => {
+  avatarMemoryCache.delete(userId)
+  avatarRequests.delete(userId)
   try {
     localStorage.removeItem(avatarStorageKey(userId))
   } catch {
@@ -240,25 +250,41 @@ export const photoApi = {
     await authApi.delete(`/photos/${photoId}`)
   },
   getUserAvatar: async (userId: number): Promise<Blob | null> => {
-    if (!('caches' in window)) return fetchUserAvatar(userId)
+    if (avatarMemoryCache.has(userId)) return avatarMemoryCache.get(userId) ?? null
 
-    const cache = await caches.open(avatarCacheName)
-    const cachedResponse = await cache.match(avatarCacheKey(userId))
-    if (cachedResponse) {
-      const avatar = await cachedResponse.blob()
-      if (!getStoredAvatarUrl(userId)) await storeAvatarUrl(userId, avatar)
+    const pendingRequest = avatarRequests.get(userId)
+    if (pendingRequest) return pendingRequest
+
+    const request = (async () => {
+      if (!('caches' in window)) return fetchUserAvatar(userId)
+
+      const cache = await caches.open(avatarCacheName)
+      const cachedResponse = await cache.match(avatarCacheKey(userId))
+      if (cachedResponse) {
+        const avatar = await cachedResponse.blob()
+        if (!getStoredAvatarUrl(userId)) await storeAvatarUrl(userId, avatar)
+        return avatar
+      }
+
+      const avatar = await fetchUserAvatar(userId)
+      if (avatar) {
+        await storeAvatarUrl(userId, avatar)
+        await cache.put(
+          avatarCacheKey(userId),
+          new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
+        )
+      }
       return avatar
-    }
+    })()
 
-    const avatar = await fetchUserAvatar(userId)
-    if (avatar) {
-      await storeAvatarUrl(userId, avatar)
-      await cache.put(
-        avatarCacheKey(userId),
-        new Response(avatar, { headers: { 'Content-Type': avatar.type || 'image/jpeg' } }),
-      )
+    avatarRequests.set(userId, request)
+    try {
+      const avatar = await request
+      if (avatarRequests.get(userId) === request) avatarMemoryCache.set(userId, avatar)
+      return avatar
+    } finally {
+      if (avatarRequests.get(userId) === request) avatarRequests.delete(userId)
     }
-    return avatar
   },
 }
 
@@ -270,6 +296,10 @@ const normalizeTask = (task: ObjectTaskTree, options: { hideNotApplicable: boole
 })
 
 export const objectApi = {
+  getStages: async (objectId: number): Promise<ProjectStageSummary[]> =>
+    (await authApi.get(`/objects/${objectId}/stages`)).data,
+  getCurrentStep: async (objectId: number): Promise<CurrentStep> =>
+    (await authApi.get(`/objects/${objectId}/current-step`)).data,
   getAll: async (): Promise<ConstructionObject[]> => {
     const response = await authApi.get('/objects')
     return response.data
@@ -398,9 +428,23 @@ export const objectApi = {
     return response.data
   },
   updateTask: async (objectId: number, taskId: number, task: ObjectTaskUpsertPayload): Promise<ObjectTask> => {
-    const response = await authApi.post(`/objects/${objectId}/tasks/${taskId}`, task)
+    const response = await authApi.patch(`/objects/${objectId}/tasks/${taskId}`, task)
     return response.data
   },
+  selectBranch: async (objectId: number, taskId: number, childId: number, expectedVersion: number) =>
+    (await authApi.put(`/objects/${objectId}/tasks/${taskId}/branch`, { child_id: childId, expected_version: expectedVersion })).data as ObjectTask,
+  clearBranch: async (objectId: number, taskId: number) =>
+    (await authApi.delete(`/objects/${objectId}/tasks/${taskId}/branch`)).data as ObjectTask,
+  getAttachments: async (objectId: number, taskId: number): Promise<TaskAttachment[]> =>
+    (await authApi.get(`/objects/${objectId}/tasks/${taskId}/attachments`)).data,
+  uploadAttachment: async (objectId: number, taskId: number, file: File): Promise<TaskAttachment> => {
+    const data = new FormData(); data.append('file', file)
+    return (await authApi.post(`/objects/${objectId}/tasks/${taskId}/attachments`, data)).data
+  },
+  downloadAttachment: async (objectId: number, taskId: number, attachmentId: number): Promise<Blob> =>
+    (await authApi.get(`/objects/${objectId}/tasks/${taskId}/attachments/${attachmentId}/file`, { responseType: 'blob' })).data,
+  deleteAttachment: async (objectId: number, taskId: number, attachmentId: number) =>
+    authApi.delete(`/objects/${objectId}/tasks/${taskId}/attachments/${attachmentId}`),
   unassignResponsibleFromObject: async (objectId: number, userId: number): Promise<ConstructionObject> => {
     const response = await authApi.patch(`/objects/${objectId}/unassign/${userId}/responsible`)
     return response.data
@@ -424,6 +468,16 @@ export const objectApi = {
       return objectApi.toggleTaskStatus(objectId, taskId)
     }
   },
+}
+
+export const workApi = {
+  getMy: async (params: Record<string, string | number | undefined>): Promise<Page<MyTask>> =>
+    (await authApi.get('/tasks/my', { params })).data,
+}
+
+export const activityApi = {
+  getAll: async (params: Record<string, string | number | undefined>): Promise<Page<TaskActivity>> =>
+    (await authApi.get('/activity', { params })).data,
 }
 
 export const taskApi = {

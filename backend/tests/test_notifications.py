@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.notifications.models import (
@@ -21,6 +21,10 @@ def object_payload(name: str = "Object") -> dict:
         "start_date": "2026-01-01",
         "end_date": None,
     }
+
+
+def test_notification_message_has_no_short_varchar_limit() -> None:
+    assert isinstance(Notifications.__table__.c.message.type, Text)
 
 
 async def create_notification(
@@ -334,7 +338,7 @@ async def test_delete_all_notifications_removes_only_current_user_receipts(
     assert len(chief_list_response.json()) == 2
 
 
-async def test_foreman_cannot_access_notifications(
+async def test_foreman_can_access_own_notifications(
     client: AsyncClient,
     create_test_user,
 ) -> None:
@@ -346,7 +350,8 @@ async def test_foreman_cannot_access_notifications(
         headers=auth_headers(foreman_token),
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 async def test_task_status_change_notifies_admins_and_chief_engineers(
