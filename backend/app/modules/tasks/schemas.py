@@ -34,11 +34,11 @@ class ObjectTaskStatusUpdate(BaseModel):
 
 class ObjectTaskAssignmentUpdate(BaseModel):
     assigned_to_id: int | None = None
-    reviewer_id: int | None = None
+    expected_version: int = Field(ge=1)
 
 
-class ObjectTaskReject(BaseModel):
-    reason: str = Field(min_length=1, max_length=500)
+class ObjectTaskAction(BaseModel):
+    expected_version: int = Field(ge=1)
 
 
 class ObjectTaskBranchSelect(BaseModel):
@@ -66,13 +66,6 @@ class ObjectTaskRead(BaseModel):
     completed_by: UserRead | None = None
     assigned_to_id: int | None
     assigned_to: UserRead | None = None
-    reviewer_id: int | None
-    reviewer: UserRead | None = None
-    submitted_at: datetime | None
-    reviewed_at: datetime | None
-    reviewed_by_id: int | None
-    reviewed_by: UserRead | None = None
-    rejection_reason: str | None
     not_applicable_reason: str | None
     created_at: datetime
     updated_at: datetime
