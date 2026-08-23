@@ -52,7 +52,7 @@ export default function SearchableSelect({
       <input
         ref={inputRef}
         type="text"
-        className="h-10 w-full rounded-xl border border-base-300 bg-white px-3 pr-9 text-sm text-slate-900 outline-none transition placeholder:text-base-content/50 hover:border-slate-400 focus:border-[#ff4539] focus:ring-2 focus:ring-[#ff4539]/15"
+        className="h-10 w-full rounded-xl border border-base-300 bg-white px-3 pr-9 text-left text-sm text-slate-900 outline-none transition placeholder:text-base-content/50 hover:border-slate-400 focus:border-[#ff4539] focus:ring-2 focus:ring-[#ff4539]/15"
         value={searchValue}
         onChange={(event) => {
           onSearchChange(event.target.value)
@@ -79,7 +79,7 @@ export default function SearchableSelect({
       </svg>
 
       {open && (
-        <div className="absolute left-0 right-0 z-50 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-base-200 bg-white p-1.5 shadow-xl" role="listbox">
+        <div className="absolute left-0 z-50 mt-2 max-h-64 w-max min-w-full max-w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-base-200 bg-white p-1.5 shadow-xl" role="listbox">
           {options.length === 0 ? (
             <div className="px-3 py-2.5 text-sm text-base-content/60">{emptyMessage}</div>
           ) : options.map((option) => {
@@ -99,8 +99,8 @@ export default function SearchableSelect({
                 }}
               >
                 <span className="min-w-0">
-                  <span className={`block truncate ${isSelected ? 'font-semibold' : 'font-medium'}`}>{option.label}</span>
-                  {option.description && <span className="block truncate text-xs text-slate-500">{option.description}</span>}
+                  <span className={`block whitespace-normal break-words ${isSelected ? 'font-semibold' : 'font-medium'}`}>{option.label}</span>
+                  {option.description && <span className="block whitespace-normal break-words text-xs text-slate-500">{option.description}</span>}
                 </span>
                 {showSelectionAction && (
                   <span className={`badge shrink-0 ${isSelected ? 'badge-primary' : 'badge-outline'}`}>

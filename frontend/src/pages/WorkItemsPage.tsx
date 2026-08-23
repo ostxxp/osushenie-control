@@ -174,7 +174,7 @@ export default function WorkItemsPage() {
             <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-base-content/50">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-3.35-3.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
             </span>
-            <input className="input h-10 min-h-0 w-full rounded-lg border-base-300 bg-white pl-9 text-sm focus:border-[#ff4539] focus:outline-none" value={search} onChange={(event) => update('search', event.target.value)} placeholder="Название задачи" aria-label="Поиск по названию задачи" />
+            <input className="h-10 w-full rounded-lg border border-base-300 bg-white pl-9 pr-3 text-left text-sm text-slate-900 outline-none transition placeholder:text-left placeholder:text-base-content/50 hover:border-slate-400 focus:border-[#ff4539] focus:ring-2 focus:ring-[#ff4539]/15" value={search} onChange={(event) => update('search', event.target.value)} placeholder="Название задачи" aria-label="Поиск по названию задачи" />
           </div>
 
           <SearchableSelect

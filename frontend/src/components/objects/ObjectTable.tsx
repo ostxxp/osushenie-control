@@ -57,9 +57,9 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
         <colgroup>
           <col className="w-[20%]" />
           <col className="w-[15%]" />
-          <col className="w-[24%]" />
+          <col className="w-[27%]" />
           <col className="w-[14%]" />
-          <col className="w-[14%]" />
+          <col className="w-[11%]" />
           <col className="w-[13%]" />
         </colgroup>
         <thead className="bg-base-200 text-sm text-black">

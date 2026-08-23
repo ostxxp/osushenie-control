@@ -694,14 +694,19 @@ function ObjectTasksPage() {
       const groupedStatus = taskStatusFilter === 'done' || taskStatusFilter === 'todo' || taskStatusFilter === 'overdue'
         ? taskStatusFilter
         : null
+      const isGroupedStatusPage = groupedStatus !== null
+      const statusGroupsRequest = groupedStatus
+        ? objectApi.getTaskGroups(objectId, groupedStatus, selectedTaskId ?? undefined).catch(() => [])
+        : Promise.resolve([])
+      const overdueGroupsRequest = groupedStatus === 'overdue'
+        ? statusGroupsRequest
+        : objectApi.getTaskGroups(objectId, 'overdue', selectedTaskId ?? undefined).catch(() => [])
       const [objData, fullTreeData, overdueGroups, taskStats, filteredGroups, stageData, stepData] = await Promise.all([
         objectApi.getById(objectId),
-        objectApi.getFullTasksTree(objectId),
-        objectApi.getTaskGroups(objectId, 'overdue', selectedTaskId ?? undefined).catch(() => []),
+        isGroupedStatusPage ? Promise.resolve([]) : objectApi.getFullTasksTree(objectId),
+        overdueGroupsRequest,
         objectApi.getTaskStats(objectId, selectedTaskId ?? undefined),
-        groupedStatus
-          ? objectApi.getTaskGroups(objectId, groupedStatus, selectedTaskId ?? undefined).catch(() => [])
-          : Promise.resolve([]),
+        statusGroupsRequest,
         objectApi.getStages(objectId),
         objectApi.getCurrentStep(objectId),
       ])
@@ -1284,7 +1289,7 @@ function ObjectTasksPage() {
         </div>
       </div>
 
-      {!taskId && currentStepTasks.length > 0 && (
+      {!taskId && taskStatusFilter === 'all' && currentStepTasks.length > 0 && (
         <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Текущий шаг</div>
@@ -1392,11 +1397,11 @@ function ObjectTasksPage() {
                   {group.tasks.map((task) => {
                     const isDone = taskStatusFilter === 'done'
                     const isOverdue = taskStatusFilter === 'overdue'
-                    const taskDestination = `/objects/${objectItem.id}/tasks/${group.main_task_id}?returnStatus=${taskStatusFilter}#task-${task.id}`
+                    const taskDestination = `/objects/${objectItem.id}/tasks/${group.main_task_id}#task-${task.id}`
                     const taskPath = task.path.slice(0, -1)
 
                     return (
-                      <li key={task.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                      <li key={task.id} className="p-4 sm:px-5">
                         <div className="flex min-w-0 items-start gap-3">
                           <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full" aria-label={isDone ? 'Задача выполнена' : 'Задача не выполнена'}>
                             <TaskStateIcon task={task} />
@@ -1418,9 +1423,6 @@ function ObjectTasksPage() {
                             </div>
                           </Link>
                         </div>
-                        <button type="button" className="btn btn-ghost btn-sm self-end sm:self-auto" onClick={() => openEditTask(task)}>
-                          Редактировать
-                        </button>
                       </li>
                     )
                   })}
