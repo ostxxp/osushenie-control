@@ -734,7 +734,7 @@ function ObjectDetailsPage() {
         </div>
 
         <Link to={`/objects/${id}/employees`} className="block rounded-3xl border border-base-200 bg-base-100 p-6 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ff4539]/30">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-lg font-semibold mb-2 inline-flex">
                 Пользователи на объекте

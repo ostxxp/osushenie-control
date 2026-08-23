@@ -56,6 +56,24 @@ async def test_create_user_rejects_invalid_phone_number(
     assert response.status_code == 422
 
 
+async def test_update_user_rejects_incomplete_phone_number(
+    client: AsyncClient,
+    create_test_user,
+) -> None:
+    admin = await create_test_user(email="admin@example.com", role=UserRole.ADMIN)
+    user = await create_test_user(email="foreman@example.com", role=UserRole.FOREMAN)
+    access_token = await login(client, email=admin.email)
+
+    response = await client.patch(
+        f"/api/v1/users/{user.id}",
+        headers=auth_headers(access_token),
+        json={"phone_number": "+7 999 123-45-6"},
+    )
+
+    assert response.status_code == 422
+    assert user.phone_number is None
+
+
 async def test_non_admin_cannot_create_user(
     client: AsyncClient,
     create_test_user,
@@ -117,7 +135,7 @@ async def test_admin_cannot_deactivate_own_account_with_update(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "You cannot deactivate your own account."
+    assert response.json()["detail"] == "Нельзя деактивировать собственную учётную запись."
 
 
 async def test_admin_cannot_deactivate_own_account_with_endpoint(
@@ -133,7 +151,7 @@ async def test_admin_cannot_deactivate_own_account_with_endpoint(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "You cannot deactivate your own account."
+    assert response.json()["detail"] == "Нельзя деактивировать собственную учётную запись."
 
 
 async def test_admin_cannot_delete_own_account(

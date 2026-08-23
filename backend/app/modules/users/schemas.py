@@ -26,8 +26,8 @@ def _validate_phone_number(value: str | None) -> str | None:
         raise ValueError("Номер телефона содержит недопустимые круглые скобки.")
 
     digits_count = sum(char.isdigit() for char in phone_number)
-    if digits_count < 7 or digits_count > 15:
-        raise ValueError("Номер телефона должен содержать от 7 до 15 цифр.")
+    if digits_count != 11:
+        raise ValueError("Номер телефона должен содержать ровно 11 цифр.")
 
     return phone_number
 
@@ -59,7 +59,7 @@ class PhoneNumberMixin(BaseModel):
         return _validate_phone_number(value)
 
 
-class UserBase(PhoneNumberMixin):
+class UserBase(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
     email: EmailStr
     phone_number: str | None = Field(default=None, max_length=32)
@@ -67,7 +67,7 @@ class UserBase(PhoneNumberMixin):
     is_active: bool = True
 
 
-class UserCreate(UserBase):
+class UserCreate(PhoneNumberMixin, UserBase):
     password: str = Field(min_length=8, max_length=128)
 
 

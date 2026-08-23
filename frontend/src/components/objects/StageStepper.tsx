@@ -1,14 +1,15 @@
-import type { ObjectTask } from '@/types'
+import type { ProjectStageSummary } from '@/types'
 
 type StageStepperProps = {
-  stages: ObjectTask[]
+  stages: ProjectStageSummary[]
 }
 
-const isComplete = (status: ObjectTask['status']) => status === 'done' || status === 'skipped' || status === 'not_applicable'
+const isComplete = (stage: ProjectStageSummary): boolean =>
+  stage.stats.total > 0 && stage.stats.done === stage.stats.total
 
-export const getCurrentStage = (stages: ObjectTask[]): number => Math.min(
+export const getCurrentStage = (stages: ProjectStageSummary[]): number => Math.min(
   6,
-  Math.max(1, stages.findIndex((stage) => !isComplete(stage.status)) + 1 || stages.length + 1),
+  Math.max(1, stages.findIndex((stage) => !isComplete(stage)) + 1 || stages.length + 1),
 )
 
 export default function StageStepper({ stages }: StageStepperProps) {

@@ -107,9 +107,6 @@ export interface ObjectTask {
   assigned_to?: User | null
   reviewer_id: number | null
   reviewer?: User | null
-  submitted_at: string | null
-  reviewed_at: string | null
-  rejection_reason: string | null
   created_at: string
   updated_at: string
 }
@@ -138,7 +135,7 @@ export interface CurrentStep {
   stage_title: string | null
   stage_order: number | null
   action_required_by: User | null
-  flag: 'normal' | 'due_soon' | 'overdue' | 'rejected'
+  flag: 'normal' | 'due_soon' | 'overdue'
   days_remaining: number | null
 }
 
@@ -155,9 +152,10 @@ export interface TaskAttachment {
 
 export interface MyTask extends ObjectTask {
   main_task_id: number
+  main_task_title: string
+  origin_path: string[]
   object_name: string
   object_address: string
-  action_required: string
   flag: CurrentStep['flag']
   days_remaining: number | null
 }
