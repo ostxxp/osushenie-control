@@ -119,14 +119,18 @@ async def test_current_step_prefers_task_with_active_workflow_status(
     early = next(task for task in tasks if task["template_id"] == early_task.id)
     active = next(task for task in tasks if task["template_id"] == active_task.id)
 
-    await client.patch(
+    assignment_response = await client.patch(
         f"/api/v1/objects/{object_id}/tasks/{active['id']}/assignment",
         headers=auth_headers(token),
-        json={"assigned_to_id": admin.id, "reviewer_id": admin.id},
+        json={
+            "assigned_to_id": admin.id,
+            "expected_version": active["version"],
+        },
     )
     start_response = await client.post(
         f"/api/v1/objects/{object_id}/tasks/{active['id']}/start",
         headers=auth_headers(token),
+        json={"expected_version": assignment_response.json()["version"]},
     )
     step_response = await client.get(
         f"/api/v1/objects/{object_id}/current-step",
@@ -304,20 +308,31 @@ async def test_my_tasks_include_object_assignment_and_tasks_completed_by_user(
             headers=auth_headers(admin_token),
         )
     ).json()[0]
-    await client.patch(
+    assignment_response = await client.patch(
         f"/api/v1/objects/{completed_object_id}/tasks/{completed_task['id']}/assignment",
         headers=auth_headers(admin_token),
-        json={"assigned_to_id": foreman.id, "reviewer_id": admin.id},
+        json={
+            "assigned_to_id": foreman.id,
+            "expected_version": completed_task["version"],
+        },
     )
-    await client.patch(
-        f"/api/v1/objects/{completed_object_id}/tasks/{completed_task['id']}/status",
+    start_response = await client.post(
+        f"/api/v1/objects/{completed_object_id}/tasks/{completed_task['id']}/start",
         headers=auth_headers(foreman_token),
-        json={"status": "done"},
+        json={"expected_version": assignment_response.json()["version"]},
+    )
+    complete_response = await client.post(
+        f"/api/v1/objects/{completed_object_id}/tasks/{completed_task['id']}/complete",
+        headers=auth_headers(foreman_token),
+        json={"expected_version": start_response.json()["version"]},
     )
     await client.patch(
         f"/api/v1/objects/{completed_object_id}/tasks/{completed_task['id']}/assignment",
         headers=auth_headers(admin_token),
-        json={"assigned_to_id": None, "reviewer_id": None},
+        json={
+            "assigned_to_id": None,
+            "expected_version": complete_response.json()["version"],
+        },
     )
     await client.delete(
         f"/api/v1/objects/{completed_object_id}/unassign/{foreman.id}",
