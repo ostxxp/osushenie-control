@@ -873,6 +873,33 @@ async def list_done_object_tasks(
     ]
 
 
+async def list_in_progress_object_tasks(
+    db: AsyncSession,
+    *,
+    object_id: int,
+    root_task_id: int | None = None,
+) -> list[ObjectTask]:
+    tasks = await _list_active_object_tasks(db, object_id=object_id)
+    children_by_parent_id = _group_tasks_by_parent_id(tasks)
+    scope_roots = _get_scope_roots(tasks, children_by_parent_id, root_task_id)
+    scoped_tasks: list[ObjectTask] = []
+
+    for root in scope_roots:
+        scoped_tasks.extend(
+            _collect_task_subtree(
+                root,
+                children_by_parent_id,
+                include_root=root_task_id is None,
+            )
+        )
+
+    return [
+        task
+        for task in scoped_tasks
+        if task.status in WORKING_STATUSES
+    ]
+
+
 async def list_logical_todo_object_tasks(
     db: AsyncSession,
     *,
