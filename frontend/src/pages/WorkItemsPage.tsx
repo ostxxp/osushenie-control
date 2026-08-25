@@ -216,12 +216,12 @@ export default function WorkItemsPage() {
         {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
         <div className="mt-4">
-          {loading ? <div className="flex justify-center p-16"><span className="loading loading-spinner" /></div> : items.length === 0 ? (
+          {loading ? <div className="flex justify-center p-16"><span className="loading loading-spinner text-[#ff4539]" /></div> : items.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-base-300 bg-base-50 p-8 text-center"><div className="text-lg font-medium">Задачи не найдены</div><div className="mt-1 text-sm text-base-content/60">Попробуйте изменить или очистить фильтры.</div></div>
           ) : (
             <div className="space-y-2">{items.map((task) => (
               <Link key={task.id} to={`/objects/${task.object_id}/tasks/${task.main_task_id}#task-${task.id}`} className="block rounded-xl border border-base-200 bg-base-100 px-4 py-3 transition hover:border-[#ff4539]/40 hover:shadow-sm">
-                <div className="flex flex-wrap justify-between gap-3"><div className="min-w-0"><div className="text-sm text-base-content/60">{task.object_name} · {task.object_address}</div><div className="mt-1 text-base font-semibold sm:text-lg">{task.title}</div></div>{task.status !== 'done' && labels[task.status] && <span className={`badge ${task.flag === 'overdue' ? 'badge-error' : 'badge-ghost'}`}>{labels[task.status]}</span>}</div>
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="text-sm text-base-content/60">{task.object_name} · {task.object_address}</div><div className="mt-1 break-words text-base font-semibold sm:text-lg">{task.title}</div></div>{task.status !== 'done' && labels[task.status] && <span className={`badge shrink-0 whitespace-nowrap border-transparent ${task.flag === 'overdue' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{task.flag === 'overdue' ? labels.overdue : labels[task.status]}</span>}</div>
                 <div className="mt-2 text-xs text-base-content/55">Раздел: <span className="font-medium text-base-content/70">{task.origin_path.join(' → ')}</span></div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-base-content/65"><span>{task.status === 'done' ? 'Задача выполнена' : 'Требуется выполнение'}</span>{task.deadline && <span>Срок: {formatDateRu(task.deadline)}</span>}</div>
               </Link>

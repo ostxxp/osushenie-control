@@ -56,7 +56,7 @@ function App() {
   return (
     <AuthContext.Provider value={{ isAuthenticated, userRole, setIsAuthenticated, setUserRole }}>
       <Router>
-        <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><span className="loading loading-spinner text-primary" /></div>}>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><span className="loading loading-spinner text-[#ff4539]" /></div>}>
         <Routes>
           <Route
             path="/login"

@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { DatePickerInput, formatDateInputValue, ObjectKanban, ObjectTable, SearchableSelect, StyledSelect } from '@/components'
+import { DatePickerInput, formatDateInputValue, ObjectTable, SearchableSelect, StyledSelect } from '@/components'
 import { objectApi, photoApi, userApi } from '@services/api'
 import { formatDateRu } from '@/utils'
 import type { ObjectSummary, ProjectStageSummary, User } from '@/types'
@@ -75,7 +75,6 @@ function ObjectsPage() {
   const [responsibleByObjectId, setResponsibleByObjectId] = useState<Record<number, User | undefined>>({})
   const [stagesByObjectId, setStagesByObjectId] = useState<Record<number, ProjectStageSummary[]>>({})
   const [search, setSearch] = useState('')
-  const [view, setView] = useState<'table' | 'kanban'>('table')
   const [roleFilter, setRoleFilter] = useState<'all' | User['role']>('all')
   const [stageFilter, setStageFilter] = useState('all')
   const [onlyOverdue, setOnlyOverdue] = useState(false)
@@ -114,7 +113,10 @@ function ObjectsPage() {
             (objectItem.is_active ? 'активен' : 'неактивен').includes(query)
           )
         })
-        .sort((first, second) => second.id - first.id),
+        .sort(
+          (first, second) =>
+            Number(second.is_active) - Number(first.is_active) || second.id - first.id,
+        ),
     [search, objects],
   )
 
@@ -352,7 +354,7 @@ function ObjectsPage() {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <span className="loading loading-spinner text-primary"></span>
+        <span className="loading loading-spinner text-[#ff4539]"></span>
       </div>
     )
   }
@@ -455,25 +457,13 @@ function ObjectsPage() {
           >
             Сбросить
           </button>
-          <div className="flex self-end rounded-xl bg-base-200 p-1 xl:ml-auto xl:self-auto">
-            <button type="button" className={`btn btn-sm border-0 ${view === 'table' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('table')}>Таблица</button>
-            <button type="button" className={`btn btn-sm border-0 ${view === 'kanban' ? 'bg-[#ff4539] text-white hover:bg-[#cc372e]' : 'bg-transparent text-base-content hover:bg-base-300'}`} onClick={() => setView('kanban')}>Канбан</button>
-          </div>
         </div>
 
-        {view === 'table' ? (
-          <ObjectTable
-            objects={filteredObjects}
-            responsibleByObjectId={responsibleByObjectId}
-            stagesByObjectId={stagesByObjectId}
-          />
-        ) : (
-          <ObjectKanban
-            objects={filteredObjects}
-            responsibleByObjectId={responsibleByObjectId}
-            stagesByObjectId={stagesByObjectId}
-          />
-        )}
+        <ObjectTable
+          objects={filteredObjects}
+          responsibleByObjectId={responsibleByObjectId}
+          stagesByObjectId={stagesByObjectId}
+        />
 
         <div className="hidden overflow-x-auto rounded-[1.75rem] border border-base-200 bg-base-100">
           <table className="w-full min-w-[900px] table-fixed text-left">

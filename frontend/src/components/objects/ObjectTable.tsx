@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatDateRu } from '@/utils'
 import type { ObjectSummary, ProjectStageSummary, User } from '@/types'
-import CurrentStepCell from './CurrentStepCell'
 import ResponsibleBadge from './ResponsibleBadge'
 import StageStepper from './StageStepper'
 
@@ -16,7 +15,6 @@ function DeadlineCell({ object }: { object: ObjectSummary }) {
   return (
     <div className="space-y-1 whitespace-nowrap">
       <div className="text-sm font-medium text-slate-800">{formatDateRu(object.end_date)}</div>
-      {object.stats.overdue > 0 && <div className="text-xs font-medium text-red-600">Просрочено задач: {object.stats.overdue}</div>}
     </div>
   )
 }
@@ -66,7 +64,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
           <tr>
             <th className="px-3 py-3 font-semibold">Объект</th>
             <th className="px-3 py-3 font-semibold">Этап</th>
-            <th className="px-3 py-3 font-semibold">Текущий шаг</th>
+            <th className="px-3 py-3 font-semibold">Ответственный</th>
             <th className="px-3 py-3 font-semibold">Прогресс</th>
             <th className="px-3 py-3 font-semibold">Срок</th>
             <th className="px-3 py-3 font-semibold">Статус</th>
@@ -83,10 +81,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
               </td>
               <td className="px-3 py-3"><StageStepper stages={stagesByObjectId[object.id] || []} /></td>
               <td className="px-3 py-3">
-                <CurrentStepCell step={object.current_step.task?.title || 'Нет доступных задач'} />
-                <div className="mt-2 border-t border-slate-100 pt-2">
-                  <ResponsibleBadge user={responsibleByObjectId[object.id]} />
-                </div>
+                <ResponsibleBadge user={responsibleByObjectId[object.id]} />
               </td>
               <td className="px-3 py-3">
                 <div className="min-w-0">
