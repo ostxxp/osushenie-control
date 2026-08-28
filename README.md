@@ -222,7 +222,6 @@ GET   /api/v1/objects/{object_id}/tasks/tree
 GET   /api/v1/objects/{object_id}/tasks/headers
 GET   /api/v1/objects/{object_id}/tasks/available
 GET   /api/v1/objects/{object_id}/tasks/stats
-GET   /api/v1/objects/{object_id}/stages
 PATCH /api/v1/objects/{object_id}/tasks/{task_id}/status
 PATCH /api/v1/objects/{object_id}/tasks/{task_id}/assignment
 POST  /api/v1/objects/{object_id}/tasks/{task_id}/start

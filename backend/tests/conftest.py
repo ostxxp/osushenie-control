@@ -13,7 +13,6 @@ from app.main import app
 from app.modules.auth.models import AuthSession, RevokedAccessToken  # noqa: F401
 from app.modules.objects.models import ConstructionObject, ObjectToUser  # noqa: F401
 from app.modules.tasks.models import ObjectTask, TaskChildrenMode, TaskTemplate  # noqa: F401
-from app.modules.tasks.stages import ProjectStage
 from app.modules.users.models import User, UserRole
 
 
@@ -133,7 +132,6 @@ def create_task_template(
         depth: int = 0,
         sort_order: int = 0,
         children_mode: TaskChildrenMode = TaskChildrenMode.ALL,
-        stage: ProjectStage | None = None,
         is_active: bool = True,
     ) -> TaskTemplate:
         async with session_factory() as session:
@@ -145,7 +143,6 @@ def create_task_template(
                 depth=depth,
                 sort_order=sort_order,
                 children_mode=children_mode,
-                stage=stage,
                 is_active=is_active,
             )
             session.add(template)

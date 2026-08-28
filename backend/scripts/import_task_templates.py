@@ -13,36 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.db.session import AsyncSessionLocal
 from app.modules.tasks.models import ObjectTask, TaskChildrenMode, TaskTemplate
-from app.modules.tasks.stages import ProjectStage, infer_project_stage
 from scripts.task_branch_classifier import classify_children_mode
-
-
-def resolve_node_stages(
-    nodes: list[dict],
-    *,
-    root_source_ids: set[str],
-) -> dict[str, ProjectStage]:
-    stages_by_source_id: dict[str, ProjectStage] = {}
-
-    for node in sorted(nodes, key=lambda item: (item["depth"], item["sort_order"])):
-        source_id = node["source_id"]
-        parent_source_id = node["parent_source_id"]
-        explicit_stage = node.get("stage")
-
-        if explicit_stage:
-            stage = ProjectStage(explicit_stage)
-        elif parent_source_id in root_source_ids:
-            stage = infer_project_stage(node["title"])
-        else:
-            stage = stages_by_source_id.get(parent_source_id)
-            if stage is None:
-                path = node.get("path") or []
-                stage_root_title = path[1] if len(path) > 1 else node["title"]
-                stage = infer_project_stage(stage_root_title)
-
-        stages_by_source_id[source_id] = stage
-
-    return stages_by_source_id
 
 
 async def import_task_templates(input_path: Path) -> None:
@@ -66,11 +37,6 @@ async def import_task_templates(input_path: Path) -> None:
         ).append(node)
 
     source_ids = {node["source_id"] for node in nodes}
-    stages_by_source_id = resolve_node_stages(
-        nodes,
-        root_source_ids=root_source_ids,
-    )
-
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(TaskTemplate).where(TaskTemplate.source_id.in_(source_ids))
@@ -101,7 +67,6 @@ async def import_task_templates(input_path: Path) -> None:
                     children_by_parent_source_id.get(source_id, []),
                 )
             )
-            template.stage = stages_by_source_id[source_id]
             template.is_active = True
 
             by_source_id[source_id] = template
@@ -123,7 +88,6 @@ async def import_task_templates(input_path: Path) -> None:
                 .where(ObjectTask.template_id == template.id)
                 .values(
                     children_mode=template.children_mode,
-                    stage=template.stage,
                 )
             )
 

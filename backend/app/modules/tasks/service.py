@@ -12,7 +12,6 @@ from app.modules.tasks.models import (
     TaskChildrenMode,
     TaskTemplate,
 )
-from app.modules.tasks.stages import PROJECT_STAGES, ProjectStage, infer_project_stage
 from app.modules.notifications.models import Notifications, NotificationReads as NotificationReceipt
 from app.modules.notifications.service import create_notification
 from app.modules.tasks.schemas import (
@@ -78,7 +77,6 @@ async def copy_task_templates_to_object(
             depth=template.depth if parent is None else parent.depth + 1,
             sort_order=template.sort_order,
             children_mode=template.children_mode,
-            stage=template.stage or (parent.stage if parent is not None else infer_project_stage(template.title)),
         )
         db.add(object_task)
         await db.flush()
@@ -154,7 +152,6 @@ async def build_object_task_tree(db: AsyncSession, tasks: list[ObjectTask]) -> l
             "depth": task.depth,
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
-            "stage": task.stage,
             "status": task.status,
             "deadline": task.deadline,
             "is_active": task.is_active,
@@ -225,7 +222,6 @@ async def create_object_task(
         depth=0 if parent is None else parent.depth + 1,
         sort_order=sort_order,
         children_mode=task_data.children_mode,
-        stage=task_data.stage or (parent.stage if parent is not None else infer_project_stage(task_data.title)),
         deadline=task_data.deadline,
     )
     db.add(object_task)
@@ -289,7 +285,7 @@ async def update_object_task(
                 root_task=object_task,
             )
 
-    for field in ("title", "sort_order", "children_mode", "is_active", "deadline", "stage"):
+    for field in ("title", "sort_order", "children_mode", "is_active", "deadline"):
         if field in update_data:
             setattr(object_task, field, update_data[field])
 
@@ -575,7 +571,6 @@ def _serialize_task_list_item(
         "depth": task.depth,
         "sort_order": task.sort_order,
         "children_mode": task.children_mode,
-        "stage": task.stage,
         "status": task.status,
         "is_active": task.is_active,
         "version": task.version,
@@ -814,38 +809,6 @@ async def get_task_stats(
     return _calculate_task_stats(tasks, scope_roots)
 
 
-async def get_project_stage_summaries(
-    db: AsyncSession,
-    *,
-    object_id: int,
-) -> list[dict]:
-    tasks = await _list_active_object_tasks(db, object_id=object_id)
-    summaries = []
-
-    for stage_definition in PROJECT_STAGES:
-        stage_tasks = [
-            task
-            for task in tasks
-            if task.stage == stage_definition.code
-        ]
-        stage_task_ids = {task.id for task in stage_tasks}
-        stage_roots = [
-            task
-            for task in stage_tasks
-            if task.parent_id not in stage_task_ids
-        ]
-        summaries.append(
-            {
-                "code": stage_definition.code,
-                "title": stage_definition.title,
-                "order": stage_definition.order,
-                "stats": _calculate_task_stats(stage_tasks, stage_roots),
-            }
-        )
-
-    return summaries
-
-
 async def list_done_object_tasks(
     db: AsyncSession,
     *,
@@ -1031,7 +994,6 @@ async def build_available_task_tree(
             "depth": task.depth,
             "sort_order": task.sort_order,
             "children_mode": task.children_mode,
-            "stage": task.stage,
             "status": task.status,
             "deadline": task.deadline,
             "days_until_deadline": (task.deadline - datetime.now(UTC)).days if task.deadline is not None else None,
@@ -1439,15 +1401,6 @@ def _task_deadline_details(task: ObjectTask) -> tuple[TaskAttentionFlag, int | N
     return TaskAttentionFlag.NORMAL, days_remaining
 
 
-def _task_stage_details(task: ObjectTask | None) -> tuple[str | None, int | None]:
-    if task is None or task.stage is None:
-        return None, None
-    definition = next((item for item in PROJECT_STAGES if item.code == task.stage), None)
-    if definition is None:
-        return None, None
-    return definition.title, definition.order
-
-
 def _task_action_required_by(task: ObjectTask) -> User | None:
     return task.assigned_to
 
@@ -1461,9 +1414,8 @@ async def get_current_object_step(
     if not tasks:
         return {
             "task": None,
-            "stage": None,
-            "stage_title": None,
-            "stage_order": None,
+            "main_task_id": None,
+            "main_task_title": None,
             "action_required_by": None,
             "flag": TaskAttentionFlag.NORMAL,
             "days_remaining": None,
@@ -1502,7 +1454,8 @@ async def get_current_object_step(
         )
     )
     task = workflow_candidates[0] if workflow_candidates else next(iter(logical_todo), None)
-    title, order = _task_stage_details(task)
+    tasks_by_id = {item.id: item for item in tasks}
+    main_task = _get_task_path(task, tasks_by_id)[0] if task is not None else None
     flag, days_remaining = (
         _task_deadline_details(task)
         if task is not None
@@ -1510,9 +1463,8 @@ async def get_current_object_step(
     )
     return {
         "task": task,
-        "stage": task.stage if task is not None else None,
-        "stage_title": title,
-        "stage_order": order,
+        "main_task_id": main_task.id if main_task is not None else None,
+        "main_task_title": main_task.title if main_task is not None else None,
         "action_required_by": _task_action_required_by(task) if task is not None else None,
         "flag": flag,
         "days_remaining": days_remaining,

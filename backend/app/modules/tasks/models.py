@@ -5,9 +5,6 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.modules.tasks.stages import ProjectStage
-
-
 class ObjectTaskStatus(StrEnum):
     TODO = "todo"
     IN_PROGRESS = "in_progress"
@@ -55,12 +52,6 @@ class TaskTemplate(Base):
         default=TaskChildrenMode.ALL,
         nullable=False,
     )
-    stage: Mapped[ProjectStage | None] = mapped_column(
-        String(64),
-        nullable=True,
-        index=True,
-    )
-
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -119,12 +110,6 @@ class ObjectTask(Base):
         default=TaskChildrenMode.ALL,
         nullable=False,
     )
-    stage: Mapped[ProjectStage | None] = mapped_column(
-        String(64),
-        nullable=True,
-        index=True,
-    )
-
     status: Mapped[ObjectTaskStatus] = mapped_column(
         Enum(ObjectTaskStatus, name="object_task_status"),
         default=ObjectTaskStatus.TODO,

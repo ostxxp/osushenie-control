@@ -4,7 +4,6 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from app.modules.tasks.models import ObjectTaskStatus, TaskChildrenMode
-from app.modules.tasks.stages import ProjectStage
 from app.modules.users.schemas import UserRead
 
 
@@ -14,7 +13,6 @@ class ObjectTaskCreate(BaseModel):
     sort_order: int | None = Field(default=None, ge=0)
     children_mode: TaskChildrenMode = TaskChildrenMode.ALL
     deadline: datetime | None = None
-    stage: ProjectStage | None = None
 
 
 class ObjectTaskUpdate(BaseModel):
@@ -24,7 +22,6 @@ class ObjectTaskUpdate(BaseModel):
     status: ObjectTaskStatus | None = None
     is_active: bool | None = None
     deadline: datetime | None = None
-    stage: ProjectStage | None = None
     expected_version: int | None = Field(default=None, ge=1)
 
 
@@ -56,7 +53,6 @@ class ObjectTaskRead(BaseModel):
     depth: int
     sort_order: int
     children_mode: TaskChildrenMode
-    stage: ProjectStage | None
     status: ObjectTaskStatus
     is_active: bool
     version: int
@@ -103,13 +99,6 @@ class ObjectTaskStatsRead(BaseModel):
     overdue: int
 
 
-class ProjectStageRead(BaseModel):
-    code: ProjectStage
-    title: str
-    order: int
-    stats: ObjectTaskStatsRead
-
-
 class TaskAttentionFlag(StrEnum):
     NORMAL = "normal"
     DUE_SOON = "due_soon"
@@ -119,9 +108,8 @@ class TaskAttentionFlag(StrEnum):
 
 class CurrentStepRead(BaseModel):
     task: ObjectTaskRead | None
-    stage: ProjectStage | None
-    stage_title: str | None
-    stage_order: int | None
+    main_task_id: int | None
+    main_task_title: str | None
     action_required_by: UserRead | None
     flag: TaskAttentionFlag
     days_remaining: int | None

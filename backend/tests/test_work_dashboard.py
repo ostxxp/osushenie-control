@@ -2,7 +2,6 @@ from datetime import UTC, date, datetime, timedelta
 
 from httpx import AsyncClient
 
-from app.modules.tasks.stages import ProjectStage
 from app.modules.users.models import UserRole
 from tests.conftest import auth_headers, login
 
@@ -27,7 +26,6 @@ async def test_summary_and_current_step_include_actionable_task(
     root = await create_task_template(
         title="Contract",
         source_id="contract-root",
-        stage=ProjectStage.CONTRACT_START,
     )
     await create_task_template(
         title="Sign contract",
@@ -35,7 +33,6 @@ async def test_summary_and_current_step_include_actionable_task(
         source_id="sign-contract",
         parent_source_id=root.source_id,
         depth=1,
-        stage=ProjectStage.CONTRACT_START,
     )
     token = await login(client, email=admin.email)
     object_id = (
@@ -59,6 +56,7 @@ async def test_summary_and_current_step_include_actionable_task(
             headers=auth_headers(token),
         )
     ).json()
+    root_task = next(task for task in tasks if task["template_id"] == root.id)
     child = next(task for task in tasks if task["title"] == "Sign contract")
     await client.patch(
         f"/api/v1/objects/{object_id}/tasks/{child['id']}/assignment",
@@ -80,7 +78,8 @@ async def test_summary_and_current_step_include_actionable_task(
 
     assert step_response.status_code == 200
     assert step_response.json()["task"]["id"] == child["id"]
-    assert step_response.json()["stage"] == "contract_start"
+    assert step_response.json()["main_task_id"] == root_task["id"]
+    assert step_response.json()["main_task_title"] == "Contract"
     summary = summary_response.json()[0]
     assert summary["current_step"]["task"]["id"] == child["id"]
     assert summary["responsible_users"][0]["id"] == foreman.id
@@ -95,12 +94,10 @@ async def test_current_step_prefers_task_with_active_workflow_status(
     early_task = await create_task_template(
         title="Earlier todo",
         source_id="earlier-todo",
-        stage=ProjectStage.CONTRACT_START,
     )
     active_task = await create_task_template(
         title="Actual current work",
         source_id="actual-current-work",
-        stage=ProjectStage.PREPARATION_MOBILIZATION,
     )
     token = await login(client, email=admin.email)
     object_id = (
