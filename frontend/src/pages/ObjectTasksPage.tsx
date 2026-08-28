@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getStoredAvatarUrl, NOTIFICATIONS_UPDATED_EVENT, objectApi, photoApi } from '@services/api'
 import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
 import { formatDateTimeRu, formatDateRu } from '@/utils'
@@ -36,13 +36,6 @@ type TaskFormState = {
   status: ObjectTaskStatus
   deadline: string
   deadlineInput: string
-}
-
-type LogicalTaskEntry = {
-  key: string
-  task: ObjectTaskTree
-  status: 'done' | 'in_progress' | 'todo'
-  overdue: boolean
 }
 
 const emptyTaskForm = (): TaskFormState => ({
@@ -246,81 +239,6 @@ const visibleTaskTree = (task: ObjectTaskTree): ObjectTaskTree => {
 
 const isBlockingStatus = (status: ObjectTaskStatus): boolean =>
   status === 'skipped' || status === 'not_applicable'
-
-const buildLogicalTaskEntries = (roots: ObjectTaskTree[]): LogicalTaskEntry[] => {
-  const entries: LogicalTaskEntry[] = []
-  let sequence = 0
-  const isOverdue = (task: ObjectTaskTree) => (
-    Boolean(task.deadline) && new Date(task.deadline as string).getTime() < Date.now() && task.status !== 'done'
-  )
-  const add = (task: ObjectTaskTree, status: LogicalTaskEntry['status'], overdue = false) => {
-    entries.push({ key: `${task.id}-${sequence++}`, task, status, overdue })
-  }
-
-  const childrenAsDone = (parent: ObjectTaskTree) => {
-    if (parent.children_mode === 'single_choice') {
-      add(parent, 'done')
-      parent.children.forEach(childrenAsDone)
-      return
-    }
-    parent.children.forEach(taskAsDone)
-  }
-  const taskAsDone = (task: ObjectTaskTree) => {
-    if (task.parent_id === null && task.children.length > 0) {
-      childrenAsDone(task)
-      return
-    }
-    add(task, 'done')
-    childrenAsDone(task)
-  }
-  const children = (parent: ObjectTaskTree) => {
-    if (parent.children_mode === 'single_choice') {
-      const active = parent.children.filter((task) => !isBlockingStatus(task.status))
-      const representative = active.find((task) => task.status === 'done')
-        || active.find((task) => task.status === 'in_progress')
-        || active[0]
-        || parent
-      const status: LogicalTaskEntry['status'] = active.some((task) => task.status === 'done')
-        ? 'done'
-        : active.some((task) => task.status === 'in_progress')
-          ? 'in_progress'
-          : active.length === 0 ? 'done' : 'todo'
-      add(representative, status, status !== 'done' && parent.children.some(isOverdue))
-      parent.children.forEach((task) => {
-        if (isBlockingStatus(task.status)) childrenAsDone(task)
-        else children(task)
-      })
-      return
-    }
-    parent.children.forEach(taskEntry)
-  }
-  const taskEntry = (task: ObjectTaskTree) => {
-    if (isBlockingStatus(task.status)) {
-      taskAsDone(task)
-      return
-    }
-    if (task.parent_id === null && task.children.length > 0) {
-      children(task)
-      return
-    }
-    add(task, task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'in_progress' : 'todo', isOverdue(task))
-    children(task)
-  }
-
-  roots.forEach(taskEntry)
-  return entries
-}
-
-const calculateTaskStats = (roots: ObjectTaskTree[]): ObjectTaskStats => {
-  const entries = buildLogicalTaskEntries(roots)
-  return {
-    total: entries.length,
-    done: entries.filter((entry) => entry.status === 'done').length,
-    todo: entries.filter((entry) => entry.status === 'todo').length,
-    inProgress: entries.filter((entry) => entry.status === 'in_progress').length,
-    overdue: entries.filter((entry) => entry.overdue).length,
-  }
-}
 
 function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
@@ -589,6 +507,7 @@ function ObjectTasksPage() {
   void TaskTreeNode
   const { id, taskId } = useParams<{ id: string; taskId?: string }>()
   const location = useLocation()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [objectItem, setObjectItem] = useState<ConstructionObject | null>(null)
   const [tasks, setTasks] = useState<ObjectTaskTree[]>([])
@@ -763,17 +682,12 @@ function ObjectTasksPage() {
       const selectedTree = selectedTaskId === null
         ? updatedTree
         : updatedTree.filter((task) => task.id === selectedTaskId)
-      const nextStats = calculateTaskStats(selectedTree)
 
       setAllTasks(updatedTree)
       setTasks(selectedTaskId === null ? [] : selectedTree.map(visibleTaskTree))
-      setStats(nextStats)
-      setSectionStats(Object.fromEntries(
-        updatedTree.map((section) => [section.id, calculateTaskStats([section])]),
-      ))
 
       // Completing a parent can move its children to in_progress on the backend.
-      // Refresh the tree and counters so those server-side status changes appear immediately.
+      // Statistics are server-owned: refresh them together with the tree after the mutation.
       await loadData()
       if (currentTask.children.length > 0) {
         setExpandedTaskIds((current) => optimisticStatus === 'done'
@@ -897,8 +811,31 @@ function ObjectTasksPage() {
     return { ...task, children }
   }
 
+  const filterDoneTaskBranch = (task: ObjectTaskTree): ObjectTaskTree | null => {
+    if (task.status !== 'done') return null
+
+    return {
+      ...task,
+      children: task.children
+        .map(filterDoneTaskBranch)
+        .filter((child): child is ObjectTaskTree => child !== null),
+    }
+  }
+
   const filteredTasks = useMemo(
-    () => tasks.map(filterTaskTree).filter((task): task is ObjectTaskTree => task !== null),
+    () => {
+      if (taskStatusFilter !== 'done') {
+        return tasks.map(filterTaskTree).filter((task): task is ObjectTaskTree => task !== null)
+      }
+
+      return tasks.flatMap((root) => {
+        const children = root.children
+          .map(filterDoneTaskBranch)
+          .filter((child): child is ObjectTaskTree => child !== null)
+
+        return children.length > 0 ? [{ ...root, children }] : []
+      })
+    },
     [overdueTaskIds, taskStatusFilter, tasks],
   )
 
@@ -909,6 +846,10 @@ function ObjectTasksPage() {
 
   const handleTaskTextClick = (task: ObjectTaskTree, depth: number) => {
     if (depth === 0) return
+    if (taskStatusFilter === 'done' && id && taskId) {
+      navigate(`/objects/${id}/tasks/${taskId}#task-${task.id}`)
+      return
+    }
     if (task.status === 'not_applicable' || task.status === 'skipped') return
     void handleToggleTask(task.id)
   }
@@ -988,19 +929,21 @@ function ObjectTasksPage() {
     return (
       <article key={task.id} data-task-anchor={`task-${task.id}`} className={`scroll-mt-6 rounded-2xl border bg-white p-4 shadow-sm ${isRoot ? 'border-base-200' : 'border-base-200 border-l-4 border-l-[#ff4539]/70'}`}>
         <div className="flex items-start gap-3">
-          {!isRoot && <button type="button" disabled={!canToggle} onClick={() => void handleToggleTask(task.id)} className="mt-0.5 shrink-0 rounded-full disabled:opacity-50" aria-label={task.status === 'done' ? `Отменить выполнение задачи «${task.title}»` : `Выполнить задачу «${task.title}»`}><TaskStateIcon task={task} /></button>}
+          {!isRoot && taskStatusFilter !== 'done' && <button type="button" disabled={!canToggle} onClick={() => void handleToggleTask(task.id)} className="mt-0.5 shrink-0 rounded-full disabled:opacity-50" aria-label={task.status === 'done' ? `Отменить выполнение задачи «${task.title}»` : `Выполнить задачу «${task.title}»`}><TaskStateIcon task={task} /></button>}
           <div className="min-w-0 flex-1">
-            {isRoot ? <div className="break-words font-semibold text-slate-900">{task.title}</div> : <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="break-words text-left font-medium text-slate-900 disabled:opacity-50" aria-label={task.status === 'done' ? `Сбросить задачу «${task.title}»` : `Выполнить задачу «${task.title}»`}>{task.title}</button>}
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-base-content/55">
-              <span>{task.deadline ? `Дедлайн: ${formatDateRu(task.deadline)}` : 'Без срока'}</span>
-              {overdue && <span className="badge badge-error badge-sm">Просрочено</span>}
-            </div>
+            {isRoot ? <div className="break-words font-semibold text-slate-900">{task.title}</div> : <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="break-words text-left font-medium text-slate-900 disabled:opacity-50" aria-label={taskStatusFilter === 'done' ? `Показать задачу «${task.title}» во вкладке «Всего»` : task.status === 'done' ? `Сбросить задачу «${task.title}»` : `Выполнить задачу «${task.title}»`}>{task.title}</button>}
+            {taskStatusFilter !== 'done' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-base-content/55">
+                <span>{task.deadline ? `Дедлайн: ${formatDateRu(task.deadline)}` : 'Без срока'}</span>
+                {overdue && <span className="badge badge-error badge-sm">Просрочено</span>}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
           <TaskOperations task={task} onChanged={loadData} />
-          <div className="flex items-center gap-1">
+          {taskStatusFilter !== 'done' && <div className="flex items-center gap-1">
           <button
             type="button"
             className="inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-slate-400 transition hover:bg-slate-50 hover:text-slate-600 active:scale-[0.98]"
@@ -1022,7 +965,7 @@ function ObjectTasksPage() {
             </svg>
             <span>Подзадача</span>
           </button>
-          </div>
+          </div>}
         </div>
 
         {children.length > 0 && (canRevealChildren ? (
@@ -1167,7 +1110,7 @@ function ObjectTasksPage() {
         </div>
       </div>
 
-      {taskStatusFilter !== 'all' && !(taskStatusFilter === 'done' && !taskId) ? (
+      {taskStatusFilter !== 'all' && taskStatusFilter !== 'done' ? (
         displayedStatusGroups.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
             Задачи с выбранным статусом не найдены.
@@ -1178,7 +1121,7 @@ function ObjectTasksPage() {
               <section key={group.main_task_id} className="overflow-hidden rounded-3xl border border-base-200 bg-base-100 shadow-sm">
                 <ul className="divide-y divide-base-200">
                   {group.tasks.map((task) => {
-                    const isDone = taskStatusFilter === 'done'
+                    const isDone = task.status === 'done'
                     const isOverdue = taskStatusFilter === 'overdue'
                     const taskDestination = `/objects/${objectItem.id}/tasks/${group.main_task_id}?returnStatus=${taskStatusFilter}#task-${task.id}`
                     const taskPath = task.path.slice(0, -1)
@@ -1289,10 +1232,20 @@ function ObjectTasksPage() {
           </div>
 
           <div className="hidden overflow-x-auto lg:block">
-            <table className="min-w-[980px] w-full table-fixed text-left">
-              <colgroup><col className="w-[35%]" /><col className="w-[14%]" /><col className="w-[25%]" /><col className="w-[13%]" /><col className="w-[13%]" /></colgroup>
+            <table className={`${taskStatusFilter === 'done' ? 'min-w-[640px]' : 'min-w-[980px]'} w-full table-fixed text-left`}>
+              {taskStatusFilter === 'done' ? (
+                <colgroup><col className="w-[65%]" /><col className="w-[35%]" /></colgroup>
+              ) : (
+                <colgroup><col className="w-[35%]" /><col className="w-[14%]" /><col className="w-[25%]" /><col className="w-[13%]" /><col className="w-[13%]" /></colgroup>
+              )}
               <thead className="bg-base-200">
-                <tr><th className="px-3 py-3 2xl:px-5">Задача</th><th className="whitespace-nowrap px-3 py-3 2xl:px-5">Дедлайн</th><th className="px-3 py-3 2xl:px-5">Файлы</th><th className="px-3 py-3 2xl:px-5">Редактировать</th><th className="px-3 py-3 2xl:px-5">+ Подзадача</th></tr>
+                <tr>
+                  <th className="px-3 py-3 2xl:px-5">Задача</th>
+                  {taskStatusFilter !== 'done' && <th className="whitespace-nowrap px-3 py-3 2xl:px-5">Дедлайн</th>}
+                  <th className="px-3 py-3 2xl:px-5">Файлы</th>
+                  {taskStatusFilter !== 'done' && <th className="px-3 py-3 2xl:px-5">Редактировать</th>}
+                  {taskStatusFilter !== 'done' && <th className="px-3 py-3 2xl:px-5">+ Подзадача</th>}
+                </tr>
               </thead>
               <tbody>
                 {progressiveTasks.map(({ task, depth }) => {
@@ -1304,7 +1257,7 @@ function ObjectTasksPage() {
                     <td className="px-3 py-3 2xl:px-5">
                       <div style={{ paddingLeft: `${Math.min(Math.max(depth - 1, 0), 5) * 18}px` }}>
                         <div className="flex items-start gap-3">
-                          {!isMainTask && (
+                          {!isMainTask && taskStatusFilter !== 'done' && (
                             <button type="button" disabled={!canToggle} onClick={() => void handleToggleTask(task.id)} className="mt-0.5 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50" aria-label={task.status === 'done' ? `Отменить выполнение задачи «${task.title}»` : `Выполнить задачу «${task.title}»`}>
                               <TaskStateIcon task={task} />
                             </button>
@@ -1312,17 +1265,17 @@ function ObjectTasksPage() {
                           {isMainTask ? (
                             <div className="min-w-0 flex-1 font-semibold text-slate-900">{task.title}</div>
                           ) : (
-                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="group flex min-w-0 flex-1 items-start rounded-xl text-left font-medium transition hover:text-[#d9362c] disabled:cursor-not-allowed disabled:opacity-50" aria-expanded={task.children.length > 0 ? isSelected : undefined} aria-label={task.status === 'done' ? `Сбросить задачу «${task.title}»` : `Выполнить задачу «${task.title}»`}>
+                            <button type="button" disabled={!canToggle} onClick={() => handleTaskTextClick(task, depth)} className="group flex min-w-0 flex-1 items-start rounded-xl text-left font-medium transition hover:text-[#d9362c] disabled:cursor-not-allowed disabled:opacity-50" aria-expanded={task.children.length > 0 ? isSelected : undefined} aria-label={taskStatusFilter === 'done' ? `Показать задачу «${task.title}» во вкладке «Всего»` : task.status === 'done' ? `Сбросить задачу «${task.title}»` : `Выполнить задачу «${task.title}»`}>
                               <span className="min-w-0 text-slate-900 group-hover:text-[#d9362c]">{task.title}</span>
                             </button>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 2xl:px-5"><div className={overdue ? 'font-medium text-red-600' : 'text-slate-600'}>{task.deadline ? formatDateRu(task.deadline) : 'Без срока'}</div>{overdue && <div className="mt-1 text-xs text-red-600">Просрочено</div>}</td>
+                    {taskStatusFilter !== 'done' && <td className="px-3 py-3 2xl:px-5"><div className={overdue ? 'font-medium text-red-600' : 'text-slate-600'}>{task.deadline ? formatDateRu(task.deadline) : 'Без срока'}</div>{overdue && <div className="mt-1 text-xs text-red-600">Просрочено</div>}</td>}
                     <td className="px-3 py-3 2xl:px-5"><TaskOperations task={task} onChanged={loadData} /></td>
-                    <td className="px-3 py-3 2xl:px-5"><button type="button" className="rounded-xl py-2 text-left text-sm font-medium text-slate-700 transition hover:text-[#d9362c]" onClick={() => openEditTask(task)} aria-label="Редактировать задачу">Редактировать</button></td>
-                    <td className="px-3 py-3 2xl:px-5"><button type="button" className="whitespace-nowrap rounded-xl py-2 text-left text-sm font-medium text-slate-700 transition hover:text-[#d9362c]" onClick={() => openCreateTask(task)} aria-label="Добавить подзадачу">+ Подзадача</button></td>
+                    {taskStatusFilter !== 'done' && <td className="px-3 py-3 2xl:px-5"><button type="button" className="rounded-xl py-2 text-left text-sm font-medium text-slate-700 transition hover:text-[#d9362c]" onClick={() => openEditTask(task)} aria-label="Редактировать задачу">Редактировать</button></td>}
+                    {taskStatusFilter !== 'done' && <td className="px-3 py-3 2xl:px-5"><button type="button" className="whitespace-nowrap rounded-xl py-2 text-left text-sm font-medium text-slate-700 transition hover:text-[#d9362c]" onClick={() => openCreateTask(task)} aria-label="Добавить подзадачу">+ Подзадача</button></td>}
                   </tr>
                 })}
               </tbody>

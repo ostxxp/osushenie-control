@@ -62,6 +62,7 @@ function NotificationsPage() {
     const uniqueActors = new Map<number, string>()
 
     notifications.forEach((notification) => {
+      if (notification.type === 'task_deadline_overdue') return
       uniqueActors.set(
         notification.actor_user_id,
         notification.actor_full_name || `#${notification.actor_user_id}`,
@@ -166,13 +167,19 @@ function NotificationsPage() {
     const objectQuery = objectSearch.trim().toLowerCase()
 
     return notifications.filter((notification) => {
+      const showsActor = notification.type !== 'task_deadline_overdue'
+
+      if (actorFilter && !showsActor) {
+        return false
+      }
+
       if (actorFilter && String(notification.actor_user_id) !== actorFilter) {
         return false
       }
 
       const actorName = notification.actor_full_name || `#${notification.actor_user_id}`
 
-      if (!actorFilter && actorQuery && !actorName.toLowerCase().includes(actorQuery)) {
+      if (!actorFilter && actorQuery && (!showsActor || !actorName.toLowerCase().includes(actorQuery))) {
         return false
       }
 
@@ -206,7 +213,7 @@ function NotificationsPage() {
 
       const searchableText = [
         notification.message,
-        actorName,
+        showsActor ? actorName : '',
       ].join(' ').toLowerCase()
 
       return searchableText.includes(query)
@@ -392,7 +399,7 @@ function NotificationsPage() {
           </div>
 
           <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-base-content/50">
+            <span className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-3 text-base-content/50">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <path d="M11 18C14.866 18 18 14.866 18 11C18 7.13401 14.866 4 11 4C7.13401 4 4 7.13401 4 11C4 14.866 7.13401 18 11 18Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M20 20L16.65 16.65" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -438,7 +445,7 @@ function NotificationsPage() {
                     <Link to={`/objects/${notification.object_id}`} className="font-semibold text-primary hover:underline">
                       {objectNames[notification.object_id] || `#${notification.object_id}`}
                     </Link>
-                    <span className="inline-flex min-w-0 items-center gap-2">
+                    {notification.type !== 'task_deadline_overdue' && <span className="inline-flex min-w-0 items-center gap-2">
                       {actorAvatarUrls[notification.actor_user_id] ? (
                         <span
                           className="shrink-0 overflow-hidden rounded-full"
@@ -461,7 +468,7 @@ function NotificationsPage() {
                         </span>
                       )}
                       <span className="truncate">{notification.actor_full_name || `#${notification.actor_user_id}`}</span>
-                    </span>
+                    </span>}
                     <span>{formatDateTime(notification.created_at)}</span>
                   </div>
                 </div>
