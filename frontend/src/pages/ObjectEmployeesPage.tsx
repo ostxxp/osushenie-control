@@ -314,7 +314,7 @@ function ObjectEmployeesPage() {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <span className="loading loading-spinner text-primary" />
+        <span className="loading loading-spinner text-[#ff4539]" />
       </div>
     )
   }
@@ -635,7 +635,7 @@ function ObjectEmployeesPage() {
             <div className="max-h-80 overflow-y-auto rounded-[1.75rem] border border-base-200">
               {loadingAssignableUsers ? (
                 <div className="flex items-center justify-center px-4 py-8">
-                  <span className="loading loading-spinner text-primary" />
+                  <span className="loading loading-spinner text-[#ff4539]" />
                 </div>
               ) : availableUsers.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-base-content/70">

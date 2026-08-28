@@ -29,7 +29,11 @@ function DashboardPage() {
       try {
         const data = await objectApi.getSummaries()
         if (cancelled) return
-        setObjects(data)
+        setObjects(
+          [...data].sort(
+            (first, second) => Number(second.is_active) - Number(first.is_active),
+          ),
+        )
 
         const photos = await Promise.all(
           data.map(async (objectItem): Promise<[number, string] | null> => {

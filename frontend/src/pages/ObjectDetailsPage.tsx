@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState, useRef, type ChangeEvent } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { DatePickerInput, formatDateInputValue, StyledSelect } from '@/components'
-import { objectApi, photoApi } from '@services/api'
+import { objectApi, photoApi, userApi } from '@services/api'
 import { authService, AuthContext } from '@services/auth'
 import { formatApiError, formatDateRu, formatTaskCount } from '@/utils'
 import type { ConstructionObject, ObjectTaskStats, User } from '@/types'
@@ -23,6 +23,7 @@ function ObjectDetailsPage() {
   const [progress, setProgress] = useState<number>(0)
   const [overdueCount, setOverdueCount] = useState(0)
   const [employees, setEmployees] = useState<User[]>([])
+  const [allUsers, setAllUsers] = useState<User[]>([])
   const [responsibleUsers, setResponsibleUsers] = useState<User[]>([])
   const [objectType, setObjectType] = useState('')
   const [isEditing, setIsEditing] = useState(false)
@@ -57,12 +58,13 @@ function ObjectDetailsPage() {
     const fetchData = async () => {
       if (!id) return
       try {
-        const [objData, taskStats, progressValue, users, responsible] = await Promise.all([
+        const [objData, taskStats, progressValue, users, responsible, availableUsers] = await Promise.all([
           objectApi.getById(Number(id)),
           objectApi.getTaskStats(Number(id)),
           objectApi.getProgress(Number(id)).catch(() => 0),
           objectApi.getAssignedUsers(Number(id)).catch(() => []),
           objectApi.getResponsibleUsers(Number(id)).catch(() => []),
+          userApi.getAll().catch(() => []),
         ])
         setObjectItem(objData)
         setObjectType(localStorage.getItem(objectTypeStorageKey(objData.id)) || objData.object_type || '')
@@ -81,6 +83,7 @@ function ObjectDetailsPage() {
         setProgress(progressValue)
         setOverdueCount(taskStats.overdue)
         setEmployees(users)
+        setAllUsers(availableUsers)
         setResponsibleUsers(responsible)
       } catch (err: unknown) {
         const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -286,6 +289,9 @@ function ObjectDetailsPage() {
       const currentResponsibleIds = new Set(responsibleUsers.map((user) => user.id))
 
       if (selectedResponsibleId !== null && !currentResponsibleIds.has(selectedResponsibleId)) {
+        if (!employees.some((user) => user.id === selectedResponsibleId)) {
+          await objectApi.assignUserToObject(objectItem.id, selectedResponsibleId)
+        }
         await objectApi.assignResponsibleToObject(objectItem.id, selectedResponsibleId)
       }
 
@@ -303,11 +309,12 @@ function ObjectDetailsPage() {
 
       setObjectItem(updated)
       setObjectType(nextObjectType)
-      setResponsibleUsers(
-        selectedResponsibleId === null
-          ? []
-          : employees.filter((user) => user.id === selectedResponsibleId),
-      )
+      const selectedResponsible = allUsers.find((user) => user.id === selectedResponsibleId)
+        || employees.find((user) => user.id === selectedResponsibleId)
+      setResponsibleUsers(selectedResponsible ? [selectedResponsible] : [])
+      if (selectedResponsible && !employees.some((user) => user.id === selectedResponsible.id)) {
+        setEmployees((current) => [...current, selectedResponsible])
+      }
       setIsEditing(false)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: unknown } })?.response?.data
@@ -397,7 +404,7 @@ function ObjectDetailsPage() {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <span className="loading loading-spinner text-primary"></span>
+        <span className="loading loading-spinner text-[#ff4539]"></span>
       </div>
     )
   }
@@ -448,7 +455,7 @@ function ObjectDetailsPage() {
               )}
 
               {!isEditing && !objectItem.is_active && (
-                <span className="badge order-2 h-auto max-w-full border border-amber-200 bg-amber-50 px-3 py-1 text-center text-amber-700 sm:shrink-0">
+                <span className="badge order-2 h-auto max-w-full border border-slate-200 bg-slate-100 px-3 py-1 text-center text-slate-600 sm:shrink-0">
                   Объект неактивен
                 </span>
               )}
@@ -541,16 +548,16 @@ function ObjectDetailsPage() {
                       className="w-full"
                       value={editForm.responsible_user_id}
                       onChange={(value) => updateEditForm('responsible_user_id', value)}
-                      options={[{ value: '', label: 'Не назначен' }, ...employees
+                      options={[{ value: '', label: 'Не назначен' }, ...allUsers
                         .filter(
                           (user) =>
                             user.is_active || responsibleUsers.some((responsible) => responsible.id === user.id),
                         )
-                        .map((user) => ({ value: String(user.id), label: `${user.full_name} — ${user.role === 'chief_engineer' ? 'главный инженер' : user.role === 'foreman' ? 'прораб' : 'администратор'}${!user.is_active ? ' (неактивен)' : ''}` }))]}
+                        .map((user) => ({ value: String(user.id), label: `${user.full_name} — ${user.role === 'chief_engineer' ? 'Главный инженер' : user.role === 'foreman' ? 'Прораб' : 'Администратор'}${!user.is_active ? ' (неактивен)' : ''}` }))]}
                     />
-                    {employees.length === 0 && (
+                    {allUsers.filter((user) => user.is_active).length === 0 && (
                       <span className="text-xs text-amber-700">
-                        Сначала добавьте сотрудника на объект в разделе «Пользователи».
+                        Нет активных пользователей, которых можно назначить ответственными.
                       </span>
                     )}
                   </label>
@@ -798,7 +805,7 @@ function ObjectDetailsPage() {
         )}
         {photosLoading ? (
           <div className="flex min-h-32 items-center justify-center">
-            <span className="loading loading-spinner text-primary" />
+            <span className="loading loading-spinner text-[#ff4539]" />
           </div>
         ) : objectPhotos.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-dashed border-base-300 px-4 py-8 text-center text-sm text-base-content/60">

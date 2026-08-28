@@ -369,10 +369,11 @@ export const objectApi = {
   },
   getTaskGroups: async (
     objectId: number,
-    status: 'done' | 'todo' | 'overdue',
+    status: 'done' | 'in_progress' | 'todo' | 'overdue',
     mainTaskId?: number,
   ): Promise<ObjectTaskListGroup[]> => {
-    const response = await authApi.get<ObjectTaskListGroup[]>(`/objects/${objectId}/tasks/${status}`, {
+    const statusPath = status === 'in_progress' ? 'in-progress' : status
+    const response = await authApi.get<ObjectTaskListGroup[]>(`/objects/${objectId}/tasks/${statusPath}`, {
       params: mainTaskId ? { main_task_id: mainTaskId } : undefined,
     })
     return response.data

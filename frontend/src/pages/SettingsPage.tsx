@@ -171,7 +171,7 @@ function SettingsPage() {
           <h2 className="text-xl font-semibold">Аватар</h2>
           <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
             {avatarLoading ? (
-              <span className="loading loading-spinner h-24 w-24 text-primary" />
+              <span className="loading loading-spinner h-24 w-24 text-[#ff4539]" />
             ) : displayedAvatar ? (
               <div
                 className="shrink-0 overflow-hidden rounded-full"
