@@ -252,8 +252,60 @@ function ModalBackdrop({ children, onClose }: { children: ReactNode; onClose: ()
 }
 
 const isNegativeTaskTitle = (title: string): boolean => {
-  const normalizedTitle = title.trim().toLowerCase()
-  return /(^|[\s(«"—-])(нет|не|без|отсутствует|отсутствуют|отсутствовал|отсутствовала|отсутствовало)(?=$|[\s.,;:!?»")—-])/u.test(normalizedTitle)
+  // A task title may contain a condition for an otherwise positive action, for
+  // example: "Направил запрос, если документы не предоставлены".  Conditions
+  // and parenthetical clarifications do not describe the task result itself.
+  const withoutClarifications = title
+    .replace(/\([^)]*\)|\[[^\]]*\]/gu, ' ')
+    .toLowerCase()
+    .replace(/\s+/gu, ' ')
+    .trim()
+
+  const conditionStart = withoutClarifications.search(
+    /(?:^|[\s,;:])(?:в\s+случае\s*,?\s*если|если|при\s+условии(?:\s*,?\s*что)?|когда|при)(?=\s|$)/iu,
+  )
+  const mainClause = (
+    conditionStart === -1
+      ? withoutClarifications
+      : withoutClarifications.slice(0, conditionStart)
+  ).replace(/[,:;—-]+$/u, '').trim()
+
+  if (!mainClause) return false
+
+  // These are limits and deadlines, not a negation of an action/result.
+  if (/^не\s+(?:на\s+\d+(?:[.,]\d+)?\s*%|менее(?:\s+чем)?|более(?:\s+чем)?|позднее|ранее)(?:\s|$)/u.test(mainClause)) {
+    return false
+  }
+
+  // Direct negation of the action: "Не отправил документы".
+  if (/^не\s+\S/u.test(mainClause)) return true
+
+  // Direct statements of absence: "Нет подтверждения", "Отсутствует документация".
+  if (/^(?:нет|отсутствует|отсутствуют|отсутствовал|отсутствовала|отсутствовало)(?:\s|$)/u.test(mainClause)) {
+    return true
+  }
+
+  const words = mainClause.match(/[а-яё-]+/giu) ?? []
+  const negationIndex = words.findIndex((word) => word === 'не')
+  const negativeResult = words[negationIndex + 1]
+
+  // A short passive-result clause is negative: "Документы не предоставлены",
+  // "Акт не подписан", "Работы не выполнены".  Restricting this to the
+  // predicate immediately after "не" avoids treating any incidental "не" in
+  // a longer sentence as a negative task.
+  if (
+    negationIndex >= 1
+    && negationIndex <= 3
+    && negativeResult
+    && /(?:ан|ана|ано|аны|ен|ена|ено|ены|ён|ёна|ёно|ёны|т|та|то|ты)$/u.test(negativeResult)
+  ) {
+    return true
+  }
+
+  // Same result form with "отсутствует" after a short subject.
+  return words.length >= 2
+    && words.length <= 4
+    && /^(?:отсутствует|отсутствуют)$/u.test(words[words.length - 1] ?? '')
 }
 
 function TaskStateIcon({ task }: { task: ObjectTask }) {

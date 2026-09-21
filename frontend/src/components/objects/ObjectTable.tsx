@@ -76,7 +76,7 @@ export default function ObjectTable({ objects, responsibleByObjectId, stagesByOb
           ) : objects.map((object) => (
             <tr key={object.id} className="border-b border-slate-100 align-middle transition-colors last:border-b-0 hover:bg-base-200">
               <td className="px-3 py-3">
-                <Link to={`/objects/${object.id}`} className="font-semibold text-slate-900 hover:text-primary hover:underline">{object.name}</Link>
+                <Link to={`/objects/${object.id}`} className="block truncate font-semibold text-slate-900 hover:text-primary hover:underline" title={object.name}>{object.name}</Link>
                 <p className="mt-1 truncate text-xs text-slate-500" title={object.address}>{object.address}</p>
               </td>
               <td className="px-3 py-3"><StageStepper stages={stagesByObjectId[object.id] || []} /></td>
