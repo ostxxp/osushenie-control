@@ -70,6 +70,12 @@ export type NotificationType =
   | 'object_created'
   | 'task_status_changed'
   | 'user_created'
+  | 'task_assigned'
+  | 'task_submitted'
+  | 'task_accepted'
+  | 'task_rejected'
+  | 'task_deadline_due_soon'
+  | 'task_deadline_overdue'
 
 export interface NotificationLog {
   id: number

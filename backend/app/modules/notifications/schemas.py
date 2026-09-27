@@ -7,7 +7,7 @@ class NotificationBase(BaseModel):
     actor_user_id: int | None
     actor_full_name: str | None = None
     object_id: int
-    message: str = Field(min_length=1, max_length=255)
+    message: str = Field(min_length=1)
     type: NotificationType
 
 class NotificationRead(NotificationBase):
